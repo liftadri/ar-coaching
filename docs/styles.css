@@ -139,3 +139,57 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .leg{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}.leg span{display:inline-flex;align-items:center;gap:5px}
 .card h2 small a{color:var(--accent);font-weight:700;text-decoration:none}
 .list .it .done,.list .it .chip{white-space:nowrap;flex-shrink:0}
+/* v3: planificación estilo Harbiz */
+:root{--c-workout:#e4570f;--c-cardio:#d63384;--c-tarea:#1d7f55;--c-formulario:#2a6fdb;--c-nota:#7a5af5;--c-evento:#141414}
+@media (prefers-color-scheme:dark){:root{--c-evento:#d9d6d2;--c-formulario:#5b93ef}}
+.itl{display:flex;align-items:center;gap:10px;min-width:0}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;background:var(--muted)}
+.dots .dot{width:6px;height:6px}
+.dot-workout{background:var(--c-workout)}.dot-cardio{background:var(--c-cardio)}.dot-tarea{background:var(--c-tarea)}.dot-formulario{background:var(--c-formulario)}.dot-nota{background:var(--c-nota)}.dot-evento{background:var(--c-evento)}
+.dot.hollow{background:transparent!important;box-shadow:inset 0 0 0 1.5px currentColor}
+.dot-workout.hollow{color:var(--c-workout)}.dot-cardio.hollow{color:var(--c-cardio)}.dot-tarea.hollow{color:var(--c-tarea)}.dot-formulario.hollow{color:var(--c-formulario)}.dot-nota.hollow{color:var(--c-nota)}
+.cd[aria-pressed="true"] .dot{background:#fff!important;box-shadow:none}
+.tp{display:inline-block;font-size:11.5px;font-weight:800;padding:1px 7px;border-radius:6px;color:#fff;background:var(--muted)}
+.tp-workout{--k:var(--c-workout)}.tp-cardio{--k:var(--c-cardio)}.tp-tarea{--k:var(--c-tarea)}.tp-formulario{--k:var(--c-formulario)}.tp-nota{--k:var(--c-nota)}.tp-evento{--k:var(--c-evento)}
+.tp.tp-workout,.tp.tp-cardio,.tp.tp-tarea,.tp.tp-formulario,.tp.tp-nota,.tp.tp-evento{background:var(--k)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--k);vertical-align:-1px;margin-right:4px}
+.pgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.phead{margin-top:12px}.phead span{text-align:center;font-size:12px;font-weight:800;color:var(--muted)}
+.pweek{margin-top:6px}.pwl{font-size:11.5px;font-weight:700;color:var(--accent);margin:4px 0 2px}
+.pday{min-height:92px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.pday.out{opacity:.5}.pday.hoy{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.pday.over{background:var(--accent-soft)}
+.pdh{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:800;color:var(--muted)}
+.padd{all:unset;cursor:pointer;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-weight:800;color:var(--accent);opacity:.55}
+.pday:hover .padd,.padd:focus-visible{opacity:1;background:var(--accent-soft)}.padd:focus-visible{outline:2px solid var(--accent)}
+.pch{all:unset;box-sizing:border-box;cursor:pointer;display:block;font-size:12px;font-weight:700;line-height:1.25;padding:3px 6px;border-radius:5px;background:color-mix(in srgb,var(--k) 16%,var(--surface));border-left:3px solid var(--k);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.pch.ok{background:color-mix(in srgb,var(--k) 32%,var(--surface))}.pch.late{outline:1.5px solid var(--bad);outline-offset:-1.5px}
+.pch.hid{background-image:repeating-linear-gradient(45deg,transparent 0 5px,rgba(127,127,127,.18) 5px 10px)}
+.pch:focus-visible{outline:2px solid var(--accent)}
+@media (max-width:700px){.pday{min-height:70px;padding:3px}.pch{font-size:10.5px;padding:2px 4px;white-space:normal;word-break:break-word}.pdh{font-size:11px}}
+.sheet.wide{width:min(980px,100%)}
+@media (min-width:900px){.ov{align-items:center}.sheet{border-radius:16px}}
+.wed{display:flex;flex-direction:column;gap:8px}
+.whead,.wrow{display:grid;grid-template-columns:56px minmax(0,2.4fr) minmax(0,1fr) 70px minmax(0,1fr) auto;gap:6px;align-items:center}
+.whead span{font-weight:700}.whead span:nth-child(5)::after{content:""}
+.wrow input{padding:8px;font-size:14.5px}.wrow .rnot{grid-column:2/6}.wrow .ra{display:flex;gap:0;grid-row:1/3;grid-column:6}
+.wrow{padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.wrow .ra .btn{min-height:30px;padding:2px 8px}
+@media (max-width:640px){.whead{display:none}.wrow{grid-template-columns:52px 1fr 1fr}.wrow .rn{grid-column:2/4}.wrow .rnot{grid-column:1/4}.wrow .ra{grid-row:auto;grid-column:1/4;justify-content:flex-end}}
+.cols{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:900px){.cols{grid-template-columns:1.3fr 1fr}}
+.savebar{position:sticky;bottom:calc(64px + var(--safe-b));z-index:4;background:var(--bg);padding:8px 0;grid-column:1/-1}
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.tcard{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow)}
+.tcard:hover{border-color:var(--accent)}.tcard:focus-visible{outline:2px solid var(--accent)}
+.mw{display:grid;grid-template-columns:70px 1fr 1fr 120px auto;gap:6px;align-items:center;margin-top:6px}.mw .mwf{grid-column:1/5}.mw input,.mw select{padding:8px;font-size:14px}
+.mrow{display:grid;grid-template-columns:2fr 1.3fr .8fr .7fr .7fr auto;gap:6px;align-items:center}.mrow .mrn{grid-column:1/6}.mrow input{padding:8px;font-size:14px}
+.seg.sub{background:transparent;padding:0;border-bottom:1px solid var(--line);border-radius:0}.seg.sub button{border-radius:8px 8px 0 0}
+main.wide{max-width:1280px}
+
+/* Entrenador en escritorio: barra lateral como Harbiz */
+@media (min-width:900px){
+  body.is-coach .tabs.coach{top:0;bottom:0;right:auto;left:0;width:92px;max-width:none;margin:0;border-radius:0;border-left:0;border-top:0;z-index:7;display:flex!important;flex-direction:column;justify-content:flex-start;gap:4px;padding-top:calc(16px + var(--safe-t));border-top:0;border-right:1px solid var(--line);transform:none}
+  body.is-coach .tabs.coach button{padding:12px 4px}
+  body.is-coach main,body.is-coach .top{margin-left:92px}
+  body.is-coach main{padding-bottom:32px}
+}

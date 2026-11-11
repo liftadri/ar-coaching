@@ -1,0 +1,4 @@
+-- Aplicadas como migraciones «libreria_y_planificacion» y «programas_semanas».
+-- Librería (exercises, workout_templates, programs) solo para el entrenador; planificación en assignments.
+-- El cliente solo lee sus asignaciones visibles y las completa con completar_asignacion().
+-- (ver el detalle en el historial de migraciones de Supabase)
