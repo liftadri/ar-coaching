@@ -121,3 +121,21 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .dia{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
 @media (min-width:900px){.kpis{grid-template-columns:repeat(4,1fr)}.tabs{max-width:720px;margin:0 auto;left:0;right:0;border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0}}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(20px);opacity:.6}}}
+/* v2: cabecera, contraseña, calendario */
+.top .back svg{width:24px;height:24px;display:block}
+.top h1+.back{padding:4px 0 4px 8px}
+.login .seg{width:100%;margin-bottom:4px}.login .seg button{flex:1;text-align:center}
+.pw{display:flex;gap:6px;align-items:center}.pw input{flex:1}
+.calg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px}
+.calg .dh{text-align:center;font-size:12px;font-weight:700;color:var(--muted);padding:4px 0}
+.calg .cd{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;min-height:46px;padding:6px 0;border-radius:10px;font-weight:700;font-size:14px}
+.calg .cd.hoy span:first-child{color:var(--accent)}
+.calg .cd[aria-pressed="true"]{background:var(--accent);color:#fff}.calg .cd[aria-pressed="true"] span:first-child{color:#fff}
+.calg .cd:focus-visible{outline:2px solid var(--accent)}
+.dots{display:flex;gap:3px;min-height:6px}
+.dots i,.leg i{width:6px;height:6px;border-radius:50%;display:inline-block}
+.dp{box-shadow:inset 0 0 0 1.5px var(--accent)}.dw{background:var(--accent)}.de{background:var(--ink)}.dt{background:var(--ok);border-radius:1px!important}
+.cd[aria-pressed="true"] .dp{box-shadow:inset 0 0 0 1.5px #fff}.cd[aria-pressed="true"] .dw,.cd[aria-pressed="true"] .de,.cd[aria-pressed="true"] .dt{background:#fff}
+.leg{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}.leg span{display:inline-flex;align-items:center;gap:5px}
+.card h2 small a{color:var(--accent);font-weight:700;text-decoration:none}
+.list .it .done,.list .it .chip{white-space:nowrap;flex-shrink:0}

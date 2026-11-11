@@ -73,6 +73,8 @@ const S = { me: null, email: "", view: "hoy", plan: null, sub: {}, cache: {}, wo
 const ICON = {
   hoy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>',
   entreno: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  nutri: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c-4 0-7-3.5-7-8 0-3 2-5 4.5-5 1.2 0 1.8.5 2.5.5s1.3-.5 2.5-.5C17 8 19 10 19 13c0 4.5-3 8-7 8z"/><path d="M12 8c0-2 1-4 3-5"/></svg>',
   progreso: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M5 16l5-5 4 3 6-7"/></svg>',
   informes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/></svg>',
   mas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>',
@@ -80,101 +82,236 @@ const ICON = {
 };
 
 /* ================= Arranque y acceso ================= */
+const LOGO = `<img class="logo" src="./logo.jpg" alt="">`;
 async function init() {
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("./sw.js").catch(() => { });
-  if (!CFG.supabaseUrl || /TU-PROYECTO/.test(CFG.supabaseUrl)) { if (!window.__SB_MOCK) { $("#app").innerHTML = `<div class="login"><img class="logo" src="./logo.jpg" alt=""><h1>Falta configurar</h1><p>Pon la URL y la clave pública de Supabase en config.js.</p></div>`; return; } }
-  sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") { S.me = null; clearLocal(); renderLogin(); } });
+  if (!CFG.supabaseUrl || /TU-PROYECTO/.test(CFG.supabaseUrl)) { if (!window.__SB_MOCK) { $("#app").innerHTML = `<div class="login">${LOGO}<h1>Falta configurar</h1><p>Pon la URL y la clave pública de Supabase en config.js.</p></div>`; return; } }
+  sb.auth.onAuthStateChange((ev) => {
+    if (ev === "SIGNED_OUT") { S.me = null; clearLocal(); renderLogin(); }
+    if (ev === "PASSWORD_RECOVERY") { S.recovery = true; renderLogin("nueva"); }
+  });
   const { data } = await sb.auth.getSession();
+  if (S.recovery) return;
   if (!data || !data.session) return renderLogin();
   S.email = data.session.user.email || "";
   await afterLogin();
 }
 function clearLocal() { try { Object.keys(localStorage).filter(k => k.startsWith("arc-")).forEach(k => localStorage.removeItem(k)); } catch { } }
 async function afterLogin() {
-  try { await sb.rpc("link_me"); const rows = await q(sb.rpc("my_profile")); const p = (rows || []).find(r => r.es_entrenador) || (rows || [])[0];
+  try { const rows = await q(sb.rpc("my_profile")); const p = (rows || []).find(r => r.es_entrenador) || (rows || [])[0];
     if (!p) return renderNoAccess();
-    S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre };
-    if (!location.hash) location.hash = S.me.role === "coach" ? "c" : "hoy";
+    S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre }; S.plan = null;
+    const hc = location.hash === "#c" || location.hash.startsWith("#c-");
+    if (!location.hash || (S.me.role === "coach") !== hc) location.hash = S.me.role === "coach" ? "c" : "hoy";
     route();
-  } catch (e) { $("#app").innerHTML = `<div class="login"><img class="logo" src="./logo.jpg" alt=""><h1>No se pudo cargar</h1><p>${esc(errMsg(e))}</p><button class="btn pri" data-act="reload">Reintentar</button><button class="btn ghost" data-act="logout">Cerrar sesión</button></div>`; }
+  } catch (e) { $("#app").innerHTML = `<div class="login">${LOGO}<h1>No se pudo cargar</h1><p>${esc(errMsg(e))}</p><button class="btn pri" data-act="reload">Reintentar</button><button class="btn ghost" data-act="logout">Cerrar sesión</button></div>`; }
 }
 function renderNoAccess() {
-  $("#app").innerHTML = `<div class="login"><img class="logo" src="./logo.jpg" alt=""><h1>Tu cuenta aún no está activada</h1><p>Has entrado como <b>${esc(S.email)}</b>, pero ese email no está dado de alta. Pídele a Adrián que lo active, o entra con el email que le diste.</p><button class="btn ghost" data-act="logout">Cerrar sesión</button></div>`;
+  $("#app").innerHTML = `<form class="login" id="f-alta-codigo">${LOGO}<h1>Activa tu cuenta</h1><p>Has entrado como <b>${esc(S.email)}</b>. Escribe el código de alta que te ha dado Adrián para vincular tu cuenta.</p>
+  <div class="f"><label for="ac">Código de alta</label><input id="ac" name="codigo" autocomplete="off" autocapitalize="characters" required maxlength="12"></div>
+  <button class="btn pri block">Activar</button><button type="button" class="btn ghost" data-act="logout">Cerrar sesión</button></form>`;
 }
-function renderLogin(stage, email) {
-  if (stage === "code") {
-    $("#app").innerHTML = `<form class="login" id="f-code" data-email="${esc(email)}"><img class="logo" src="./logo.jpg" alt=""><h1>Revisa tu correo</h1><p>Te hemos enviado un correo a <b>${esc(email)}</b>. Pulsa el enlace <b>desde este mismo móvil y navegador</b>, o escribe aquí el código si viene uno. Caduca en unos minutos.</p>
-    <div class="f"><label for="code">Código</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required></div>
-    <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="login-back">Usar otro email</button></form>`;
-    $("#code").focus(); return;
+const pwField = (id, label, ac) => `<div class="f"><label for="${id}">${label}</label><div class="pw"><input id="${id}" name="${id}" type="password" autocomplete="${ac}" minlength="8" maxlength="72" required><button type="button" class="btn ghost sm" data-act="ver-pw" aria-label="Mostrar contraseña">Ver</button></div></div>`;
+function renderLogin(stage) {
+  const head = `${LOGO}<h1>${esc(CFG.nombre || "Adrián Rodríguez Coaching")}</h1>`;
+  const tabs = cur => `<div class="seg" role="group" aria-label="Acceso"><button type="button" data-act="login-tab" data-t="" aria-pressed="${cur === "entrar"}">Entrar</button><button type="button" data-act="login-tab" data-t="alta" aria-pressed="${cur === "alta"}">Nuevo atleta</button></div>`;
+  if (stage === "alta") {
+    $("#app").innerHTML = `<form class="login" id="f-alta">${head}${tabs("alta")}<p>¿Es tu primera vez? Crea tu cuenta con el email que le diste a Adrián y el código de alta que te ha enviado.</p>
+    <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
+    ${pwField("pw", "Crea una contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repite la contraseña", "new-password")}
+    <div class="f"><label for="codigo">Código de alta</label><input id="codigo" name="codigo" autocomplete="off" autocapitalize="characters" required maxlength="12" placeholder="8 caracteres"></div>
+    <button class="btn pri block">Crear mi cuenta</button></form>`; return;
   }
-  $("#app").innerHTML = `<form class="login" id="f-login"><img class="logo" src="./logo.jpg" alt=""><h1>${esc(CFG.nombre || "Adrián Rodríguez Coaching")}</h1><p>Entra con tu email. Te enviaremos un código de un solo uso: sin contraseñas que recordar ni robar.</p>
-  <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
-  <button class="btn pri block">Enviarme el código</button></form>`;
+  if (stage === "olvido") {
+    $("#app").innerHTML = `<form class="login" id="f-olvido">${head}<p>Te enviaremos un enlace a tu email para crear una contraseña nueva. Ábrelo en este mismo móvil.</p>
+    <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
+    <button class="btn pri block">Enviar enlace</button><button type="button" class="btn ghost" data-act="login-tab" data-t="">Volver</button></form>`; return;
+  }
+  if (stage === "nueva") {
+    $("#app").innerHTML = `<form class="login" id="f-nueva">${head}<p>Escribe tu nueva contraseña.</p>${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar contraseña</button></form>`; return;
+  }
+  $("#app").innerHTML = `<form class="login" id="f-login">${head}${tabs("entrar")}
+  <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required></div>
+  ${pwField("pw", "Contraseña", "current-password")}
+  <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="login-tab" data-t="olvido">He olvidado mi contraseña</button></form>`;
 }
-async function sendCode(f) {
-  const email = f.email.value.trim().toLowerCase(); const b = f.querySelector("button"); b.disabled = true;
-  try { await q(sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } })); renderLogin("code", email); }
+function authMsg(e) {
+  const m = (e && e.message) || "";
+  if (/invalid login credentials/i.test(m)) return "Email o contraseña incorrectos.";
+  if (/already registered|already exists/i.test(m)) return "Ese email ya tiene cuenta. Entra desde «Entrar».";
+  if (/password/i.test(m) && /(short|least|weak|characters)/i.test(m)) return "La contraseña es demasiado débil: usa al menos 8 caracteres, mezclando letras y números.";
+  if (/email not confirmed/i.test(m)) return "Tienes que confirmar tu email antes de entrar.";
+  return errMsg(e);
+}
+async function doLogin(f) {
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { const email = f.email.value.trim().toLowerCase(); await q(sb.auth.signInWithPassword({ email, password: f.pw.value })); S.email = email; await afterLogin(); }
+  catch (e) { toast(authMsg(e)); b.disabled = false; }
+}
+async function doAlta(f) {
+  const email = f.email.value.trim().toLowerCase(), pw = f.pw.value, codigo = f.codigo.value.trim();
+  if (pw !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
+  if (pw.length < 8) { toast("La contraseña debe tener al menos 8 caracteres"); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try {
+    let r = await sb.auth.signUp({ email, password: pw });
+    if (r.error && /already registered|already exists/i.test(r.error.message)) r = await sb.auth.signInWithPassword({ email, password: pw });
+    if (r.error) throw r.error;
+    if (!r.data.session) { toast("Revisa tu email para confirmar la cuenta y luego entra con tu contraseña."); b.disabled = false; return; }
+    S.email = email;
+    const ok = await q(sb.rpc("alta_atleta", { p_codigo: codigo }));
+    if (!ok) { toast("El código no coincide con ese email. Revísalo o pídele uno nuevo a Adrián."); renderNoAccess(); return; }
+    toast("¡Cuenta creada!"); await afterLogin();
+  } catch (e) { toast(authMsg(e)); b.disabled = false; }
+}
+async function doAltaCodigo(f) {
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { const ok = await q(sb.rpc("alta_atleta", { p_codigo: f.codigo.value.trim() })); if (!ok) { toast("Código no válido para este email"); b.disabled = false; return; } await afterLogin(); }
   catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
-async function verifyCode(f) {
-  const email = f.dataset.email, token = f.code.value.trim(); const b = f.querySelector("button"); b.disabled = true;
-  try { await q(sb.auth.verifyOtp({ email, token, type: "email" })); S.email = email; await afterLogin(); }
+async function doOlvido(f) {
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { await q(sb.auth.resetPasswordForEmail(f.email.value.trim().toLowerCase(), { redirectTo: location.origin + location.pathname })); toast("Si ese email tiene cuenta, te llegará un enlace en unos minutos."); renderLogin(); }
   catch (e) { toast(errMsg(e)); b.disabled = false; }
+}
+async function doNueva(f) {
+  if (f.pw.value !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { await q(sb.auth.updateUser({ password: f.pw.value })); S.recovery = false; toast("Contraseña cambiada"); history.replaceState(null, "", location.pathname); const { data } = await sb.auth.getSession(); S.email = (data.session && data.session.user.email) || ""; await afterLogin(); }
+  catch (e) { toast(authMsg(e)); b.disabled = false; }
 }
 
 /* ================= Navegación ================= */
-const CLIENT_TABS = [["hoy", "Hoy"], ["entreno", "Entreno"], ["progreso", "Progreso"], ["informes", "Informes"], ["mas", "Perfil"]];
+const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
 function shell(title, body, opts = {}) {
-  const tabs = S.me.role === "coach" ? [["c", "Clientes", "clientes"], ["mas", "Perfil", "mas"]] : CLIENT_TABS.map(([k, l]) => [k, l, k]);
-  const cur = S.view.startsWith("c") && S.me.role === "coach" ? "c" : S.view.split("-")[0];
-  $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1></header>
-  <main class="${S.me.role === "coach" ? "wide" : ""}" id="main">${body}</main>
+  const coach = S.me.role === "coach";
+  const tabs = coach ? [["c", "Clientes", "clientes"], ["mas", "Perfil", "mas"]] : CLIENT_TABS;
+  const cur = coach && (S.view === "c" || S.view.startsWith("c-")) ? "c" : S.view.split("-")[0];
+  const right = !coach && !opts.back ? `<button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${ICON.mas}</button>` : "";
+  $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
+  <main class="${coach ? "wide" : ""}" id="main">${body}</main>
   ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
   window.scrollTo(0, 0);
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
 async function route() {
   if (!S.me) return;
-  const h = location.hash.slice(1) || (S.me.role === "coach" ? "c" : "hoy"); S.view = h;
+  let h = location.hash.slice(1) || (S.me.role === "coach" ? "c" : "hoy");
+  const isCoachRoute = h === "c" || h.startsWith("c-");
+  if (S.me.role !== "coach" && isCoachRoute) h = "hoy"; // la vista de entrenador no existe para clientes
+  S.view = h;
   try {
     if (S.me.role === "coach") { if (h.startsWith("c-")) return await viewCoachClient(h.slice(2)); if (h === "mas") return viewMas(); return await viewCoachList(); }
+    if (h === "cal") return await viewCal();
     if (h === "entreno") return await viewEntreno();
     if (h.startsWith("entreno-")) return await viewWorkout(+h.slice(8));
+    if (h === "nutri") return await viewNutri();
     if (h === "progreso") return await viewProgreso();
+    if (h === "tareas") return await viewTareas();
     if (h === "informes") return await viewInformes();
     if (h.startsWith("informe-")) return await viewInforme(decodeURIComponent(h.slice(8)));
-    if (h === "mas") return viewMas();
+    if (h === "mas") return await viewMas();
     return await viewHoy();
   } catch (e) { shell("Error", `<div class="banner">${esc(errMsg(e))}</div><button class="btn" data-act="reload">Reintentar</button>`); }
 }
 window.addEventListener("hashchange", route);
 
 /* ================= Cliente: datos ================= */
-async function getPlan() { if (S.plan) return S.plan; const rows = await q(sb.from("plans").select("*").limit(1)); S.plan = rows[0] || { programa: {}, bloques: [], habitos: [], objetivo: "" }; return S.plan; }
+async function getPlan() { if (S.plan) return S.plan; const rows = await q(sb.from("plans").select("*").limit(1)); S.plan = rows[0] || { programa: {}, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] }; S.plan.programa = S.plan.programa || {}; return S.plan; }
 function weekNow(plan, d = today()) { for (const b of plan.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= d && d <= s.fin); if (w) return { ...w, bloque: b.nombre }; } return null; }
+const DSEM = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const dow = s => ((parseD(s).getDay() + 6) % 7) + 1;
+const diasPlan = plan => ((plan.programa && plan.programa.dias) || []).map((d, i) => ({ ...d, i }));
+const plannedOn = (plan, fecha) => diasPlan(plan).filter(d => +d.dia_semana === dow(fecha));
+function nextPlanned(plan, from) { for (let k = 1; k <= 7; k++) { const f = addDays(from, k); const p = plannedOn(plan, f); if (p.length) return { fecha: f, dia: p[0] }; } return null; }
+const TT = { tarea: "Tarea", habito: "Hábito", control: "Control", formulario: "Cuestionario" };
 
 /* ================= Cliente: Hoy ================= */
 async function viewHoy() {
   loading("Hoy");
-  const t = today(); const cid = S.me.cid;
-  const [plan, wl, wt, wo, rp] = await Promise.all([getPlan(), q(sb.from("wellness").select("*").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), q(sb.from("workouts").select("id,fecha,dia").order("fecha", { ascending: false }).limit(10)), q(sb.from("reports").select("id,fecha,titular,semana").order("fecha", { ascending: false }).limit(1))]);
-  const w = weekNow(plan); const well = wl[0]; const lastW = wt[0]; const dias = (plan.programa && plan.programa.dias) || [];
+  const t = today();
+  const [plan, wl, wt, wo, rp, tk] = await Promise.all([getPlan(), q(sb.from("wellness").select("*").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), q(sb.from("workouts").select("id,fecha,dia").order("fecha", { ascending: false }).limit(10)), q(sb.from("reports").select("id,fecha,titular,semana").order("fecha", { ascending: false }).limit(1)), q(sb.from("tasks").select("*").eq("hecho", false).order("fecha", { ascending: true, nullsFirst: false }).limit(50))]);
+  const w = weekNow(plan); const well = wl[0]; const lastW = wt[0]; const dias = diasPlan(plan);
   const doneToday = wo.filter(x => x.fecha === t);
-  const nextIdx = (() => { if (!dias.length) return -1; const last = wo[0]; const i = last ? dias.findIndex(d => d.nombre === last.dia) : -1; return (i + 1) % dias.length; })();
-  const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
+  const conDia = dias.some(d => d.dia_semana);
+  let entreno = "";
+  if (dias.length) {
+    if (conDia) {
+      const hoyD = plannedOn(plan, t);
+      if (hoyD.length) entreno = hoyD.map(d => { const done = doneToday.some(x => x.dia === d.nombre); return `<button class="it" data-act="go" data-h="entreno-${d.i}"><span><b>Entreno: ${esc(d.nombre)}</b><br><span class="tiny muted">${(d.ejercicios || []).length} ejercicios</span></span><span class="chip ${done ? "ok" : "acc"}">${done ? "Hecho ✓" : "Empezar"}</span></button>`; }).join("");
+      else { const nx = nextPlanned(plan, t); entreno = `<div class="it" style="cursor:default"><span><b>Hoy toca descanso</b><br><span class="tiny muted">${nx ? `Próximo entreno: ${esc(nx.dia.nombre)} · ${esc(DSEM[dow(nx.fecha)].toLowerCase())}` : "Recupera bien"}</span></span>${doneToday.length ? `<span class="done">Entreno hecho ✓</span>` : ""}</div>`; }
+    } else {
+      const last = wo[0]; const i0 = last ? dias.findIndex(d => d.nombre === last.dia) : -1; const nd = dias[(i0 + 1) % dias.length];
+      entreno = `<button class="it" data-act="go" data-h="entreno-${nd.i}"><span><b>Entreno: ${esc(nd.nombre)}</b><br><span class="tiny muted">${doneToday.length ? "Ya has registrado un entreno hoy" : "Siguiente sesión de tu rutina"}</span></span><span class="chip ${doneToday.length ? "ok" : "acc"}">${doneToday.length ? "Hecho ✓" : "Empezar"}</span></button>`;
+    }
+  }
+  const pend = tk.filter(x => !x.fecha || x.fecha <= addDays(t, 2));
   shell(CFG.nombre || "Hoy", `
   <section class="hello"><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2><p>${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}${w ? ` · ${esc(w.bloque)} · ${esc(w.nombre)}` : ""}</p></section>
   ${w && w.foco ? `<div class="card"><h2>Esta semana <small>${esc(w.tipo && w.tipo !== "carga" ? cap(w.tipo) : "")}</small></h2><p class="small" style="margin:0">${esc(w.foco)}</p></div>` : ""}
   <div class="card"><h2>Para hoy</h2><div class="list">
-    <button class="it" data-act="wellness"><span><b>Cuestionario de hoy</b><br><span class="tiny muted">1 minuto · cómo has dormido y cómo te sientes</span></span>${well ? `<span class="done">Hecho ✓</span>` : `<span class="chip acc">Rellenar</span>`}</button>
+    ${entreno}
+    <button class="it" data-act="wellness"><span><b>Cuestionario diario</b><br><span class="tiny muted">1 minuto · cómo has dormido y cómo te sientes</span></span>${well ? `<span class="done">Hecho ✓</span>` : `<span class="chip acc">Rellenar</span>`}</button>
     <button class="it" data-act="peso"><span><b>Peso</b><br><span class="tiny muted">${lastW ? `Último: ${fmt(lastW.kg)} kg (${esc(fdate(lastW.fecha))})` : "En ayunas, después de ir al baño"}</span></span>${lastW && lastW.fecha === t ? `<span class="done">Hecho ✓</span>` : `<span class="chip">Apuntar</span>`}</button>
-    ${dias.length ? `<button class="it" data-act="go" data-h="entreno-${nextIdx}"><span><b>Entreno: ${esc(dias[nextIdx].nombre)}</b><br><span class="tiny muted">${doneToday.length ? "Ya has registrado un entreno hoy" : "Siguiente sesión de tu rutina"}</span></span><span class="chip ${doneToday.length ? "ok" : "acc"}">${doneToday.length ? "Hecho ✓" : "Empezar"}</span></button>` : ""}
   </div></div>
+  <div class="card"><h2>Tus tareas <small><a href="#tareas">Ver todas</a></small></h2>${pend.length ? `<div class="list">${pend.slice(0, 6).map(taskRow).join("")}</div>` : `<p class="small muted" style="margin:0">No tienes tareas pendientes. ¡Bien!</p>`}</div>
   ${rp[0] ? `<div class="card"><h2>Tu último informe <small>${esc(fdate(rp[0].fecha))}</small></h2><p style="margin:0 0 10px"><b>${esc(rp[0].titular || rp[0].semana || "Informe semanal")}</b></p><button class="btn block" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}">Leer informe</button></div>` : ""}
-  ${(plan.habitos || []).length ? `<div class="card"><h2>Tus hábitos</h2><ul class="small" style="margin:0;padding-left:18px">${plan.habitos.map(hb => `<li>${esc(hb)}</li>`).join("")}</ul></div>` : ""}
-  ${plan.objetivo ? `<div class="card"><h2>Tu objetivo</h2><p class="small" style="margin:0">${esc(plan.objetivo)}</p></div>` : ""}
-  ${wa ? `<a class="btn block" href="https://wa.me/${wa}" target="_blank" rel="noopener">Escribir a Adrián por WhatsApp</a>` : ""}`);
+  ${(plan.habitos || []).length ? `<div class="card"><h2>Tus hábitos</h2><ul class="small" style="margin:0;padding-left:18px">${plan.habitos.map(hb => `<li>${esc(hb)}</li>`).join("")}</ul></div>` : ""}`);
+}
+function taskRow(x) {
+  const late = x.fecha && x.fecha < today() && !x.hecho;
+  return `<button class="it" data-act="tarea" data-id="${esc(x.id)}"><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(TT[x.tipo] || "Tarea")}${x.fecha ? ` · ${late ? "era para el " : "para el "}${esc(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }))}` : ""}</span></span>${x.hecho ? `<span class="done">Hecha ✓</span>` : `<span class="chip ${late ? "warn" : "acc"}">${late ? "Pendiente" : "Hacer"}</span>`}</button>`;
+}
+async function openTarea(id) {
+  const x = (await q(sb.from("tasks").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
+  sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:0">${esc(TT[x.tipo] || "Tarea")}${x.fecha ? " · " + esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" })) : ""}</p>
+  ${x.detalle ? `<p class="small" style="white-space:pre-wrap">${esc(x.detalle)}</p>` : ""}
+  <form id="f-tarea" data-id="${esc(x.id)}" data-hecho="${x.hecho ? "1" : "0"}" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="t-r">Comentario para Adrián (opcional)</label><textarea id="t-r" name="respuesta" maxlength="2000">${esc(x.respuesta || "")}</textarea></div>
+  <button class="btn pri block">${x.hecho ? "Guardar comentario" : "Marcar como hecha"}</button>${x.hecho ? `<button type="button" class="btn ghost" data-act="tarea-deshacer" data-id="${esc(x.id)}">Marcar como no hecha</button>` : ""}<button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`);
+}
+async function saveTarea(f) { try { await q(sb.rpc("completar_tarea", { p_id: f.dataset.id, p_hecho: true, p_respuesta: f.respuesta.value.trim() })); sheet(""); toast("¡Hecho!"); route(); } catch (e) { toast(errMsg(e)); } }
+async function viewTareas() {
+  loading("Tareas"); const tk = await q(sb.from("tasks").select("*").order("fecha", { ascending: false, nullsFirst: true }).limit(200));
+  const pend = tk.filter(x => !x.hecho).sort((a, b) => (a.fecha || "0").localeCompare(b.fecha || "0")), done = tk.filter(x => x.hecho);
+  shell("Tus tareas", `<div class="card"><h2>Pendientes</h2>${pend.length ? `<div class="list">${pend.map(taskRow).join("")}</div>` : `<p class="small muted" style="margin:0">Nada pendiente.</p>`}</div>
+  ${done.length ? `<div class="card"><h2>Hechas</h2><div class="list">${done.slice(0, 30).map(taskRow).join("")}</div></div>` : ""}`, { back: "hoy" });
+}
+
+/* ================= Cliente: Calendario ================= */
+async function viewCal() {
+  loading("Calendario");
+  const t = today(); const m = S.sub.calM || t.slice(0, 7); const sel = S.sub.calD && S.sub.calD.startsWith(m) ? S.sub.calD : (t.startsWith(m) ? t : m + "-01");
+  const first = m + "-01"; const last = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 0));
+  const [plan, wo, ev, tk] = await Promise.all([getPlan(), q(sb.from("workouts").select("fecha,dia").gte("fecha", first).lte("fecha", last)), q(sb.from("events").select("*").lte("fecha", last).order("fecha")), q(sb.from("tasks").select("*").gte("fecha", first).lte("fecha", last))]);
+  const evOn = d => ev.filter(e => e.fecha <= d && d <= (e.fin || e.fecha));
+  const lead = dow(first) - 1; const nDays = +last.slice(8);
+  let cells = Array.from({ length: lead }, () => `<span></span>`).join("");
+  for (let k = 1; k <= nDays; k++) {
+    const d = m + "-" + String(k).padStart(2, "0");
+    const dots = [plannedOn(plan, d).length && !wo.some(x => x.fecha === d) && d >= t ? `<i class="dp"></i>` : "", wo.some(x => x.fecha === d) ? `<i class="dw"></i>` : "", evOn(d).length ? `<i class="de"></i>` : "", tk.some(x => x.fecha === d) ? `<i class="dt"></i>` : ""].join("");
+    cells += `<button class="cd${d === t ? " hoy" : ""}" data-act="cal-d" data-d="${d}" aria-pressed="${d === sel}" aria-label="${esc(fdate(d, { weekday: "long", day: "numeric", month: "long" }))}"><span>${k}</span><span class="dots">${dots}</span></button>`;
+  }
+  const w = weekNow(plan, sel);
+  const items = [
+    ...wo.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">Entreno registrado</span></span><span class="done">Hecho ✓</span></div>`),
+    ...(sel >= t ? plannedOn(plan, sel).filter(d => !wo.some(x => x.fecha === sel && x.dia === d.nombre)).map(d => `<button class="it" data-act="go" data-h="entreno-${d.i}"><span><b>${esc(d.nombre)}</b><br><span class="tiny muted">Entreno previsto</span></span><span class="chip acc">Ver</span></button>`) : []),
+    ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(cap(e.tipo || ""))}${e.notas ? " · " + esc(e.notas) : ""}</span></span></div>`),
+    ...tk.filter(x => x.fecha === sel).map(taskRow)];
+  const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long", year: "numeric" }));
+  const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
+  shell("Calendario", `<div class="card"><div class="row"><button class="btn ghost sm" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2 class="grow" style="text-align:center;margin:0">${esc(mName)}</h2><button class="btn ghost sm" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button></div>
+  <div class="calg"><span class="dh">L</span><span class="dh">M</span><span class="dh">X</span><span class="dh">J</span><span class="dh">V</span><span class="dh">S</span><span class="dh">D</span>${cells}</div>
+  <div class="leg tiny muted"><span><i class="dp"></i>Entreno previsto</span><span><i class="dw"></i>Entreno hecho</span><span><i class="de"></i>Evento</span><span><i class="dt"></i>Tarea</span></div></div>
+  <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}${w ? ` <small>${esc(w.bloque)} · ${esc(w.nombre)}</small>` : ""}</h2>${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
+}
+
+/* ================= Cliente: Nutrición ================= */
+async function viewNutri() {
+  loading("Nutrición"); const plan = await getPlan(); const n = plan.nutricion;
+  const hab = (plan.habitos || []).length ? `<div class="card"><h2>Tus hábitos</h2><ul class="small" style="margin:0;padding-left:18px">${plan.habitos.map(hb => `<li>${esc(hb)}</li>`).join("")}</ul></div>` : "";
+  if (!n) { shell("Nutrición", `<div class="card"><h2>Próximamente</h2><p class="small" style="margin:0">Aquí tendrás tu plan de alimentación cuando Adrián lo active. Mientras tanto, céntrate en tus hábitos.</p></div>${hab}`); return; }
+  shell("Nutrición", `${n.titulo || n.notas ? `<div class="card">${n.titulo ? `<h2>${esc(n.titulo)}</h2>` : ""}${n.notas ? `<p class="small" style="margin:0;white-space:pre-wrap">${esc(n.notas)}</p>` : ""}</div>` : ""}
+  ${(n.secciones || []).map(sec => `<div class="card"><h2>${esc(sec.titulo || "")}</h2><ul class="small" style="margin:0;padding-left:18px">${(sec.items || []).map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`).join("")}${hab}`);
 }
 function openWellness(prev) {
   const w = prev || {}; S.sub.well = { ...w };
@@ -204,10 +341,10 @@ async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 
 async function viewEntreno() {
   loading("Entreno");
   const [plan, wo] = await Promise.all([getPlan(), q(sb.from("workouts").select("id,fecha,dia,sets,comentario").order("fecha", { ascending: false }).limit(30))]);
-  const dias = (plan.programa && plan.programa.dias) || [];
+  const dias = diasPlan(plan).sort((a, b) => (+a.dia_semana || 9) - (+b.dia_semana || 9));
   shell("Tu rutina", `
   <div class="card"><h2>${esc(plan.programa.nombre || "Rutina")} <small>${esc(plan.programa.semana || "")}</small></h2>${plan.programa.notas ? `<p class="small muted" style="margin:0 0 8px">${esc(plan.programa.notas)}</p>` : ""}
-  ${dias.length ? `<div class="list">${dias.map((d, i) => { const last = wo.find(x => x.dia === d.nombre); return `<button class="it" data-act="go" data-h="entreno-${i}"><span><b>${esc(d.nombre)}</b><br><span class="tiny muted">${(d.ejercicios || []).length} ejercicios${last ? ` · último: ${esc(fdate(last.fecha))}` : ""}</span></span><span class="chip acc">Abrir</span></button>`; }).join("")}</div>` : `<div class="empty">Tu rutina aparecerá aquí en cuanto Adrián la cargue.</div>`}</div>
+  ${dias.length ? `<div class="list">${dias.map(d => { const last = wo.find(x => x.dia === d.nombre); return `<button class="it" data-act="go" data-h="entreno-${d.i}"><span><b>${esc(d.nombre)}</b><br><span class="tiny muted">${d.dia_semana ? esc(DSEM[d.dia_semana]) + " · " : ""}${(d.ejercicios || []).length} ejercicios${last ? ` · último: ${esc(fdate(last.fecha))}` : ""}</span></span><span class="chip acc">Abrir</span></button>`; }).join("")}</div>` : `<div class="empty">Tu rutina aparecerá aquí en cuanto Adrián la cargue.</div>`}</div>
   <div class="card"><h2>Últimos entrenos</h2>${wo.length ? `<div class="list">${wo.slice(0, 8).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${esc(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }))} · ${(x.sets || []).length} series</span></span></div>`).join("")}</div>` : `<div class="empty">Aún no has registrado ningún entreno.</div>`}</div>`);
 }
 const draftKey = i => `arc-draft-${S.me.cid}-${i}`;
@@ -252,10 +389,22 @@ async function saveWorkout(f) {
 
 /* ================= Cliente: Progreso ================= */
 async function viewProgreso() {
-  loading("Progreso"); const tab = S.sub.prog || "peso";
-  const segs = [["peso", "Peso"], ["fuerza", "Fuerza"], ["medidas", "Medidas"], ["fotos", "Fotos"]];
+  loading("Progreso"); const plan = await getPlan();
+  const vis = Array.isArray(plan.progreso_visible) ? plan.progreso_visible : ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"];
+  const segs = [["fuerza", "Fuerza"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].filter(([k]) => vis.includes(k));
+  if (!segs.length) { shell("Tu progreso", `<div class="empty">Adrián te enseñará aquí tu progreso.</div>`); return; }
+  const tab = segs.some(([k]) => k === S.sub.prog) ? S.sub.prog : segs[0][0];
   let body = "";
-  if (tab === "peso") {
+  if (tab === "bienestar") {
+    const wl = await q(sb.from("wellness").select("*").order("fecha", { ascending: true }).limit(400));
+    const byW = {}; wl.forEach(w => { const d = parseD(w.fecha); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); const k = iso(d); (byW[k] = byW[k] || []).push(w); });
+    const wk = Object.entries(byW);
+    body = `<div class="card"><h2>Bienestar medio semanal <small>1–5</small></h2>${lineChart(wk.map(([x, v]) => ({ x, y: avg(v.map(wellIdx).filter(z => z != null)) })), { label: "Bienestar medio semanal", yMin: 1, yMax: 5, dec: 2, empty: "Rellena el cuestionario diario para ver tu evolución" })}<p class="tiny muted">Media de tus respuestas del cuestionario diario (5 = mejor). Una semana mala suelta es normal; lo importante es la tendencia.</p></div>
+    <div class="card"><h2>Horas de sueño <small>media semanal</small></h2>${lineChart(wk.map(([x, v]) => ({ x, y: avg(v.map(z => num(z.sueno_h)).filter(z => z != null)) })), { label: "Horas de sueño", empty: "Apunta las horas que duermes en el cuestionario" })}</div>`;
+  } else if (tab === "tests") {
+    const ts = await q(sb.from("tests").select("*").order("fecha", { ascending: false, nullsFirst: false }).limit(100));
+    body = `<div class="card"><h2>Tests y evaluaciones</h2>${ts.length ? `<div class="tbl"><table><thead><tr><th>Test</th><th>Fecha</th><th class="n">Resultado</th></tr></thead><tbody>${ts.map(x => `<tr><td>${esc(x.nombre)}${x.notas ? `<div class="tiny muted">${esc(x.notas)}</div>` : ""}</td><td>${x.fecha ? esc(fdate(x.fecha)) : "—"}</td><td class="n">${x.valor != null ? fmt(x.valor, 2) + " " + esc(x.unidad) : ""}${x.izq != null || x.der != null ? `I ${fmt(x.izq, 2)} · D ${fmt(x.der, 2)} ${esc(x.unidad)}` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Aquí verás tus tests cuando los hagas.</div>`}</div>`;
+  } else if (tab === "peso") {
     const ws = await q(sb.from("weights").select("fecha,kg").order("fecha", { ascending: true }).limit(400));
     const byW = {}; ws.forEach(w => { const d = parseD(w.fecha); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd); const k = iso(d); (byW[k] = byW[k] || []).push(+w.kg); });
     const pts = Object.entries(byW).map(([x, v]) => ({ x, y: avg(v) }));
@@ -323,13 +472,20 @@ async function viewInforme(id) {
 }
 
 /* ================= Perfil ================= */
-function viewMas() {
+async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
-  shell("Perfil", `<div class="card"><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${S.me.role === "coach" ? " · entrenador" : ""}</p></div>
-  ${S.me.role === "client" && wa ? `<a class="btn block" href="https://wa.me/${wa}" target="_blank" rel="noopener">Escribir a Adrián por WhatsApp</a>` : ""}
+  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan();
+  shell("Perfil", `<div class="card"><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · entrenador" : ""}</p></div>
+  ${plan && plan.objetivo ? `<div class="card"><h2>Tu objetivo</h2><p class="small" style="margin:0">${esc(plan.objetivo)}</p></div>` : ""}
+  ${coach ? "" : `<div class="card"><div class="list"><button class="it" data-act="go" data-h="informes"><span><b>Mis informes</b><br><span class="tiny muted">Los resúmenes semanales de Adrián</span></span><span aria-hidden="true">›</span></button><button class="it" data-act="go" data-h="tareas"><span><b>Mis tareas</b><br><span class="tiny muted">Lo que te ha pedido Adrián</span></span><span aria-hidden="true">›</span></button></div></div>`}
+  ${!coach && wa ? `<a class="btn block" href="https://wa.me/${wa}" target="_blank" rel="noopener">Escribir a Adrián por WhatsApp</a>` : ""}
   <div class="card"><h2>Instalar la app</h2><p class="small" style="margin:0"><b>iPhone:</b> en Safari, botón Compartir → «Añadir a pantalla de inicio».<br><b>Android:</b> en Chrome, menú ⋮ → «Instalar aplicación».</p></div>
-  <div class="card"><h2>Tus datos</h2><p class="small" style="margin:0">Tus registros, fotos e informes solo los ves tú y tu entrenador. Para entrar se usa un código de un solo uso enviado a tu email; no hay contraseñas. Si pierdes el móvil, cierra la sesión desde otro dispositivo o avisa a Adrián.</p></div>
-  <button class="btn block" data-act="logout">Cerrar sesión</button>`);
+  <div class="card"><h2>Tus datos</h2><p class="small" style="margin:0">Tus registros, fotos e informes solo los ves tú y tu entrenador. Usa una contraseña que no uses en otras webs. Si pierdes el móvil, cambia la contraseña desde otro dispositivo o avisa a Adrián.</p></div>
+  <button class="btn block" data-act="cambiar-pw">Cambiar contraseña</button>
+  <button class="btn block" data-act="logout">Cerrar sesión</button>`, coach ? {} : { back: "hoy" });
+}
+function openCambiarPw() {
+  sheet(`<h2>Cambiar contraseña</h2><form id="f-nueva" style="display:flex;flex-direction:column;gap:10px">${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 
 /* ================= Entrenador ================= */
@@ -343,18 +499,18 @@ async function viewCoachList() {
   <p class="tiny muted">Las revisiones semanales, los informes y los cambios de rutina los hace Claude desde los chats del proyecto con el conector de Supabase. Aquí puedes verlo todo, ajustar la rutina y publicar informes.</p>`);
 }
 function openNewClient() {
-  sheet(`<h2>Nuevo cliente</h2><form id="f-newc" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="nc-n">Nombre (como lo verá él)</label><input id="nc-n" name="nombre" required></div><div class="f"><label for="nc-e">Email con el que entrará</label><input id="nc-e" name="email" type="email" required></div><div class="f"><label for="nc-o">Objetivo</label><textarea id="nc-o" name="objetivo"></textarea></div><p class="tiny muted" style="margin:0">Cuando entre por primera vez con ese email, su cuenta se vincula sola a esta ficha.</p><button class="btn pri block">Crear</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+  sheet(`<h2>Nuevo cliente</h2><form id="f-newc" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="nc-n">Nombre (como lo verá él)</label><input id="nc-n" name="nombre" required></div><div class="f"><label for="nc-e">Email con el que entrará</label><input id="nc-e" name="email" type="email" required></div><div class="f"><label for="nc-o">Objetivo</label><textarea id="nc-o" name="objetivo"></textarea></div><p class="tiny muted" style="margin:0">Al crearla tendrás su código de alta en la pestaña «Cuenta»: se lo das junto con el enlace de la app para que se registre en «Nuevo atleta».</p><button class="btn pri block">Crear</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 async function saveNewClient(f) {
   const nombre = f.nombre.value.trim(), email = f.email.value.trim().toLowerCase(); let id = slug(nombre.split(" ")[0] + "-" + (nombre.split(" ")[1] || "x").slice(0, 1));
   if (S.coach.list.some(c => c.id === id)) id += "-" + Math.random().toString(36).slice(2, 5);
-  try { await q(sb.from("clients").insert({ id, nombre, email })); await q(sb.from("plans").insert({ client_id: id, objetivo: f.objetivo.value.trim() })); sheet(""); toast("Cliente creado"); location.hash = "c-" + id; }
+  try { await q(sb.from("clients").insert({ id, nombre, email })); await q(sb.from("plans").insert({ client_id: id, objetivo: f.objetivo.value.trim() })); sheet(""); toast("Cliente creado"); S.coach.tab = "cuenta"; location.hash = "c-" + id; }
   catch (e) { toast(errMsg(e)); }
 }
 async function viewCoachClient(cid) {
   loading("Cliente"); const tab = S.coach.tab || "resumen"; const c = (await q(sb.from("clients").select("*").eq("id", cid).limit(1)))[0];
   if (!c) { shell("Cliente", `<div class="empty">No existe.</div>`, { back: "c" }); return; }
-  S.coach.cid = cid; const segs = [["resumen", "Resumen"], ["entrenos", "Entrenos"], ["wellness", "Cuestionarios"], ["cuerpo", "Peso y medidas"], ["fotos", "Fotos"], ["plan", "Rutina"], ["informes", "Informes"], ["cuenta", "Cuenta"]];
+  S.coach.cid = cid; const segs = [["resumen", "Resumen"], ["entrenos", "Entrenos"], ["wellness", "Cuestionarios"], ["cuerpo", "Peso y medidas"], ["fotos", "Fotos"], ["plan", "Rutina"], ["tareas", "Tareas"], ["informes", "Informes"], ["cuenta", "Cuenta"]];
   let body = "";
   if (tab === "resumen" || tab === "wellness") {
     const wl = await q(sb.from("wellness").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(tab === "resumen" ? 14 : 60));
@@ -381,27 +537,43 @@ async function viewCoachClient(cid) {
     <div class="card"><div class="f"><label for="pl-o">Objetivo (lo ve el cliente)</label><textarea id="pl-o" name="objetivo">${esc(pl.objetivo || "")}</textarea></div><div class="grid2" style="margin-top:10px"><div class="f"><label for="pl-n">Nombre de la rutina</label><input id="pl-n" name="pnombre" value="${esc(p.nombre || "")}"></div><div class="f"><label for="pl-s">Semana</label><input id="pl-s" name="psemana" value="${esc(p.semana || "")}"></div></div><div class="f" style="margin-top:10px"><label for="pl-no">Notas de la rutina</label><textarea id="pl-no" name="pnotas">${esc(p.notas || "")}</textarea></div><div class="f" style="margin-top:10px"><label for="pl-h">Hábitos (uno por línea)</label><textarea id="pl-h" name="habitos">${esc((pl.habitos || []).join("\n"))}</textarea></div></div>
     <div id="dias" style="display:flex;flex-direction:column;gap:10px">${(p.dias && p.dias.length ? p.dias : [{}]).map(diaHTML).join("")}</div>
     <button type="button" class="btn" data-act="add-dia">+ Añadir día</button>
+    <div class="card"><h2>Progreso que ve el cliente</h2><div class="row" style="flex-wrap:wrap">${[["fuerza", "Fuerza"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].map(([k, l]) => `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="pv" value="${k}" ${(pl.progreso_visible || []).includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</div></div>
+    <div class="card"><div class="f"><label for="pl-nu">Nutrición (JSON; vacío = «Próximamente»). Formato: {"titulo","notas","secciones":[{"titulo","items":[…]}]}</label><textarea id="pl-nu" name="nutricion" style="min-height:80px;font-family:monospace;font-size:13px">${pl.nutricion ? esc(JSON.stringify(pl.nutricion, null, 1)) : ""}</textarea></div></div>
     <div class="card"><div class="f"><label for="pl-b">Bloques / mesociclos (JSON: lo mantiene Claude)</label><textarea id="pl-b" name="bloques" style="min-height:120px;font-family:monospace;font-size:13px">${esc(JSON.stringify(pl.bloques || [], null, 1))}</textarea></div></div>
     <button class="btn pri block">Guardar rutina</button></form>`;
+  } else if (tab === "tareas") {
+    const tk = await q(sb.from("tasks").select("*").eq("client_id", cid).order("created_at", { ascending: false }).limit(100));
+    body = `<form id="f-ntarea" data-cid="${esc(cid)}" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Nueva tarea</h2><div class="f"><label for="nt-t">Qué tiene que hacer</label><input id="nt-t" name="titulo" required maxlength="200" placeholder="Medirse la cintura en ayunas"></div><div class="f"><label for="nt-d">Detalle (opcional)</label><textarea id="nt-d" name="detalle"></textarea></div><div class="grid2"><div class="f"><label for="nt-ti">Tipo</label><select id="nt-ti" name="tipo">${Object.entries(TT).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div><div class="f"><label for="nt-f">Para el día</label><input id="nt-f" name="fecha" type="date"></div></div><button class="btn pri">Mandar tarea</button></form>
+    <div class="card"><h2>Tareas</h2>${tk.length ? `<div class="tbl"><table><tbody>${tk.map(x => `<tr><td><b>${esc(x.titulo)}</b><div class="tiny muted">${esc(TT[x.tipo] || "")}${x.fecha ? " · " + esc(fdate(x.fecha)) : ""}${x.respuesta ? ` · «${esc(x.respuesta)}»` : ""}</div></td><td>${x.hecho ? `<span class="chip ok">Hecha${x.hecho_en ? " " + esc(fdate(x.hecho_en.slice(0, 10))) : ""}</span>` : `<span class="chip warn">Pendiente</span>`}</td><td><button class="btn ghost sm" data-act="del-tarea" data-id="${esc(x.id)}">Borrar</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Sin tareas.</div>`}</div>`;
   } else if (tab === "informes") {
     const rp = await q(sb.from("reports").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(30));
     body = rp.length ? rp.map(r => `<div class="card"><h2>${esc(r.titular || "Informe")} <small>${esc(fdate(r.fecha))}</small></h2><div class="row"><span class="chip ${r.publicado ? "ok" : "warn"}">${r.publicado ? "Visible para el cliente" : "Borrador (no lo ve)"}</span><span class="grow"></span><button class="btn sm" data-act="ver-informe" data-id="${esc(r.id)}">Ver</button><button class="btn sm ${r.publicado ? "" : "pri"}" data-act="publicar" data-id="${esc(r.id)}" data-v="${r.publicado ? "0" : "1"}">${r.publicado ? "Ocultar" : "Publicar"}</button></div></div>`).join("") : `<div class="empty">Sin informes. Claude los crea al hacer la revisión semanal en el chat del cliente.</div>`;
   } else if (tab === "cuenta") {
-    body = `<form id="f-cuenta" data-cid="${esc(cid)}" class="card" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="cu-n">Nombre</label><input id="cu-n" name="nombre" value="${esc(c.nombre)}"></div><div class="f"><label for="cu-e">Email de acceso</label><input id="cu-e" name="email" type="email" value="${esc(c.email)}"></div><div class="f"><label for="cu-s">Estado</label><select id="cu-s" name="estado">${["activo", "pausa", "baja"].map(s => `<option ${c.estado === s ? "selected" : ""}>${s}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">«Baja» le quita el acceso a la app al momento. ${c.user_id ? "Cuenta vinculada." : "Aún no ha entrado nunca."}</p><button class="btn pri">Guardar</button></form>`;
+    body = `<form id="f-cuenta" data-cid="${esc(cid)}" class="card" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="cu-n">Nombre</label><input id="cu-n" name="nombre" value="${esc(c.nombre)}"></div><div class="f"><label for="cu-e">Email de acceso</label><input id="cu-e" name="email" type="email" value="${esc(c.email)}"></div><div class="f"><label for="cu-s">Estado</label><select id="cu-s" name="estado">${["activo", "pausa", "baja"].map(s => `<option ${c.estado === s ? "selected" : ""}>${s}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">«Baja» le quita el acceso a la app al momento.</p><button class="btn pri">Guardar</button></form>
+    <div class="card"><h2>Acceso a la app</h2>${c.user_id ? `<p class="small" style="margin:0 0 10px">Cuenta creada y vinculada.</p><button class="btn sm" data-act="desvincular" data-cid="${esc(cid)}">Desvincular cuenta</button><p class="tiny muted">Úsalo si cambia de email o pierde el acceso: después genera un código nuevo y que se registre otra vez.</p>` : `<p class="small" style="margin:0">Mándale el enlace de la app, su <b>email</b> (${esc(c.email)}) y este <b>código de alta</b> para que se registre en «Nuevo atleta»:</p><p style="font-size:26px;font-weight:800;letter-spacing:3px;margin:10px 0">${esc(c.codigo_alta || "—")}</p><button class="btn sm" data-act="nuevo-codigo" data-cid="${esc(cid)}">Generar otro código</button>`}</div>`;
   }
   shell(c.nombre, `<div class="seg" role="group" aria-label="Apartado">${segs.map(([k, l]) => `<button data-act="ctab" data-t="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`, { back: "c" });
 }
 function diaHTML(d) {
   const ex = (d.ejercicios && d.ejercicios.length ? d.ejercicios : [{}]);
-  return `<div class="dia"><div class="row"><input name="d_nombre" value="${esc(d.nombre || "")}" placeholder="Lunes · Pierna A" aria-label="Nombre del día" class="grow" style="font-weight:700"><button type="button" class="btn ghost sm" data-act="del-dia">Quitar</button></div><input name="d_cal" value="${esc(d.calentamiento || "")}" placeholder="Calentamiento" aria-label="Calentamiento">
+  return `<div class="dia"><div class="row"><input name="d_nombre" value="${esc(d.nombre || "")}" placeholder="Pierna A" aria-label="Nombre del día" class="grow" style="font-weight:700"><select name="d_sem" aria-label="Día de la semana" style="width:auto"><option value="">Sin día fijo</option>${DSEM.slice(1).map((n, k) => `<option value="${k + 1}" ${+d.dia_semana === k + 1 ? "selected" : ""}>${n}</option>`).join("")}</select><button type="button" class="btn ghost sm" data-act="del-dia">Quitar</button></div><input name="d_cal" value="${esc(d.calentamiento || "")}" placeholder="Calentamiento" aria-label="Calentamiento">
   <div class="exs" style="display:flex;flex-direction:column;gap:8px">${ex.map(exHTML).join("")}</div><button type="button" class="btn sm" data-act="add-ex">+ Ejercicio</button></div>`;
 }
 function exHTML(e) { return `<div class="pej" data-ex><input name="e_n" value="${esc(e.nombre || "")}" placeholder="Ejercicio" aria-label="Ejercicio"><input name="e_sxr" value="${esc(e.sxr || "")}" placeholder="3×8–10" aria-label="Series × reps"><input name="e_rir" value="${esc(e.rir || "")}" placeholder="RIR" aria-label="RIR"><input name="e_desc" value="${esc(e.descanso || "")}" placeholder="Descanso" aria-label="Descanso"><input class="full" name="e_not" value="${esc(e.notas || "")}" placeholder="Notas técnicas" aria-label="Notas" style="grid-column:2/-1"></div>`; }
 async function savePlan(f) {
   let bloques = []; try { bloques = JSON.parse(f.bloques.value || "[]"); if (!Array.isArray(bloques)) throw 0; } catch { toast("El JSON de bloques no es válido"); return; }
-  const dias = [...f.querySelectorAll(".dia")].map(d => ({ nombre: d.querySelector('[name="d_nombre"]').value.trim(), calentamiento: d.querySelector('[name="d_cal"]').value.trim(), ejercicios: [...d.querySelectorAll("[data-ex]")].map(x => { const g = n => x.querySelector(`[name="${n}"]`).value.trim(); return { nombre: g("e_n"), sxr: g("e_sxr"), rir: g("e_rir"), descanso: g("e_desc"), notas: g("e_not") }; }).filter(e => e.nombre) })).filter(d => d.nombre || d.ejercicios.length);
-  const row = { client_id: f.dataset.cid, objetivo: f.objetivo.value.trim(), programa: { nombre: f.pnombre.value.trim(), semana: f.psemana.value.trim(), notas: f.pnotas.value.trim(), dias }, bloques, habitos: lines(f.habitos.value) };
+  let nutricion = null; if (f.nutricion.value.trim()) { try { nutricion = JSON.parse(f.nutricion.value); } catch { toast("El JSON de nutrición no es válido"); return; } }
+  const dias = [...f.querySelectorAll(".dia")].map(d => ({ nombre: d.querySelector('[name="d_nombre"]').value.trim(), dia_semana: num(d.querySelector('[name="d_sem"]').value), calentamiento: d.querySelector('[name="d_cal"]').value.trim(), ejercicios: [...d.querySelectorAll("[data-ex]")].map(x => { const g = n => x.querySelector(`[name="${n}"]`).value.trim(); return { nombre: g("e_n"), sxr: g("e_sxr"), rir: g("e_rir"), descanso: g("e_desc"), notas: g("e_not") }; }).filter(e => e.nombre) })).filter(d => d.nombre || d.ejercicios.length);
+  const row = { client_id: f.dataset.cid, objetivo: f.objetivo.value.trim(), programa: { nombre: f.pnombre.value.trim(), semana: f.psemana.value.trim(), notas: f.pnotas.value.trim(), dias }, bloques, habitos: lines(f.habitos.value), nutricion, progreso_visible: [...f.querySelectorAll('[name="pv"]:checked')].map(x => x.value) };
   try { await q(sb.from("plans").upsert(row, { onConflict: "client_id" })); toast("Rutina guardada"); } catch (e) { toast(errMsg(e)); }
+}
+
+function codigoNuevo() { const b = new Uint8Array(4); crypto.getRandomValues(b); return [...b].map(x => x.toString(16).padStart(2, "0")).join("").toUpperCase(); }
+// Confirmación en dos toques (sin diálogos del navegador)
+function confirmar(a) { if (a.dataset.ok) return true; a.dataset.ok = "1"; const t = a.textContent; a.textContent = "¿Seguro? Toca otra vez"; setTimeout(() => { delete a.dataset.ok; a.textContent = t; }, 3000); return false; }
+async function saveNTarea(f) {
+  const row = { client_id: f.dataset.cid, titulo: f.titulo.value.trim(), detalle: f.detalle.value.trim(), tipo: f.tipo.value, fecha: f.fecha.value || null };
+  try { await q(sb.from("tasks").insert(row)); toast("Tarea mandada"); viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Eventos ================= */
@@ -411,8 +583,17 @@ document.addEventListener("click", async ev => {
   switch (act) {
     case "go": if (location.hash === "#" + a.dataset.h) route(); else location.hash = a.dataset.h; break;
     case "reload": location.reload(); break;
-    case "logout": await sb.auth.signOut(); clearLocal(); S.me = null; S.plan = null; location.hash = ""; renderLogin(); break;
-    case "login-back": renderLogin(); break;
+    case "logout": await sb.auth.signOut(); clearLocal(); S.me = null; S.plan = null; S.sub = {}; history.replaceState(null, "", location.pathname); renderLogin(); break;
+    case "login-tab": renderLogin(a.dataset.t); break;
+    case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; a.textContent = i.type === "password" ? "Ver" : "Ocultar"; break; }
+    case "cambiar-pw": openCambiarPw(); break;
+    case "tarea": openTarea(a.dataset.id); break;
+    case "tarea-deshacer": try { await q(sb.rpc("completar_tarea", { p_id: a.dataset.id, p_hecho: false, p_respuesta: ($("#t-r") || {}).value || "" })); sheet(""); route(); } catch (e) { toast(errMsg(e)); } break;
+    case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; viewCal(); break;
+    case "cal-d": S.sub.calD = a.dataset.d; S.sub.calM = a.dataset.d.slice(0, 7); viewCal(); break;
+    case "del-tarea": if (confirmar(a)) { try { await q(sb.from("tasks").delete().eq("id", a.dataset.id)); toast("Tarea borrada"); viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } } break;
+    case "nuevo-codigo": try { await q(sb.from("clients").update({ codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Código nuevo generado"); viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } break;
+    case "desvincular": if (confirmar(a)) { try { await q(sb.from("clients").update({ user_id: null, codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Cuenta desvinculada. Tiene un código nuevo."); viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } } break;
     case "close": sheet(""); break;
     case "wellness": { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); openWellness(r[0]); break; }
     case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
@@ -436,7 +617,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-login": sendCode, "f-code": verifyCode, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-newc": saveNewClient, "f-plan": savePlan };
+  const map = { "f-login": doLogin, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-tarea": saveTarea, "f-ntarea": saveNTarea, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-newc": saveNewClient, "f-plan": savePlan };
   if (map[f.id]) map[f.id](f);
   if (f.id === "f-cuenta") (async () => { try { await q(sb.from("clients").update({ nombre: f.nombre.value.trim(), email: f.email.value.trim().toLowerCase(), estado: f.estado.value }).eq("id", f.dataset.cid)); toast("Guardado"); } catch (e) { toast(errMsg(e)); } })();
 });
