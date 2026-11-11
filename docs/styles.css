@@ -372,3 +372,17 @@ label.small{flex:0 1 auto}
 .msg.leido{opacity:.75;border-left-color:var(--line)}
 
 .upd{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + var(--safe-b,0px));z-index:60;background:#1f2230;color:#fff;border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.18);max-width:calc(100% - 24px)}
+
+/* Peso, fotos y medidas como tipos propios */
+:root{--c-peso:#0f8b8d;--c-fotos:#d97706;--c-medidas:#4d7c0f}
+.dot-peso{background:var(--c-peso)}.dot-fotos{background:var(--c-fotos)}.dot-medidas{background:var(--c-medidas)}
+.dot-peso.hollow{color:var(--c-peso)}.dot-fotos.hollow{color:var(--c-fotos)}.dot-medidas.hollow{color:var(--c-medidas)}
+.tp-peso{--k:var(--c-peso)}.tp-fotos{--k:var(--c-fotos)}.tp-medidas{--k:var(--c-medidas)}
+.tp.tp-peso,.tp.tp-fotos,.tp.tp-medidas{background:var(--k)}
+.tag-peso{color:#0f8b8d}.tag-fotos{color:#b45309}.tag-medidas{color:#4d7c0f}
+.seg.wrap{flex-wrap:wrap}.seg.wrap button{flex:1 0 auto}
+.medpick{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 12px}
+.medpick legend{font-size:13px;font-weight:600;padding:0 4px}
+.lnk{background:none;border:0;padding:0;color:var(--accent);font-weight:600;cursor:pointer;font-size:12px}
+.mchk{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:8px;cursor:pointer;font-size:13.5px}.mchk:hover{background:rgba(0,0,0,.03)}
+.mchk input{width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--accent)}

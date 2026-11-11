@@ -105,15 +105,18 @@ const ICON = {
 };
 const initials = n => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const avatar = (n, cls = "") => `<span class="av ${cls}" aria-hidden="true">${esc(initials(n))}</span>`;
-const TIPOS = { workout: "Workout", cardio: "Cardio", tarea: "Tarea", formulario: "Formulario", nota: "Mensaje" };
-const ACCIONES = [["", "Tarea libre"], ["peso", "Registrar su peso"], ["fotos", "Subir fotos de su físico"], ["medidas", "Tomar medidas"], ["wellness", "Rellenar el cuestionario diario"]];
+const TIPOS = { workout: "Workout", cardio: "Cardio", formulario: "Formulario", nota: "Mensaje", peso: "Peso", fotos: "Fotos", medidas: "Medidas", tarea: "Tarea" };
+// Abanico de medidas que Adrián puede pedir (cm)
+const MEDIDAS = [["cuello", "Cuello", "Justo debajo de la nuez"], ["hombros", "Hombros", "Contorno a la altura de los deltoides"], ["pecho", "Pecho", "A la altura de los pezones, tras soltar el aire"], ["brazo_rel", "Brazo relajado", "Parte media del brazo, colgando"], ["brazo", "Brazo contraído", "Parte más gruesa del bíceps en tensión"], ["antebrazo", "Antebrazo", "Parte más gruesa"], ["cintura", "Cintura", "A la altura del ombligo, tras soltar el aire"], ["abdomen", "Abdomen", "Parte más ancha de la barriga"], ["cadera", "Cadera", "Parte más ancha del glúteo"], ["muslo", "Muslo", "Parte más ancha, de pie"], ["gemelo", "Gemelo", "Parte más gruesa, de pie"]];
+const MED_DEF = ["cintura", "cadera", "pecho", "brazo", "muslo"];
+const medLabel = k => (MEDIDAS.find(m => m[0] === k) || [k, k])[1];
 // Un mensaje programado no se muestra al cliente hasta su fecha y hora
 const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 const yaVisible = x => x.tipo !== "nota" || x.fecha < today() || (x.fecha === today() && (!(x.contenido || {}).hora || x.contenido.hora <= nowHM()));
 // Al registrar peso, fotos, medidas o cuestionario se completan solas las tareas pendientes de ese tipo (hoy o atrasadas)
-async function completarAccion(accion) {
-  try { const xs = await q(sb.from("assignments").select("id,contenido,hecho,fecha").eq("tipo", "tarea").eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
-    for (const x of xs.filter(x => (x.contenido || {}).accion === accion)) await q(sb.rpc("completar_asignacion", { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null }));
+async function completarAccion(tipo) {
+  try { const xs = await q(sb.from("assignments").select("id,hecho,fecha").eq("tipo", tipo).eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
+    for (const x of xs) await q(sb.rpc("completar_asignacion", { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null }));
   } catch { }
 }
 const EV_TIPOS = { competicion: "Competición", test: "Test", control: "Control", recordatorio: "Recordatorio", otro: "Otro" };
@@ -322,8 +325,7 @@ function asigRow(x) {
   const h = x.tipo === "workout" ? `data-act="go" data-h="a-${esc(x.id)}"` : `data-act="item" data-id="${esc(x.id)}"`;
   const n = x.tipo === "workout" ? ((x.contenido && x.contenido.ejercicios) || []).length : 0;
   const sub = [TIPOS[x.tipo], n ? n + " ejercicios" : "", x.fecha !== t ? (late ? "era para el " : "") + fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
-  const acc = x.tipo === "tarea" && (x.contenido || {}).accion;
-  const btn = x.tipo === "workout" ? "Empezar" : x.tipo === "nota" ? "Leer" : acc === "peso" ? "Apuntar" : acc === "fotos" ? "Subir" : acc === "medidas" ? "Medir" : acc === "wellness" ? "Rellenar" : late ? "Pendiente" : "Abrir";
+  const btn = { workout: "Empezar", nota: "Leer", peso: "Apuntar", fotos: "Subir", medidas: "Medir", formulario: "Rellenar" }[x.tipo] || (late ? "Pendiente" : "Abrir");
   return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
 }
 
@@ -352,9 +354,7 @@ async function viewHoy() {
 }
 async function openItem(id) {
   const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
-  const acc = x.tipo === "tarea" && !x.hecho && (x.contenido || {}).accion;
-  if (acc === "peso") return openPeso(); if (acc === "fotos") return openFotos(); if (acc === "medidas") return openMedidas();
-  if (acc === "wellness") { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); return openWellness(r[0]); }
+  if (!x.hecho) { if (x.tipo === "peso") return openPeso(); if (x.tipo === "fotos") return openFotos(); if (x.tipo === "medidas") return openMedidas((x.contenido || {}).medidas); }
   const c = x.contenido || {}; const pre = (c.preguntas || []);
   const prevR = (x.resultado && x.resultado.respuestas) || [];
   sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:0">${esc(TIPOS[x.tipo] || "")} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</p>
@@ -392,7 +392,7 @@ async function viewCal() {
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   shell("Calendario", `<div class="card"><div class="row"><button class="btn ghost sm" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2 class="grow" style="text-align:center;margin:0;display:block">${esc(mName)}</h2><button class="btn ghost sm" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button></div>
   <div class="calg"><span class="dh">L</span><span class="dh">M</span><span class="dh">X</span><span class="dh">J</span><span class="dh">V</span><span class="dh">S</span><span class="dh">D</span>${cells}</div>
-  <div class="leg tiny muted"><span><i class="dot dot-workout"></i>Workout</span><span><i class="dot dot-cardio"></i>Cardio</span><span><i class="dot dot-tarea"></i>Tarea</span><span><i class="dot dot-formulario"></i>Formulario</span><span><i class="dot dot-evento"></i>Evento</span><span><i class="dot dot-workout hollow"></i>Pendiente</span></div></div>
+  <div class="leg tiny muted"><span><i class="dot dot-workout"></i>Workout</span><span><i class="dot dot-cardio"></i>Cardio</span><span><i class="dot dot-tarea"></i>Peso, fotos, medidas y tareas</span><span><i class="dot dot-formulario"></i>Formulario</span><span><i class="dot dot-evento"></i>Evento</span><span><i class="dot dot-workout hollow"></i>Pendiente</span></div></div>
   <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}${w ? ` <small>${esc(w.bloque)} · ${esc(w.nombre)}</small>` : ""}</h2>${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
 }
 
@@ -524,7 +524,7 @@ async function viewProgreso() {
     body = exs.length ? `<div class="card"><h2>Fuerza estimada</h2><select id="ex-sel" aria-label="Ejercicio">${exs.map(x => `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>${lineChart(pts, { label: "Fuerza estimada" })}<p class="tiny muted">Es el peso que podrías levantar una sola vez, calculado a partir de tu mejor serie de cada día (kilos, repeticiones y las que te quedaban). Sirve para comparar días aunque cambien los kilos o las repeticiones.</p></div>` : `<div class="empty">Registra entrenos con kilos para ver tu progreso de fuerza.</div>`;
   } else if (tab === "medidas") {
     const ms = await q(sb.from("measurements").select("*").order("fecha", { ascending: false }).limit(30));
-    body = `<div class="card"><h2>Medidas <small>cm</small></h2>${ms.length ? `<div class="tbl"><table><thead><tr><th>Fecha</th><th class="n">Cintura</th><th class="n">Cadera</th><th class="n">Pecho</th><th class="n">Brazo</th><th class="n">Muslo</th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(fdate(m.fecha))}</td>${["cintura", "cadera", "pecho", "brazo", "muslo"].map(k => `<td class="n">${fmt(m[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="empty">Sin medidas todavía.</div>`}<button class="btn pri block" style="margin-top:10px" data-act="medidas">Añadir medidas</button></div>`;
+    body = `<div class="card"><h2>Medidas <small>cm</small></h2>${ms.length ? `<div class="tbl">${medTable(ms)}</div>` : `<div class="empty">Sin medidas todavía.</div>`}<button class="btn pri block" style="margin-top:10px" data-act="medidas">Añadir medidas</button></div>`;
   } else {
     const ph = await q(sb.from("photos").select("*").order("fecha", { ascending: false }).limit(30));
     let urls = {}; if (ph.length) { const { data } = await sb.storage.from("fotos").createSignedUrls(ph.map(p => p.path), 600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); }
@@ -532,11 +532,19 @@ async function viewProgreso() {
   }
   shell("Tu progreso", `<div class="seg" role="group" aria-label="Apartado">${segs.map(([k, l]) => `<button data-act="prog" data-t="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`);
 }
-function openMedidas() {
-  sheet(`<h2>Medidas</h2><p class="small muted" style="margin:0">Por la mañana, en ayunas, con cinta métrica y sin apretar. Rellena solo las que te pida Adrián.</p>
-  <form id="f-med" style="display:flex;flex-direction:column;gap:10px"><div class="grid2">${[["cintura", "Cintura (a la altura del ombligo)"], ["cadera", "Cadera (parte más ancha)"], ["pecho", "Pecho"], ["brazo", "Brazo contraído"], ["muslo", "Muslo (parte más ancha)"]].map(([k, l]) => `<div class="f"><label for="m-${k}">${l}</label><input id="m-${k}" name="${k}" inputmode="decimal"></div>`).join("")}</div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+// Tabla con solo las medidas que tienen algún dato
+function medTable(ms) {
+  const ks = MEDIDAS.map(m => m[0]).filter(k => ms.some(m => m[k] != null));
+  return `<table><thead><tr><th>Fecha</th>${ks.map(k => `<th class="n">${esc(medLabel(k))}</th>`).join("")}</tr></thead><tbody>${ms.map(m => `<tr><td>${esc(fdate(m.fecha))}</td>${ks.map(k => `<td class="n">${fmt(m[k])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
 }
-async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; ["cintura", "cadera", "pecho", "brazo", "muslo"].forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await q(sb.from("measurements").insert(row)); await completarAccion("medidas"); sheet(""); toast("Medidas guardadas"); route(); } catch (e) { toast(errMsg(e)); } }
+// El cliente ve solo las medidas que le ha pedido Adrián (si no hay nada pedido, las básicas)
+async function openMedidas(sel) {
+  if (!sel) { const p = await q(sb.from("assignments").select("contenido").eq("tipo", "medidas").eq("hecho", false).lte("fecha", today()).order("fecha", { ascending: false }).limit(1)).catch(() => []); sel = p[0] && (p[0].contenido || {}).medidas; }
+  const ks = (sel && sel.length ? sel : MED_DEF).filter(k => MEDIDAS.some(m => m[0] === k));
+  sheet(`<h2>Medidas</h2><p class="small muted" style="margin:0">Por la mañana, en ayunas, con cinta métrica pegada a la piel y sin apretar. Siempre del mismo lado.</p>
+  <form id="f-med" data-ks="${esc(ks.join(","))}" style="display:flex;flex-direction:column;gap:10px"><div class="grid2">${ks.map(k => { const m = MEDIDAS.find(x => x[0] === k); return `<div class="f"><label for="m-${k}">${esc(m[1])}<br><span class="tiny muted" style="font-weight:400">${esc(m[2])}</span></label><input id="m-${k}" name="${k}" inputmode="decimal" placeholder="cm"></div>`; }).join("")}</div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; f.dataset.ks.split(",").filter(Boolean).forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await q(sb.from("measurements").insert(row)); await completarAccion("medidas"); sheet(""); toast("Medidas guardadas"); route(); } catch (e) { toast(errMsg(e)); } }
 function openFotos() {
   sheet(`<h2>Subir fotos</h2><p class="small muted" style="margin:0">Las fotos se reducen y se les quita la ubicación y los datos de la cámara antes de subirlas.</p>
   <form id="f-fotos" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="ph-v">Vista</label><select id="ph-v" name="vista"><option value="frente">De frente</option><option value="perfil">De perfil</option><option value="espalda">De espaldas</option><option value="otra">Otra</option></select></div><div class="f"><label for="ph-f">Foto</label><input id="ph-f" name="foto" type="file" accept="image/*" required></div><button class="btn pri block">Subir</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
@@ -726,9 +734,9 @@ async function openAsig(id, fecha) {
   if (!x) return; S.sub.asigTipo = x.tipo; S.sub.tpls = tpls;
   const logs = id && x.tipo === "workout" ? await q(sb.from("workouts").select("*").eq("assignment_id", id)) : [];
   const res = (x.resultado && x.resultado.respuestas) || [];
-  sheet(`<h2>${id ? "Editar" : "Nueva"} tarea · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</h2>
+  sheet(`<h2>${id ? "Editar" : "Añadir"} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</h2>
   <form id="f-asig" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:10px">
-  ${!id ? `<div class="seg" role="group" aria-label="Tipo">${[...Object.entries(TIPOS), ["evento", "Evento"]].map(([k, l]) => `<button type="button" data-act="asig-tipo" data-t="${k}" aria-pressed="${x.tipo === k}">${l}</button>`).join("")}</div>` : `<p class="small" style="margin:0">${tipoChip(x.tipo)}${x.hecho ? ` <span class="chip ok">Hecho ${x.hecho_en ? esc(relTime(x.hecho_en)) : ""}</span>` : ""}${x.programa ? ` <span class="chip">${esc(x.programa)}</span>` : ""}</p>`}
+  ${!id ? `<div class="seg wrap" role="group" aria-label="Tipo">${[...Object.entries(TIPOS), ["evento", "Evento"]].map(([k, l]) => `<button type="button" data-act="asig-tipo" data-t="${k}" aria-pressed="${x.tipo === k}">${l}</button>`).join("")}</div>` : `<p class="small" style="margin:0">${tipoChip(x.tipo)}${x.hecho ? ` <span class="chip ok">Hecho ${x.hecho_en ? esc(relTime(x.hecho_en)) : ""}</span>` : ""}${x.programa ? ` <span class="chip">${esc(x.programa)}</span>` : ""}</p>`}
   <div id="asig-body">${asigBody(x, tpls)}</div>
   ${logs.length ? `<div class="card"><h2>Lo que registró</h2>${logs.map(w => `<p class="tiny muted" style="margin:0 0 4px">${esc(fdate(w.fecha))}${w.rpe_sesion != null ? " · dureza " + w.rpe_sesion + "/10" : ""}${w.duracion_min ? " · " + w.duracion_min + " min" : ""}</p><table><tbody>${Object.entries((w.sets || []).reduce((a, s) => { (a[s.ejercicio] = a[s.ejercicio] || []).push(s); return a; }, {})).map(([ex, ss]) => `<tr><td>${esc(ex)}</td><td class="n">${ss.map(s => s.hecho ? "hecho" : `${s.kg ?? "?"}×${s.reps ?? "?"}${s.rir != null ? " @" + s.rir : ""}`).join(" · ")}</td></tr>`).join("")}</tbody></table>${w.comentario ? `<p class="small">${esc(w.comentario)}</p>` : ""}`).join("")}</div>` : ""}
   ${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta ? `<p class="small" style="margin:4px 0"><b>Comentario:</b> ${esc(x.respuesta)}</p>` : ""}</div>` : ""}
@@ -736,15 +744,20 @@ async function openAsig(id, fecha) {
   ${id ? `<div class="row"><input type="date" name="dup_fecha" value="${esc(addDays(x.fecha, 7))}" aria-label="Fecha para duplicar" style="width:auto"><button type="button" class="btn sm" data-act="asig-dup" data-id="${esc(id)}">Duplicar en esa fecha</button><span class="grow"></span><button type="button" class="btn sm ghost" data-act="asig-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button></div>` : ""}
   <button type="button" class="btn ghost" data-act="close">Cerrar</button></form>${exDatalist()}`, "wide");
 }
+function medPicker(sel) {
+  const on = new Set(sel && sel.length ? sel : MED_DEF);
+  return `<fieldset class="medpick"><legend>Qué medidas tiene que tomar <span class="tiny"><button type="button" class="lnk" data-act="med-all" data-v="1">Todas</button> · <button type="button" class="lnk" data-act="med-all" data-v="0">Ninguna</button></span></legend>${MEDIDAS.map(([k, l, d]) => `<label class="mchk"><input type="checkbox" name="med" value="${k}" ${on.has(k) ? "checked" : ""}><span><b>${esc(l)}</b><br><span class="tiny muted">${esc(d)}</span></span></label>`).join("")}</fieldset>`;
+}
 function asigBody(x, tpls) {
   const t = x.tipo; const c = x.contenido || {};
   if (t === "evento") return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="Torneo nacional"></div><div class="f"><label>Tipo de evento</label><select name="ev_tipo">${Object.entries(EV_TIPOS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div></div>
   <div class="grid2"><div class="f"><label>Desde</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div><div class="f"><label>Hasta (opcional)</label><input type="date" name="fin"></div></div>
   <div class="f"><label>Notas</label><textarea name="notas"></textarea></div><label class="small"><input type="checkbox" name="visible" checked> Lo ve el cliente</label>`;
   const opts = tpls.filter(p => (t === "cardio" ? p.tipo === "cardio" : p.tipo === "workout"));
-  return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="${t === "workout" ? "Pierna A" : t === "cardio" ? "Rodaje Z2" : t === "formulario" ? "Revisión semanal" : t === "nota" ? "Buenos días" : "Pesarte en ayunas"}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div></div>
+  return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="${{ workout: "Pierna A", cardio: "Rodaje Z2", formulario: "Revisión semanal", nota: "Buenos días", peso: "Pesarte en ayunas", fotos: "Fotos de progreso", medidas: "Medidas", tarea: "Comprar cinta métrica" }[t] || ""}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div></div>
   ${(t === "workout" || t === "cardio") && opts.length ? `<div class="row"><select id="tpl-sel" aria-label="Cargar de la librería" style="flex:1"><option value="">Cargar de la librería…</option>${opts.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="tpl-load">Cargar</button></div>` : ""}
-  ${t === "tarea" ? `<div class="f"><label>Qué tiene que hacer</label><select name="accion">${ACCIONES.map(([k, l]) => `<option value="${k}" ${(c.accion || "") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">Si eliges registrar peso, fotos, medidas o el cuestionario, al cliente se le abre directamente esa pantalla y la tarea se marca sola cuando lo hace.</p>` : ""}
+  ${t === "medidas" ? medPicker(c.medidas) : ""}
+  ${t === "peso" || t === "fotos" || t === "medidas" ? `<p class="tiny muted" style="margin:0">Al cliente se le abre directamente la pantalla para ${t === "peso" ? "apuntar su peso" : t === "fotos" ? "subir sus fotos" : "apuntar estas medidas"} y se marca como hecho sola cuando lo hace.</p>` : ""}
   ${t === "nota" ? `<div class="f"><label>Hora a la que le aparece</label><input type="time" name="hora" value="${esc(c.hora || "08:00")}"></div>` : ""}
   ${t === "workout" || t === "cardio" ? wEditor(c, t) : t === "formulario" ? `<div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas" style="min-height:120px">${esc((c.preguntas || []).join("\n"))}</textarea></div><div class="f"><label>Instrucciones (opcional)</label><textarea name="detalle">${esc(c.detalle || "")}</textarea></div>` : `<div class="f"><label>${t === "nota" ? "Mensaje" : "Detalle"}</label><textarea name="detalle" style="min-height:120px">${esc(c.detalle || "")}</textarea></div>`}
   <label class="small"><input type="checkbox" name="visible" ${x.visible !== false ? "checked" : ""}> Lo ve el cliente</label>
@@ -760,7 +773,7 @@ async function saveAsig(f) {
       if (tipo === "workout" || tipo === "cardio") { contenido = readWEditor(f, tipo); if (tipo === "workout") await newExercisesFrom(contenido); }
       else if (tipo === "formulario") contenido = { preguntas: lines(f.preguntas.value), detalle: f.detalle.value.trim() };
       else contenido = { detalle: f.detalle.value.trim() };
-      if (tipo === "tarea" && f.accion) contenido.accion = f.accion.value;
+      if (tipo === "medidas") { contenido.medidas = [...f.querySelectorAll("input[name=med]:checked")].map(i => i.value); if (!contenido.medidas.length) { toast("Elige al menos una medida"); return; } }
       if (tipo === "nota" && f.hora) contenido.hora = f.hora.value;
       const row = { titulo: f.titulo.value.trim(), fecha: f.fecha.value, contenido, visible: f.visible.checked };
       if (id) await q(sb.from("assignments").update(row).eq("id", id));
@@ -895,7 +908,7 @@ async function tabEvo(c) {
   } else if (sub === "cuerpo") {
     const [ws, ms] = await Promise.all([q(sb.from("weights").select("fecha,kg").eq("client_id", cid).order("fecha", { ascending: true }).limit(400)), q(sb.from("measurements").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(30))]);
     const byW = {}; ws.forEach(w => { const k = monday(w.fecha); (byW[k] = byW[k] || []).push(+w.kg); });
-    body = `<div class="card"><h2>Peso medio semanal</h2>${lineChart(Object.entries(byW).map(([x, v]) => ({ x, y: avg(v) })), { label: "Peso medio semanal" })}</div><div class="card"><h2>Medidas <small>cm</small></h2>${ms.length ? `<div class="tbl"><table><thead><tr><th>Fecha</th><th class="n">Cintura</th><th class="n">Cadera</th><th class="n">Pecho</th><th class="n">Brazo</th><th class="n">Muslo</th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(fdate(m.fecha))}</td>${["cintura", "cadera", "pecho", "brazo", "muslo"].map(k => `<td class="n">${fmt(m[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="empty">Sin medidas.</div>`}</div>`;
+    body = `<div class="card"><h2>Peso medio semanal</h2>${lineChart(Object.entries(byW).map(([x, v]) => ({ x, y: avg(v) })), { label: "Peso medio semanal" })}</div><div class="card"><h2>Medidas <small>cm</small></h2>${ms.length ? `<div class="tbl">${medTable(ms)}</div>` : `<div class="empty">Sin medidas.</div>`}</div>`;
   } else if (sub === "fotos") {
     const ph = await q(sb.from("photos").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40)); let urls = {};
     if (ph.length) { const { data } = await sb.storage.from("fotos").createSignedUrls(ph.map(p => p.path), 600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); }
@@ -931,7 +944,7 @@ async function autoReport(cid, fin) {
     q(sb.from("weights").select("fecha,kg").eq("client_id", cid).gte("fecha", ini0).lte("fecha", fin)),
     q(sb.from("plans").select("bloques").eq("client_id", cid).limit(1))]);
   const ent = as.filter(a => (a.tipo === "workout" || a.tipo === "cardio") && a.visible), hechos = ent.filter(a => a.hecho).length;
-  const tareas = as.filter(a => (a.tipo === "tarea" || a.tipo === "formulario") && a.visible);
+  const tareas = as.filter(a => ["tarea", "formulario", "peso", "fotos", "medidas"].includes(a.tipo) && a.visible);
   const sue = avg(wl.map(w => num(w.sueno_h)).filter(x => x != null)), bien = avg(wl.map(wellIdx).filter(x => x != null));
   const pw = avg(ws.filter(w => w.fecha >= ini).map(w => +w.kg)), pw0 = avg(ws.filter(w => w.fecha < ini).map(w => +w.kg));
   // mejores marcas de la semana frente a lo anterior
@@ -1485,6 +1498,7 @@ document.addEventListener("click", async ev => {
       case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "peso": openPeso(); break;
       case "medidas": openMedidas(); break;
+      case "med-all": a.closest("fieldset").querySelectorAll("input[name=med]").forEach(i => { i.checked = a.dataset.v === "1"; }); break;
       case "fotos": openFotos(); break;
       case "prog": S.sub.prog = a.dataset.t; viewProgreso(); break;
       case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; viewCal(); break;
