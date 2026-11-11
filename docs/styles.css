@@ -370,3 +370,5 @@ label.small{flex:0 1 auto}
 /* mensajes */
 .msg{all:unset;box-sizing:border-box;cursor:pointer;display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c-nota);border-radius:12px;padding:12px;font-size:14px}
 .msg.leido{opacity:.75;border-left-color:var(--line)}
+
+.upd{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + var(--safe-b,0px));z-index:60;background:#1f2230;color:#fff;border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.18);max-width:calc(100% - 24px)}

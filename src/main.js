@@ -123,6 +123,33 @@ const monday = s => addDays(s, 1 - dow(s));
 const daysBetween = (a, b) => Math.round((parseD(b) - parseD(a)) / 864e5);
 const tipoChip = t => `<span class="tp tp-${esc(t)}">${esc(TIPOS[t] || EV_TIPOS[t] || t)}</span>`;
 
+
+/* ================= Actualización automática ================= */
+// Cada vez que se publica una versión nueva, index.html cambia el ?v= de app.js.
+// La app lo comprueba al volver a abrirla, al cambiar de pantalla y cada 2 minutos.
+// Si no estás escribiendo nada, recarga sola; si hay un formulario a medias, avisa con un botón.
+const MY_V = (document.querySelector('script[src*="app.js"]')?.getAttribute("src") || "").split("v=")[1] || "";
+let dirty = false, updPending = false;
+document.addEventListener("input", () => { dirty = true; }, true);
+window.addEventListener("hashchange", () => { dirty = false; if (updPending) safeReload(); });
+function safeReload() {
+  const busy = dirty || $("#modal-root")?.innerHTML || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
+  if (!busy) { location.reload(); return; }
+  if (!$("#upd-bar")) document.body.insertAdjacentHTML("beforeend", `<div id="upd-bar" class="upd" role="status">Hay una versión nueva de la app <button type="button" class="btn sm pri" onclick="location.reload()">Actualizar</button></div>`);
+}
+async function checkUpdate() {
+  if (!MY_V || updPending || location.protocol !== "https:") return;
+  try {
+    const t = await fetch("./index.html", { cache: "no-store" }).then(r => r.ok ? r.text() : "");
+    const v = (t.match(/app\.js\?v=(\w+)/) || [])[1];
+    if (v && v !== MY_V) { updPending = true; navigator.serviceWorker?.getRegistration().then(r => r?.update()).catch(() => { }); safeReload(); }
+  } catch { }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+window.addEventListener("focus", checkUpdate);
+window.addEventListener("online", checkUpdate);
+setInterval(checkUpdate, 120000);
+
 /* ================= Arranque y acceso ================= */
 const LOGO = `<img class="logo" src="./logo.jpg" alt="">`;
 async function init() {
