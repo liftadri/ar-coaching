@@ -105,7 +105,17 @@ const ICON = {
 };
 const initials = n => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const avatar = (n, cls = "") => `<span class="av ${cls}" aria-hidden="true">${esc(initials(n))}</span>`;
-const TIPOS = { workout: "Workout", cardio: "Cardio", tarea: "Tarea", formulario: "Formulario", nota: "Nota" };
+const TIPOS = { workout: "Workout", cardio: "Cardio", tarea: "Tarea", formulario: "Formulario", nota: "Mensaje" };
+const ACCIONES = [["", "Tarea libre"], ["peso", "Registrar su peso"], ["fotos", "Subir fotos de su físico"], ["medidas", "Tomar medidas"], ["wellness", "Rellenar el cuestionario diario"]];
+// Un mensaje programado no se muestra al cliente hasta su fecha y hora
+const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+const yaVisible = x => x.tipo !== "nota" || x.fecha < today() || (x.fecha === today() && (!(x.contenido || {}).hora || x.contenido.hora <= nowHM()));
+// Al registrar peso, fotos, medidas o cuestionario se completan solas las tareas pendientes de ese tipo (hoy o atrasadas)
+async function completarAccion(accion) {
+  try { const xs = await q(sb.from("assignments").select("id,contenido,hecho,fecha").eq("tipo", "tarea").eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
+    for (const x of xs.filter(x => (x.contenido || {}).accion === accion)) await q(sb.rpc("completar_asignacion", { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null }));
+  } catch { }
+}
 const EV_TIPOS = { competicion: "Competición", test: "Test", control: "Control", recordatorio: "Recordatorio", otro: "Otro" };
 const DSEM = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const dow = s => ((parseD(s).getDay() + 6) % 7) + 1;
@@ -277,13 +287,15 @@ async function getPlan() {
   return S.plan;
 }
 function weekNow(plan, d = today()) { for (const b of plan.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= d && d <= s.fin); if (w) return { ...w, bloque: b.nombre }; } return null; }
-const getAsig = (from, to) => q(sb.from("assignments").select("*").gte("fecha", from).lte("fecha", to).order("fecha").order("orden"));
+const getAsig = async (from, to) => (await q(sb.from("assignments").select("*").gte("fecha", from).lte("fecha", to).order("fecha").order("orden"))).filter(yaVisible);
 function asigRow(x) {
   const t = today(); const late = !x.hecho && x.fecha < t;
   const h = x.tipo === "workout" ? `data-act="go" data-h="a-${esc(x.id)}"` : `data-act="item" data-id="${esc(x.id)}"`;
   const n = x.tipo === "workout" ? ((x.contenido && x.contenido.ejercicios) || []).length : 0;
   const sub = [TIPOS[x.tipo], n ? n + " ejercicios" : "", x.fecha !== t ? (late ? "era para el " : "") + fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
-  return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">Hecho ✓</span>` : `<span class="chip ${late ? "warn" : "acc"}">${x.tipo === "workout" ? "Empezar" : late ? "Pendiente" : "Abrir"}</span>`}</button>`;
+  const acc = x.tipo === "tarea" && (x.contenido || {}).accion;
+  const btn = x.tipo === "workout" ? "Empezar" : x.tipo === "nota" ? "Leer" : acc === "peso" ? "Apuntar" : acc === "fotos" ? "Subir" : acc === "medidas" ? "Medir" : acc === "wellness" ? "Rellenar" : late ? "Pendiente" : "Abrir";
+  return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
 }
 
 /* ================= Cliente: Hoy ================= */
@@ -292,9 +304,11 @@ async function viewHoy() {
   const t = today();
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
   const w = weekNow(plan); const lastW = wt[0];
-  const hoy = asig.filter(x => x.fecha === t), atras = asig.filter(x => x.fecha < t && !x.hecho), prox = asig.filter(x => x.fecha > t).slice(0, 4);
+  const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
+  const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
   <section class="hello"><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2><p>${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}${w ? ` · ${esc(w.bloque)} · ${esc(w.nombre)}` : ""}</p></section>
+  ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${w && w.foco ? `<div class="card"><h2>Esta semana <small>${esc(w.tipo && w.tipo !== "carga" ? cap(w.tipo) : "")}</small></h2><p class="small" style="margin:0">${esc(w.foco)}</p></div>` : ""}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it" style="cursor:default"><span><b>Hoy no tienes entreno</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : "Descansa y recupera"}</span></span></div>`}
@@ -309,6 +323,9 @@ async function viewHoy() {
 }
 async function openItem(id) {
   const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
+  const acc = x.tipo === "tarea" && !x.hecho && (x.contenido || {}).accion;
+  if (acc === "peso") return openPeso(); if (acc === "fotos") return openFotos(); if (acc === "medidas") return openMedidas();
+  if (acc === "wellness") { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); return openWellness(r[0]); }
   const c = x.contenido || {}; const pre = (c.preguntas || []);
   const prevR = (x.resultado && x.resultado.respuestas) || [];
   sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:0">${esc(TIPOS[x.tipo] || "")} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</p>
@@ -428,6 +445,7 @@ function openWellness(prev) {
   <form id="f-well" class="col" style="display:flex;flex-direction:column;gap:14px">
   ${WK.map(([k, l, a, b]) => `<div><div class="small" style="font-weight:700;margin-bottom:6px">${l}</div><div class="scale" role="group" aria-label="${l}">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-act="scale" data-k="${k}" data-v="${n}" aria-pressed="${num(w[k]) === n}">${n}</button>`).join("")}</div><div class="anchors"><span>${a}</span><span>${b}</span></div></div>`).join("")}
   <div class="grid2"><div class="f"><label for="w-h">Horas dormidas</label><input id="w-h" name="sueno_h" inputmode="decimal" value="${esc(w.sueno_h ?? "")}" placeholder="7,5"></div><div class="f"><label for="w-fc">Pulso en reposo (opcional)</label><input id="w-fc" name="fc" inputmode="numeric" value="${esc(w.fc ?? "")}"></div></div>
+  <div class="grid2"><div class="f"><label for="w-hrv">HRV / VFC en ms (si tienes reloj)</label><input id="w-hrv" name="hrv" inputmode="numeric" value="${esc(w.hrv ?? "")}"></div><div class="f"><label for="w-ap">Apetito</label><select id="w-ap" name="apetito"><option value="">—</option>${[[1, "1 · Sin ganas de comer"], [2, "2 · Poco apetito"], [3, "3 · Normal"], [4, "4 · Más hambre de lo normal"], [5, "5 · Hambre voraz"]].map(([v, l]) => `<option value="${v}" ${num(w.apetito) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
   <div class="grid2"><div class="f"><label for="w-mz">¿Alguna molestia? Zona</label><input id="w-mz" name="molestia_zona" value="${esc(w.molestia_zona || "")}" placeholder="Rodilla derecha"></div><div class="f"><label for="w-mi">Dolor 0–10</label><input id="w-mi" name="molestia_0a10" inputmode="numeric" value="${esc(w.molestia_0a10 ?? "")}"></div></div>
   <div class="f"><label for="w-c">Comentario (opcional)</label><textarea id="w-c" name="comentario" maxlength="1000">${esc(w.comentario || "")}</textarea></div>
   <button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
@@ -435,16 +453,16 @@ function openWellness(prev) {
 async function saveWellness(f) {
   const v = S.sub.well || {}; const missing = WK.filter(([k]) => num(v[k]) == null);
   if (missing.length === WK.length) { toast("Marca al menos una respuesta"); return; }
-  const row = { client_id: S.me.cid, fecha: today(), comentario: f.comentario.value.trim(), molestia_zona: f.molestia_zona.value.trim(), sueno_h: num(f.sueno_h.value), fc: num(f.fc.value), molestia_0a10: num(f.molestia_0a10.value) };
+  const row = { client_id: S.me.cid, fecha: today(), comentario: f.comentario.value.trim(), molestia_zona: f.molestia_zona.value.trim(), sueno_h: num(f.sueno_h.value), fc: num(f.fc.value), hrv: num(f.hrv.value), apetito: num(f.apetito.value), molestia_0a10: num(f.molestia_0a10.value) };
   WK.forEach(([k]) => row[k] = num(v[k]));
-  try { await q(sb.from("wellness").upsert(row, { onConflict: "client_id,fecha" })); sheet(""); toast("Guardado. ¡Gracias!"); route(); } catch (e) { toast(errMsg(e)); }
+  try { await q(sb.from("wellness").upsert(row, { onConflict: "client_id,fecha" })); await completarAccion("wellness"); sheet(""); toast("Guardado. ¡Gracias!"); route(); } catch (e) { toast(errMsg(e)); }
 }
 function openPeso() {
   sheet(`<h2>Peso de hoy</h2><p class="small muted" style="margin:0">Mejor por la mañana, en ayunas y después de ir al baño. Lo que cuenta es la media de la semana, no un día suelto.</p>
   <form id="f-peso" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="kg">Kilos</label><input id="kg" name="kg" inputmode="decimal" placeholder="80,5" required></div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
   $("#kg").focus();
 }
-async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })); sheet(""); toast("Peso guardado"); route(); } catch (e) { toast(errMsg(e)); } }
+async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })); await completarAccion("peso"); sheet(""); toast("Peso guardado"); route(); } catch (e) { toast(errMsg(e)); } }
 
 /* ================= Cliente: Progreso ================= */
 async function viewProgreso() {
@@ -489,7 +507,7 @@ function openMedidas() {
   sheet(`<h2>Medidas</h2><p class="small muted" style="margin:0">Por la mañana, en ayunas, con cinta métrica y sin apretar. Rellena solo las que te pida Adrián.</p>
   <form id="f-med" style="display:flex;flex-direction:column;gap:10px"><div class="grid2">${[["cintura", "Cintura (a la altura del ombligo)"], ["cadera", "Cadera (parte más ancha)"], ["pecho", "Pecho"], ["brazo", "Brazo contraído"], ["muslo", "Muslo (parte más ancha)"]].map(([k, l]) => `<div class="f"><label for="m-${k}">${l}</label><input id="m-${k}" name="${k}" inputmode="decimal"></div>`).join("")}</div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
-async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; ["cintura", "cadera", "pecho", "brazo", "muslo"].forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await q(sb.from("measurements").insert(row)); sheet(""); toast("Medidas guardadas"); route(); } catch (e) { toast(errMsg(e)); } }
+async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; ["cintura", "cadera", "pecho", "brazo", "muslo"].forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await q(sb.from("measurements").insert(row)); await completarAccion("medidas"); sheet(""); toast("Medidas guardadas"); route(); } catch (e) { toast(errMsg(e)); } }
 function openFotos() {
   sheet(`<h2>Subir fotos</h2><p class="small muted" style="margin:0">Las fotos se reducen y se les quita la ubicación y los datos de la cámara antes de subirlas.</p>
   <form id="f-fotos" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="ph-v">Vista</label><select id="ph-v" name="vista"><option value="frente">De frente</option><option value="perfil">De perfil</option><option value="espalda">De espaldas</option><option value="otra">Otra</option></select></div><div class="f"><label for="ph-f">Foto</label><input id="ph-f" name="foto" type="file" accept="image/*" required></div><button class="btn pri block">Subir</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
@@ -505,7 +523,7 @@ async function saveFotos(f) {
   const file = f.foto.files[0]; if (!file) return; const b = f.querySelector("button.pri"); b.disabled = true; b.textContent = "Subiendo…";
   try { const blob = await shrink(file); const path = `${S.me.cid}/${today()}-${f.vista.value}-${uid()}.jpg`;
     const { error } = await sb.storage.from("fotos").upload(path, blob, { contentType: "image/jpeg", upsert: false }); if (error) throw error;
-    await q(sb.from("photos").insert({ client_id: S.me.cid, fecha: today(), vista: f.vista.value, path })); sheet(""); toast("Foto subida"); route();
+    await q(sb.from("photos").insert({ client_id: S.me.cid, fecha: today(), vista: f.vista.value, path })); await completarAccion("fotos"); sheet(""); toast("Foto subida"); route();
   } catch (e) { toast(errMsg(e)); b.disabled = false; b.textContent = "Subir"; }
 }
 
@@ -695,10 +713,13 @@ function asigBody(x, tpls) {
   <div class="grid2"><div class="f"><label>Desde</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div><div class="f"><label>Hasta (opcional)</label><input type="date" name="fin"></div></div>
   <div class="f"><label>Notas</label><textarea name="notas"></textarea></div><label class="small"><input type="checkbox" name="visible" checked> Lo ve el cliente</label>`;
   const opts = tpls.filter(p => (t === "cardio" ? p.tipo === "cardio" : p.tipo === "workout"));
-  return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="${t === "workout" ? "Pierna A" : t === "cardio" ? "Rodaje Z2" : t === "formulario" ? "Revisión semanal" : "Qué tiene que hacer"}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div></div>
+  return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="${t === "workout" ? "Pierna A" : t === "cardio" ? "Rodaje Z2" : t === "formulario" ? "Revisión semanal" : t === "nota" ? "Buenos días" : "Pesarte en ayunas"}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div></div>
   ${(t === "workout" || t === "cardio") && opts.length ? `<div class="row"><select id="tpl-sel" aria-label="Cargar de la librería" style="flex:1"><option value="">Cargar de la librería…</option>${opts.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="tpl-load">Cargar</button></div>` : ""}
+  ${t === "tarea" ? `<div class="f"><label>Qué tiene que hacer</label><select name="accion">${ACCIONES.map(([k, l]) => `<option value="${k}" ${(c.accion || "") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">Si eliges registrar peso, fotos, medidas o el cuestionario, al cliente se le abre directamente esa pantalla y la tarea se marca sola cuando lo hace.</p>` : ""}
+  ${t === "nota" ? `<div class="f"><label>Hora a la que le aparece</label><input type="time" name="hora" value="${esc(c.hora || "08:00")}"></div>` : ""}
   ${t === "workout" || t === "cardio" ? wEditor(c, t) : t === "formulario" ? `<div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas" style="min-height:120px">${esc((c.preguntas || []).join("\n"))}</textarea></div><div class="f"><label>Instrucciones (opcional)</label><textarea name="detalle">${esc(c.detalle || "")}</textarea></div>` : `<div class="f"><label>${t === "nota" ? "Mensaje" : "Detalle"}</label><textarea name="detalle" style="min-height:120px">${esc(c.detalle || "")}</textarea></div>`}
-  <label class="small"><input type="checkbox" name="visible" ${x.visible !== false ? "checked" : ""}> Lo ve el cliente</label>`;
+  <label class="small"><input type="checkbox" name="visible" ${x.visible !== false ? "checked" : ""}> Lo ve el cliente</label>
+  ${!x.id ? `<div class="grid2"><div class="f"><label>Repetir</label><select name="rep"><option value="">No repetir</option><option value="1">Cada día</option><option value="2">Cada 2 días</option><option value="7">Cada semana</option></select></div><div class="f"><label>Hasta el</label><input type="date" name="rep_hasta"></div></div>` : ""}`;
 }
 async function saveAsig(f) {
   const id = f.dataset.id; const tipo = S.sub.asigTipo; const cid = S.coach.cid;
@@ -710,9 +731,16 @@ async function saveAsig(f) {
       if (tipo === "workout" || tipo === "cardio") { contenido = readWEditor(f, tipo); if (tipo === "workout") await newExercisesFrom(contenido); }
       else if (tipo === "formulario") contenido = { preguntas: lines(f.preguntas.value), detalle: f.detalle.value.trim() };
       else contenido = { detalle: f.detalle.value.trim() };
+      if (tipo === "tarea" && f.accion) contenido.accion = f.accion.value;
+      if (tipo === "nota" && f.hora) contenido.hora = f.hora.value;
       const row = { titulo: f.titulo.value.trim(), fecha: f.fecha.value, contenido, visible: f.visible.checked };
       if (id) await q(sb.from("assignments").update(row).eq("id", id));
-      else await q(sb.from("assignments").insert({ ...row, client_id: cid, tipo }));
+      else {
+        const paso = f.rep ? +f.rep.value : 0, hasta = f.rep_hasta ? f.rep_hasta.value : "";
+        const fechas = [row.fecha]; if (paso && hasta > row.fecha) for (let d = addDays(row.fecha, paso); d <= hasta && fechas.length < 120; d = addDays(d, paso)) fechas.push(d);
+        await q(sb.from("assignments").insert(fechas.map(fe => ({ ...row, fecha: fe, client_id: cid, tipo }))));
+        if (fechas.length > 1) toast(`${fechas.length} creadas`);
+      }
     }
     sheet(""); toast("Guardado"); S.coach.keep = true; S.coach.calM = f.fecha.value.slice(0, 7); viewCoachClient(cid);
   } catch (e) { toast(errMsg(e)); }
@@ -813,10 +841,11 @@ async function saveInfo(f) {
 }
 
 /* ---- Evolución ---- */
-const EVO = [["actividad", "Actividad"], ["entrenos", "Entrenos"], ["fuerza", "Fuerza"], ["wellness", "Cuestionarios"], ["cuerpo", "Peso y medidas"], ["fotos", "Fotos"], ["tests", "Tests"]];
+const EVO = [["recuperacion", "Recuperación"], ["actividad", "Actividad"], ["entrenos", "Entrenos"], ["fuerza", "Fuerza"], ["wellness", "Cuestionarios"], ["cuerpo", "Peso y medidas"], ["fotos", "Fotos"], ["tests", "Tests"]];
 async function tabEvo(c) {
-  const sub = S.coach.evo || "actividad"; const cid = c.id; let body = "";
-  if (sub === "actividad") {
+  const sub = S.coach.evo || "recuperacion"; const cid = c.id; let body = "";
+  if (sub === "recuperacion") body = await tabRecup(c);
+  else if (sub === "actividad") {
     const as = await q(sb.from("assignments").select("*").eq("client_id", cid).lte("fecha", today()).gte("fecha", addDays(today(), -28)).order("fecha", { ascending: false }));
     const byW = {}; as.forEach(x => { const k = monday(x.fecha); (byW[k] = byW[k] || []).push(x); });
     body = `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
@@ -1021,6 +1050,78 @@ async function saveProg(f) {
   try { if (f.dataset.id !== "new") { await q(sb.from("programs").update(row).eq("id", f.dataset.id)); toast("Programa guardado"); } else { const r = await q(sb.from("programs").insert(row).select("id")); toast("Programa creado"); location.hash = "lib-p-" + r[0].id; } } catch (e) { toast(errMsg(e)); }
 }
 
+
+/* ================= Recuperación (entrenador) ================= */
+// Gráfica de varias series con banda opcional; tooltip con todos los valores del día
+function multiChart(days, series, o = {}) {
+  const W = 620, H = o.h || 220, P = { l: 40, r: 16, t: 12, b: 24 };
+  const vals = series.flatMap(s => days.map(d => s.v[d]).filter(v => v != null)).concat((o.band ? days.flatMap(d => o.band[d] ? [o.band[d][0], o.band[d][1]] : []) : []), o.ref != null ? [o.ref] : []);
+  if (vals.length < 2) return `<div class="empty">${esc(o.empty || "Aún no hay suficientes datos")}</div>`;
+  let y0 = o.yMin ?? Math.min(...vals), y1 = o.yMax ?? Math.max(...vals); if (o.yMin == null) { const pd = (y1 - y0) * .12 || 1; y0 -= pd; y1 += pd; }
+  const tk = niceTicks(y0, y1, 4); if (o.yMin == null) { y0 = tk[0]; y1 = tk[tk.length - 1]; }
+  const n = days.length, X = i => P.l + (n === 1 ? 0 : i / (n - 1)) * (W - P.l - P.r), Y = v => P.t + (1 - (v - y0) / (y1 - y0 || 1)) * (H - P.t - P.b);
+  let g = tk.filter(v => v >= y0 && v <= y1).map(v => `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v, o.dec ?? 0)}</text>`).join("");
+  if (o.band) { const up = [], lo = []; days.forEach((d, i) => { if (o.band[d]) { up.push([X(i), Y(o.band[d][1])]); lo.unshift([X(i), Y(o.band[d][0])]); } }); if (up.length > 1) g += `<path d="M${[...up, ...lo].map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L")} Z" fill="var(--ok)" opacity=".13"/>`; }
+  if (o.ref != null) g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(o.ref)}" y2="${Y(o.ref)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+  if (o.bars) { const bw = Math.max(2, (W - P.l - P.r) / n * .62); const s0 = series[0]; g += days.map((d, i) => s0.v[d] != null ? `<rect x="${X(i) - bw / 2}" y="${Y(Math.max(s0.v[d], y0))}" width="${bw}" height="${Math.max(0, Y(y0) - Y(Math.max(s0.v[d], y0)))}" rx="2" fill="${o.barColor ? o.barColor(s0.v[d], d) : s0.color}"/>` : "").join(""); }
+  series.forEach((sr, si) => { if (o.bars && si === 0) return; let dd = "", on = false; days.forEach((d, i) => { const v = sr.v[d]; if (v == null) { on = false; return; } dd += (on ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1) + " "; on = true; });
+    g += `<path d="${dd}" fill="none" stroke="${sr.color}" stroke-width="${sr.w || 2}" ${sr.dash ? `stroke-dasharray="${sr.dash}"` : ""} stroke-linejoin="round"/>`;
+    if (sr.dots) g += days.map((d, i) => sr.v[d] != null ? `<circle cx="${X(i)}" cy="${Y(sr.v[d])}" r="2.4" fill="${sr.color}"/>` : "").join(""); });
+  const step = Math.max(1, Math.ceil(n / 6)); g += days.map((d, i) => i % step === 0 || i === n - 1 ? `<text x="${X(i)}" y="${H - 5}" text-anchor="middle">${esc(fdate(d))}</text>` : "").join("");
+  g += `<line class="guide" x1="0" x2="0" y1="${P.t}" y2="${H - P.b}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/><circle class="hl" r="5" fill="${series[0].color}" stroke="#fff" stroke-width="2" style="display:none"/>`;
+  const data = days.map((d, i) => { const main = series.find(sr => sr.v[d] != null); return [+X(i).toFixed(1), main ? +Y(main.v[d]).toFixed(1) : Y(y0), fdate(d, { weekday: "short", day: "numeric", month: "short" }) + " · " + series.map(sr => sr.v[d] != null ? `${sr.name} ${fmt(sr.v[d], sr.dec ?? o.dec ?? 0)}${o.unit ? " " + o.unit : ""}` : "").filter(Boolean).join(" · ") + (o.band && o.band[d] ? ` · normal ${fmt(o.band[d][0])}–${fmt(o.band[d][1])}` : "")]; }).filter(p => series.some(sr => true));
+  return `<div class="chart" data-pts="${esc(JSON.stringify(data))}" data-w="${W}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || "Gráfica")}">${g}</svg><div class="ctip" role="status" hidden></div></div>
+  <div class="leg tiny muted">${series.map(sr => `<span><i style="background:${sr.color}"></i>${esc(sr.name)}</span>`).join("")}${o.band ? `<span><i style="background:var(--ok);opacity:.4"></i>${esc(o.bandName || "Rango normal")}</span>` : ""}${o.ref != null ? `<span><i style="background:var(--muted)"></i>${esc(o.refName || "Referencia")}</span>` : ""}</div>`;
+}
+const meanOf = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const sdOf = a => { if (a.length < 2) return null; const m = meanOf(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
+function rolling(days, v, n, minN = 3) { const out = {}; days.forEach((d, i) => { const w = days.slice(Math.max(0, i - n + 1), i + 1).map(x => v[x]).filter(x => x != null); if (w.length >= minN) out[d] = meanOf(w); }); return out; }
+async function tabRecup(c) {
+  const t = today(), d0 = addDays(t, -119), win = +(S.coach.recW || 42);
+  const [wl, wo] = await Promise.all([q(sb.from("wellness").select("*").eq("client_id", c.id).gte("fecha", d0).order("fecha")), q(sb.from("workouts").select("fecha,rpe_sesion,duracion_min,dia").eq("client_id", c.id).gte("fecha", d0).order("fecha"))]);
+  const all = []; for (let d = d0; d <= t; d = addDays(d, 1)) all.push(d);
+  const days = all.slice(-win);
+  const by = k => { const o = {}; wl.forEach(w => { if (num(w[k]) != null) o[w.fecha] = num(w[k]); }); return o; };
+  const hrv = by("hrv"), fc = by("fc"), sh = by("sueno_h"), wi = {}; wl.forEach(w => { const v = wellIdx(w); if (v != null) wi[w.fecha] = v; });
+  // HRV: línea base de 60 días con ln(HRV) ± 0,5 DE (necesita 14 días con dato)
+  const hrv7 = rolling(all, hrv, 7), band = {};
+  all.forEach((d, i) => { const prev = all.slice(Math.max(0, i - 60), i).map(x => hrv[x]).filter(x => x != null && x > 0).map(Math.log); if (prev.length >= 14) { const m = meanOf(prev), sd = sdOf(prev); band[d] = [Math.exp(m - 0.5 * sd), Math.exp(m + 0.5 * sd)]; } });
+  const fc7 = rolling(all, fc, 7), fcBase = {}; all.forEach((d, i) => { const prev = all.slice(Math.max(0, i - 30), i).map(x => fc[x]).filter(x => x != null); if (prev.length >= 10) { const m = meanOf(prev), sd = sdOf(prev) || 1; fcBase[d] = [m - sd, m + sd]; } });
+  const wi7 = rolling(all, wi, 7);
+  // Carga interna (RPE de sesión × minutos, Foster)
+  const load = {}; wo.forEach(w => { if (w.rpe_sesion != null && w.duracion_min) load[w.fecha] = (load[w.fecha] || 0) + w.rpe_sesion * w.duracion_min; });
+  const sumR = (end, n) => { let s = 0; for (let k = 0; k < n; k++) s += load[addDays(end, -k)] || 0; return s; };
+  const acwr = {}; all.forEach(d => { const ch = sumR(d, 28) / 4; if (ch > 0 && Object.keys(load).some(x => x <= addDays(d, -21))) acwr[d] = sumR(d, 7) / ch; });
+  const lastW = Array.from({ length: 7 }, (_, k) => load[addDays(t, -k)] || 0), mono = sdOf(lastW) ? meanOf(lastW) / sdOf(lastW) : null, strain = mono ? lastW.reduce((a, b) => a + b, 0) * mono : null;
+  // Alertas
+  const al = [], ok = [];
+  const lastIn = o => { for (let k = 0; k < 4; k++) { const d = addDays(t, -k); if (o[d] != null) return { d, v: o[d] }; } return null; };
+  const h7 = lastIn(hrv7); if (h7 && band[h7.d]) { if (h7.v < band[h7.d][0]) al.push(`HRV media 7 días ${fmt(h7.v)} ms por debajo de su rango normal (${fmt(band[h7.d][0])}–${fmt(band[h7.d][1])}): posible fatiga acumulada, estrés o enfermedad.`); else ok.push(`HRV dentro de su rango normal (${fmt(h7.v)} ms).`); } else if (Object.keys(hrv).length) ok.push("HRV: hacen falta 14 días con dato para calcular su rango normal.");
+  const f7 = lastIn(fc7); if (f7 && fcBase[f7.d]) { if (f7.v > fcBase[f7.d][1]) al.push(`FC en reposo media ${fmt(f7.v)} lpm, más alta de lo habitual (${fmt(fcBase[f7.d][0])}–${fmt(fcBase[f7.d][1])}).`); else ok.push(`FC en reposo normal (${fmt(f7.v)} lpm).`); }
+  const w7 = lastIn(wi7); const w28 = meanOf(all.slice(-28).map(d => wi[d]).filter(x => x != null)); if (w7 && w28) { if (w7.v < w28 - 0.4) al.push(`Bienestar de la última semana (${fmt(w7.v, 2)}) por debajo de su media de 4 semanas (${fmt(w28, 2)}).`); else ok.push(`Bienestar estable (${fmt(w7.v, 2)} de 5).`); }
+  const s7 = meanOf(all.slice(-7).map(d => sh[d]).filter(x => x != null)); if (s7 != null) (s7 < 7 ? al : ok).push(`Sueño medio de la última semana: ${fmt(s7)} h${s7 < 7 ? " (por debajo de 7 h)" : ""}.`);
+  const ac = lastIn(acwr); if (ac) { if (ac.v > 1.5) al.push(`Ratio de carga aguda:crónica ${fmt(ac.v, 2)}: subida brusca de carga (riesgo por encima de 1,5).`); else if (ac.v < 0.8) al.push(`Ratio de carga aguda:crónica ${fmt(ac.v, 2)}: está entrenando bastante menos de lo habitual.`); else ok.push(`Carga bien progresada (ratio agudo:crónico ${fmt(ac.v, 2)}).`); }
+  if (mono != null && mono > 2) al.push(`Monotonía alta (${fmt(mono, 1)}): cargas muy parecidas todos los días; alterna días duros y suaves.`);
+  const mol = wl.filter(w => w.molestia_zona && w.fecha >= addDays(t, -14)); if (mol.length) al.push(`Molestias en los últimos 14 días: ${mol.map(m => `${m.molestia_zona} ${m.molestia_0a10 ?? "?"}/10 (${fdate(m.fecha)})`).join(" · ")}.`);
+  // Mapa de calor del cuestionario
+  const IT = [...WK.map(([k, l]) => [k, l]), ["apetito", "Apetito (3 = óptimo)"]];
+  const hd = days.slice(-28);
+  const col = (k, v) => { if (v == null) return "transparent"; const sc = k === "apetito" ? 5 - Math.abs(v - 3) * 2 : v; return ["#e5484d", "#f08c4b", "#f2c94c", "#8fcf6b", "#2f9e6e"][Math.max(0, Math.min(4, Math.round(sc) - 1))]; };
+  const heat = `<div class="heat" style="--n:${hd.length}"><span></span>${hd.map(d => `<span class="hdd">${dow(d) === 1 ? esc(fdate(d)) : ""}</span>`).join("")}${IT.map(([k, l]) => `<span class="hl2">${esc(l)}</span>${hd.map(d => { const w = wl.find(x => x.fecha === d); const v = w ? num(w[k]) : null; return `<span class="hc" style="background:${col(k, v)}" title="${esc(fdate(d, { weekday: "short", day: "numeric", month: "short" }) + " · " + l + ": " + (v ?? "—"))}">${v ?? ""}</span>`; }).join("")}`).join("")}</div>`;
+  const W = [[28, "4 semanas"], [42, "6 semanas"], [84, "12 semanas"], [120, "4 meses"]];
+  return `<div class="row" style="flex-wrap:wrap"><div class="subtabs">${W.map(([n, l]) => `<button data-act="rec-w" data-n="${n}" aria-current="${win === n}">${l}</button>`).join("")}</div><span class="grow"></span><span class="tiny muted">Pasa el ratón por las gráficas para ver cada día.</span></div>
+  ${al.length || ok.length ? `<div class="card"><h2 class="hh">${ICON.evo}Estado de recuperación</h2>${al.map(a => `<div class="alr bad">⚠ ${esc(a)}</div>`).join("")}${ok.map(a => `<div class="alr ok">✓ ${esc(a)}</div>`).join("")}</div>` : ""}
+  <div class="cols2">
+  <div class="card"><h2>HRV / VFC <small>ms</small></h2>${multiChart(days, [{ name: "HRV", color: "#2b7de9", v: hrv, w: 1.4, dots: true }, { name: "Media 7 días", color: "#173f8a", v: hrv7, w: 2.6 }], { band, bandName: "Rango normal (60 días)", empty: "Sin datos de HRV" })}<p class="tiny muted">Lo que cuenta es la media de 7 días frente a su rango normal (media de 60 días ± 0,5 desviaciones sobre el logaritmo). Por debajo del rango de forma mantenida = peor recuperación.</p></div>
+  <div class="card"><h2>FC en reposo <small>lpm</small></h2>${multiChart(days, [{ name: "FC", color: "#e5484d", v: fc, w: 1.4, dots: true }, { name: "Media 7 días", color: "#8c1d22", v: fc7, w: 2.6 }], { band: fcBase, bandName: "Habitual (30 días ± 1 DE)", empty: "Sin datos de FC en reposo" })}<p class="tiny muted">Si sube de forma mantenida por encima de lo habitual suele indicar fatiga, estrés, mal sueño o que se está poniendo malo.</p></div>
+  <div class="card"><h2>Sueño <small>horas</small></h2>${multiChart(days, [{ name: "Horas", color: "#7c5cff", v: sh, dec: 1 }], { bars: true, ref: 7, refName: "7 h", yMin: 0, yMax: Math.max(10, ...Object.values(sh)), barColor: v => v < 6 ? "#e5484d" : v < 7 ? "#f2c94c" : "#7c5cff", dec: 1, empty: "Sin datos de sueño" })}</div>
+  <div class="card"><h2>Bienestar general <small>1–5</small></h2>${multiChart(days, [{ name: "Bienestar", color: "#2f9e6e", v: wi, w: 1.4, dots: true, dec: 2 }, { name: "Media 7 días", color: "#16603f", v: wi7, w: 2.6, dec: 2 }], { yMin: 1, yMax: 5, dec: 1, empty: "Sin cuestionarios" })}</div>
+  <div class="card"><h2>Carga interna <small>RPE × minutos</small></h2>${multiChart(days, [{ name: "Carga", color: "#f39c12", v: load }], { bars: true, yMin: 0, empty: "Hace falta que registre dureza y minutos al terminar los entrenos" })}<div class="kpis"><div class="kpi"><span>Carga 7 días</span><b>${fmt(sumR(t, 7), 0)}</b><em>UA</em></div><div class="kpi"><span>Media semanal (28 d)</span><b>${fmt(sumR(t, 28) / 4, 0)}</b><em>UA</em></div><div class="kpi"><span>Monotonía</span><b>${mono != null ? fmt(mono, 1) : "—"}</b><em>&gt; 2 = poco variada</em></div><div class="kpi"><span>Strain</span><b>${strain != null ? fmt(strain, 0) : "—"}</b><em>carga × monotonía</em></div></div></div>
+  <div class="card"><h2>Ratio agudo:crónico</h2>${multiChart(days, [{ name: "ACWR", color: "#22242f", v: acwr, dec: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Hacen falta 3–4 semanas de entrenos con dureza registrada" })}</div>
+  </div>
+  <div class="card"><h2>Cuestionario diario <small>últimos 28 días · 5 = mejor</small></h2>${heat}</div>`;
+}
+
 /* ================= Nutrición ================= */
 const go = h => { if (location.hash === "#" + h) route(); else location.hash = h; };
 async function signedUrls(paths) { const out = {}; const ps = paths.filter(Boolean); if (ps.length) { const { data } = await sb.storage.from("fotos").createSignedUrls(ps, 600); (data || []).forEach(d => { if (d.signedUrl) out[d.path] = d.signedUrl; }); } return out; }
@@ -1054,7 +1155,7 @@ async function preloadPlan(n) {
 }
 async function signedRecetas(paths) { const out = {}; const ps = paths.filter(Boolean); if (ps.length) { const { data } = await sb.storage.from("recetas").createSignedUrls(ps, 3600); (data || []).forEach(d => { if (d.signedUrl) out[d.path] = d.signedUrl; }); } return out; }
 const itemName = it => it.receta_id && N.recipes[it.receta_id] ? N.recipes[it.receta_id].nombre : it.food_id && N.foods[it.food_id] ? N.foods[it.food_id].nombre + (N.foods[it.food_id].marca ? ` (${N.foods[it.food_id].marca})` : "") : it.nombre || "";
-const itemQty = it => it.receta_id ? `${fmt(+it.raciones || 1)} ración${(+it.raciones || 1) === 1 ? "" : "es"}` : `${fmt(+it.g || 0, 0)} g${it.food_id && N.foods[it.food_id] && N.foods[it.food_id].racion_g && it.g ? ` (≈ ${fmt((+it.g) / N.foods[it.food_id].racion_g, 1)} × ${esc(N.foods[it.food_id].racion_nombre || "ración")})` : ""}`;
+const itemQty = it => it.receta_id ? `${fmt(+it.raciones || 1)} ración${(+it.raciones || 1) === 1 ? "" : "es"}` : `${fmt(+it.g || 0, 0)} g en crudo${it.food_id && N.foods[it.food_id] && N.foods[it.food_id].racion_g && it.g ? ` (≈ ${fmt((+it.g) / N.foods[it.food_id].racion_g, 1)} × ${esc(N.foods[it.food_id].racion_nombre || "ración")})` : ""}`;
 
 /* ---------- Calculadora (método factorial) ---------- */
 function calcKcal(c) {
@@ -1139,7 +1240,7 @@ function planEditorHTML() {
   const n = N.plan; const obj = n.objetivo;
   const day = sumM((n.comidas || []).map(cm => cm.opciones && cm.opciones[0] ? optMacros(cm.opciones[0]) : { kcal: 0, prot: 0, hc: 0, grasa: 0 }));
   return `<div class="card"><div class="row" style="flex-wrap:wrap"><label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-n="activo" ${n.activo ? "checked" : ""}> Plan visible para el cliente</label><label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-n="mostrar_objetivo" ${n.mostrar_objetivo !== false ? "checked" : ""}> Mostrarle sus kcal y macros</label><label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-n="registro" ${n.registro !== false ? "checked" : ""}> Permitir que registre lo que come (opcional para él)</label><span class="grow"></span><button class="btn pri" data-act="n-save">Guardar plan</button></div>
-  ${obj ? `<div class="objline"><b>Objetivo:</b> ${esc(mTxt(obj))} <button class="btn ghost sm" data-act="n-sub" data-t="calc">Cambiar en la calculadora</button></div>${mBar(day, obj)}<p class="tiny muted" style="margin:4px 0 0">Total del día sumando la opción 1 de cada comida.</p>` : `<div class="objline">Sin objetivo de kcal. <button class="btn sm" data-act="n-sub" data-t="calc">Calcular</button></div>`}</div>
+  ${obj ? `<div class="objline"><b>Objetivo:</b> ${esc(mTxt(obj))} <button class="btn ghost sm" data-act="n-sub" data-t="calc">Cambiar en la calculadora</button></div>${mBar(day, obj)}<p class="tiny muted" style="margin:4px 0 0">Total del día sumando la opción 1 de cada comida. Todas las cantidades van en crudo.</p>` : `<div class="objline">Sin objetivo de kcal. <button class="btn sm" data-act="n-sub" data-t="calc">Calcular</button></div>`}</div>
   ${(n.comidas || []).map((cm, ci) => comidaHTML(cm, ci, obj)).join("")}
   <div class="row" style="flex-wrap:wrap"><select id="n-new-comida" aria-label="Comida a añadir">${COMIDAS.map(x => `<option>${x}</option>`).join("")}<option value="">Otra…</option></select><button class="btn" data-act="n-comida-add">+ Añadir comida</button></div>`;
 }
@@ -1147,7 +1248,7 @@ function comidaHTML(cm, ci, obj) {
   const opts = cm.opciones || [];
   return `<div class="card comida"><div class="row"><input class="ctit" value="${esc(cm.nombre)}" data-n-cm="${ci}" aria-label="Nombre de la comida"><input class="chora" value="${esc(cm.hora || "")}" placeholder="Hora (opcional)" data-n-hora="${ci}" aria-label="Hora"><span class="grow"></span><button class="btn ghost sm" data-act="n-cm-up" data-ci="${ci}" aria-label="Subir">↑</button><button class="btn ghost sm" data-act="n-cm-del" data-ci="${ci}">Quitar comida</button></div>
   <div class="opts">${opts.map((o, oi) => { const m = optMacros(o); return `<div class="opt"><div class="row"><input class="otit" value="${esc(o.nombre || `Opción ${oi + 1}`)}" data-n-on="${ci}.${oi}" aria-label="Nombre de la opción"><span class="grow"></span><button class="btn ghost sm" data-act="n-opt-dup" data-k="${ci}.${oi}">Duplicar</button><button class="btn ghost sm" data-act="n-opt-del" data-k="${ci}.${oi}" aria-label="Quitar opción">✕</button></div>
-    <div class="items">${(o.items || []).map((it, ii) => `<div class="itm"><span class="grow">${it.receta_id ? `<span class="tag tag-nota">Receta</span> ` : ""}${esc(itemName(it))}</span>${it.receta_id ? `<input class="g" inputmode="decimal" value="${esc(it.raciones || 1)}" data-n-r="${ci}.${oi}.${ii}" aria-label="Raciones"><span class="tiny">rac.</span>` : `<input class="g" inputmode="decimal" value="${esc(it.g || "")}" data-n-g="${ci}.${oi}.${ii}" aria-label="Gramos"><span class="tiny">g</span>`}<span class="tiny muted mm">${r0(itemMacros(it).kcal)} kcal</span><button class="btn ghost sm" data-act="n-it-del" data-k="${ci}.${oi}.${ii}" aria-label="Quitar">✕</button></div>`).join("") || `<p class="tiny muted" style="margin:4px 0">Sin alimentos todavía.</p>`}</div>
+    <div class="items">${(o.items || []).map((it, ii) => `<div class="itm"><span class="grow">${it.receta_id ? `<span class="tag tag-nota">Receta</span> ` : ""}${esc(itemName(it))}</span>${it.receta_id ? `<input class="g" inputmode="decimal" value="${esc(it.raciones || 1)}" data-n-r="${ci}.${oi}.${ii}" aria-label="Raciones"><span class="tiny">rac.</span>` : `<input class="g" inputmode="decimal" value="${esc(it.g || "")}" data-n-g="${ci}.${oi}.${ii}" aria-label="Gramos en crudo"><span class="tiny">g crudo</span>`}<span class="tiny muted mm">${r0(itemMacros(it).kcal)} kcal</span><button class="btn ghost sm" data-act="n-it-del" data-k="${ci}.${oi}.${ii}" aria-label="Quitar">✕</button></div>`).join("") || `<p class="tiny muted" style="margin:4px 0">Sin alimentos todavía.</p>`}</div>
     <div class="fsearch"><input placeholder="Añadir alimento o receta (pollo, avena, Hacendado…)" data-n-search="${ci}.${oi}" aria-label="Buscar alimento"><div class="fres" hidden></div></div>
     <div class="f"><input value="${esc(o.notas || "")}" data-n-notas="${ci}.${oi}" placeholder="Notas de la opción (preparación, alternativas…)" aria-label="Notas"></div>
     <div class="omac"><b>${r0(m.kcal)} kcal</b> · P ${r0(m.prot)} · HC ${r0(m.hc)} · G ${r0(m.grasa)}</div></div>`; }).join("")}
@@ -1210,7 +1311,7 @@ async function renderRecipe() {
   const r = N.rec; const urls = await signedRecetas([r.foto_path]); const m = sumM((r.ingredientes || []).map(i => N.foods[i.food_id] ? macroOf(N.foods[i.food_id], +i.g || 0) : { kcal: 0, prot: 0, hc: 0, grasa: 0 })); const k = 1 / (+r.raciones || 1);
   shell(r.nombre, `<form id="f-rec" style="display:flex;flex-direction:column;gap:12px"><div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="grid3"><div class="f"><label>Nombre</label><input name="nombre" value="${esc(r.nombre)}" required></div><div class="f"><label>Raciones que salen</label><input name="raciones" inputmode="decimal" value="${esc(r.raciones)}"></div><div class="f"><label>Foto</label><input name="foto" type="file" accept="image/*"></div></div>
   ${r.foto_path && urls[r.foto_path] ? `<img class="recimg" src="${esc(urls[r.foto_path])}" alt="Foto de ${esc(r.nombre)}">` : ""}
-  <div class="small" style="font-weight:700">Ingredientes (receta completa)</div><div class="items">${(r.ingredientes || []).map((i, ii) => `<div class="itm"><span class="grow">${esc(N.foods[i.food_id] ? N.foods[i.food_id].nombre + (N.foods[i.food_id].marca ? " (" + N.foods[i.food_id].marca + ")" : "") : i.nombre || "?")}</span><input class="g" inputmode="decimal" value="${esc(i.g)}" data-rec-g="${ii}" aria-label="Gramos"><span class="tiny">g</span><button type="button" class="btn ghost sm" data-act="rec-ing-del" data-i="${ii}" aria-label="Quitar">✕</button></div>`).join("") || `<p class="tiny muted">Añade ingredientes con el buscador.</p>`}</div>
+  <div class="small" style="font-weight:700">Ingredientes (receta completa, pesados en crudo)</div><div class="items">${(r.ingredientes || []).map((i, ii) => `<div class="itm"><span class="grow">${esc(N.foods[i.food_id] ? N.foods[i.food_id].nombre + (N.foods[i.food_id].marca ? " (" + N.foods[i.food_id].marca + ")" : "") : i.nombre || "?")}</span><input class="g" inputmode="decimal" value="${esc(i.g)}" data-rec-g="${ii}" aria-label="Gramos en crudo"><span class="tiny">g crudo</span><button type="button" class="btn ghost sm" data-act="rec-ing-del" data-i="${ii}" aria-label="Quitar">✕</button></div>`).join("") || `<p class="tiny muted">Añade ingredientes con el buscador.</p>`}</div>
   <div class="fsearch"><input placeholder="Añadir ingrediente…" data-rec-search="1" aria-label="Buscar ingrediente"><div class="fres" hidden></div></div>
   <div class="omac"><b>Por ración:</b> ${esc(mTxt({ kcal: m.kcal * k, prot: m.prot * k, hc: m.hc * k, grasa: m.grasa * k }))} · <span class="muted">Total: ${r0(m.kcal)} kcal</span></div>
   <div class="f"><label>Preparación (un paso por línea)</label><textarea name="pasos" style="min-height:120px">${esc(r.pasos || "")}</textarea></div><div class="f"><label>Notas</label><input name="notas" value="${esc(r.notas || "")}"></div></div>
@@ -1237,6 +1338,7 @@ async function viewNutri() {
   const recs = [...new Set(n.comidas.flatMap(c => (c.opciones || []).flatMap(o => (o.items || []).map(i => i.receta_id).filter(Boolean))))];
   const urls = await signedRecetas(recs.map(id => N.recipes[id] && N.recipes[id].foto_path));
   shell("Nutrición", `${n.objetivo && n.mostrar_objetivo !== false ? `<div class="card"><h2>Tu objetivo diario</h2><div class="macros"><div><span>Energía</span><b>${r0(n.objetivo.kcal)} kcal</b></div><div><span>Proteína</span><b>${r0(n.objetivo.prot)} g</b></div><div><span>Hidratos</span><b>${r0(n.objetivo.hc)} g</b></div><div><span>Grasa</span><b>${r0(n.objetivo.grasa)} g</b></div></div><p class="tiny muted" style="margin:6px 0 0">Elige en cada comida la opción que más te apetezca: todas están pensadas para encajar en tu día.</p></div>` : ""}
+  <div class="banner crudo"><b>Pesa siempre en crudo:</b> todas las cantidades son del alimento antes de cocinarlo (arroz, pasta, carne, legumbre seca…).</div>
   ${n.comidas.map((cm, ci) => { const reg = logs.find(l => l.comida === cm.nombre); const sel = S.sub["nopt" + ci] || 0; const o = cm.opciones[sel] || cm.opciones[0]; if (!o) return ""; const m = optMacros(o);
     return `<div class="card"><h2>${esc(cm.nombre)}${cm.hora ? ` <small>${esc(cm.hora)}</small>` : ""}${reg ? ` <span class="done">Registrado ✓</span>` : ""}</h2>
     ${cm.opciones.length > 1 ? `<div class="seg optseg" role="group" aria-label="Opciones de ${esc(cm.nombre)}">${cm.opciones.map((op, oi) => `<button data-act="n-copt" data-ci="${ci}" data-oi="${oi}" aria-pressed="${oi === sel}">${esc(op.nombre || "Opción " + (oi + 1))}</button>`).join("")}</div>` : ""}
@@ -1248,7 +1350,7 @@ async function viewNutri() {
 function openRecipeView(id) {
   const r = N.recipes[id]; if (!r) return; const m = recipeMacros(r), k = 1 / (+r.raciones || 1);
   signedRecetas([r.foto_path]).then(urls => sheet(`${r.foto_path && urls[r.foto_path] ? `<img class="recimg" src="${esc(urls[r.foto_path])}" alt="Foto de ${esc(r.nombre)}">` : ""}<h2>${esc(r.nombre)}</h2><p class="tiny muted" style="margin:0">Salen ${fmt(r.raciones)} ración${(+r.raciones) === 1 ? "" : "es"} · por ración: ${esc(mTxt({ kcal: m.kcal * k, prot: m.prot * k, hc: m.hc * k, grasa: m.grasa * k }))}</p>
-  <h3 style="font-size:15px">Ingredientes</h3><ul class="flist">${(r.ingredientes || []).map(i => `<li><span>${esc(N.foods[i.food_id] ? N.foods[i.food_id].nombre : i.nombre || "")}</span><b>${fmt(i.g, 0)} g</b></li>`).join("")}</ul>
+  <h3 style="font-size:15px">Ingredientes <small class="muted">(pesados en crudo)</small></h3><ul class="flist">${(r.ingredientes || []).map(i => `<li><span>${esc(N.foods[i.food_id] ? N.foods[i.food_id].nombre : i.nombre || "")}</span><b>${fmt(i.g, 0)} g</b></li>`).join("")}</ul>
   ${r.pasos ? `<h3 style="font-size:15px">Preparación</h3><ol class="small">${lines(r.pasos).map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : ""}${r.notas ? `<p class="small muted">${esc(r.notas)}</p>` : ""}<button class="btn" data-act="close">Cerrar</button>`));
 }
 function openMealLog(ci) {
@@ -1396,6 +1498,7 @@ document.addEventListener("click", async ev => {
       case "test-del": if (confirmar(a)) { await q(sb.from("tests").delete().eq("id", id)); refreshClient(); } break;
       case "publicar": await q(sb.from("reports").update({ publicado: a.dataset.v === "1", publicado_en: a.dataset.v === "1" ? new Date().toISOString() : null }).eq("id", id)); toast(a.dataset.v === "1" ? "Publicado: ya lo ve el cliente" : "Ocultado"); refreshClient(); break;
       case "ex-hist": openHist(a.dataset.n); break;
+      case "rec-w": S.coach.recW = +a.dataset.n; refreshClient(); break;
       case "rep-new": openReportEditor(null, a.dataset.auto === "1"); break;
       case "rep-edit": openReportEditor(id, false); break;
       case "rep-del": if (confirmar(a)) { await q(sb.from("reports").delete().eq("id", id)); sheet(""); toast("Informe borrado"); refreshClient(); } break;
