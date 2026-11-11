@@ -175,7 +175,7 @@ async function afterLogin() {
     S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre }; S.plan = null;
     const hc = isCoachHash(location.hash.slice(1));
     if (!location.hash || (S.me.role === "coach") !== hc) location.hash = S.me.role === "coach" ? "inicio" : "hoy";
-    route();
+    await route();
   } catch (e) { $("#app").innerHTML = `<div class="login">${LOGO}<h1>No se pudo cargar</h1><p>${esc(errMsg(e))}</p><button class="btn pri" data-act="reload">Reintentar</button><button class="btn ghost" data-act="logout">Cerrar sesión</button></div>`; }
 }
 function renderNoAccess() {
@@ -1647,4 +1647,11 @@ document.addEventListener("submit", ev => {
 });
 document.addEventListener("keydown", ev => { if (ev.key === "Escape") sheet(""); });
 
-init();
+// Pantalla de carga: se queda un mínimo para que no parpadee y sale con un fundido
+const SPLASH_T0 = performance.now();
+function hideSplash() {
+  const sp = document.getElementById("splash"); if (!sp || sp.classList.contains("out")) return;
+  setTimeout(() => { sp.classList.add("out"); document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#ffffff"); setTimeout(() => sp.remove(), 450); }, Math.max(0, 1100 - (performance.now() - SPLASH_T0)));
+}
+setTimeout(hideSplash, 9000);
+init().finally(hideSplash);
