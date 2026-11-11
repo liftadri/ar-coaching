@@ -723,7 +723,7 @@ async function tabPlan(c, pl) {
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   const tot = as.filter(x => x.fecha >= first && x.fecha <= last && x.fecha <= t && x.visible); const pct = tot.length ? Math.round(100 * tot.filter(x => x.hecho).length / tot.length) : null;
   return `<div class="card"><div class="row"><button class="btn ghost sm" data-act="pm" data-m="${prevM}" aria-label="Mes anterior">‹</button><button class="btn ghost sm" data-act="pm" data-m="${t.slice(0, 7)}">Hoy</button><button class="btn ghost sm" data-act="pm" data-m="${nextM}" aria-label="Mes siguiente">›</button><h2 class="grow" style="margin:0">${esc(mName)}</h2>${pct != null ? `<span class="chip ${pct >= 80 ? "ok" : pct >= 50 ? "warn" : "bad"}">Cumplimiento ${pct} %</span>` : ""}</div>
-  <div class="row" style="margin-top:10px"><button class="btn sm pri" data-act="asig-new" data-d="${t}">+ Tarea</button><button class="btn sm" data-act="prog-asignar">Asignar programa</button><button class="btn sm" data-act="copiar-semana">Copiar semana</button><button class="btn sm" data-act="borrar-semana">Vaciar semana</button><button class="btn sm" data-act="meso-edit">Mesociclos</button></div>
+  <div class="row" style="margin-top:10px"><button class="btn sm pri" data-act="asig-new" data-d="${t}">+ Añadir</button><button class="btn sm" data-act="prog-asignar">Programar programa</button><button class="btn sm" data-act="prog-desde-cal">Guardar como programa</button><button class="btn sm" data-act="copiar-semana">Copiar semana</button><button class="btn sm" data-act="borrar-semana">Vaciar semana</button><button class="btn sm" data-act="meso-edit">Mesociclos</button></div>
   <div class="pgrid phead"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>${rows}
   <div class="leg tiny muted">${Object.entries(TIPOS).map(([k, l]) => `<span><i class="sw tp-${k}"></i>${l}</span>`).join("")}<span><i class="sw tp-evento"></i>Evento</span><span>✓ hecho · borde rojo: sin hacer · rayado: oculto al cliente</span></div>
   <p class="tiny muted" style="margin:8px 0 0">Arrastra una tarea a otro día para moverla.</p></div>`;
@@ -796,24 +796,59 @@ async function openEvent(id) {
 }
 async function saveEvent(f) { try { await q(sb.from("events").update({ titulo: f.titulo.value.trim(), tipo: f.ev_tipo.value, fecha: f.fecha.value, fin: f.fin.value || null, notas: f.notas.value.trim(), visible_cliente: f.visible.checked }).eq("id", f.dataset.id)); sheet(""); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } }
 async function openAsignarPrograma(programId) {
-  const [ps] = await Promise.all([q(sb.from("programs").select("id,nombre,semanas").order("nombre")), S.coach.list.length ? null : loadClients()]);
-  if (!ps.length) { toast("Primero crea un programa en la Librería"); return; }
-  const nm = monday(addDays(today(), 7));
-  sheet(`<h2>Asignar programa</h2><form id="f-asigprog" style="display:flex;flex-direction:column;gap:10px">
+  const [ps] = await Promise.all([q(sb.from("programs").select("id,nombre,semanas,descripcion,items").order("nombre")), S.coach.list.length ? null : loadClients()]);
+  if (!ps.length) { sheet(`<h2>Programar programa</h2><p class="small">Aún no tienes programas hechos. Puedes crearlos en <b>Librería → Programas</b> o guardar semanas ya planificadas de un cliente con <b>«Guardar como programa»</b> en su calendario.</p><button class="btn pri block" data-act="go" data-h="lib">Ir a la Librería</button><button type="button" class="btn ghost" data-act="close">Cerrar</button>`); return; }
+  S.sub.progs = ps; const nm = monday(addDays(today(), 7)); const p0 = ps.find(p => p.id === programId) || ps[0];
+  sheet(`<h2>Programar programa</h2><form id="f-asigprog" style="display:flex;flex-direction:column;gap:10px">
   ${S.view.startsWith("lib") ? `<div class="f"><label>Cliente</label><select name="cid">${S.coach.list.filter(c => c.estado !== "baja").map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join("")}</select></div>` : ""}
-  <div class="f"><label>Programa</label><select name="pid">${ps.map(p => `<option value="${esc(p.id)}" ${p.id === programId ? "selected" : ""}>${esc(p.nombre)} · ${p.semanas} semanas</option>`).join("")}</select></div>
-  <div class="f"><label>Empieza el lunes</label><input type="date" name="inicio" value="${nm}" required></div>
-  <p class="tiny muted" style="margin:0">Se copian todas las tareas del programa al calendario del cliente. Luego puedes cambiar cualquiera sin tocar el programa.</p>
-  <button class="btn pri block">Asignar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+  <div class="f"><label>Programa</label><select name="pid" data-act-change="ap-prev">${ps.map(p => `<option value="${esc(p.id)}" ${p.id === p0.id ? "selected" : ""}>${esc(p.nombre)} · ${p.semanas} sem.</option>`).join("")}</select></div>
+  <div class="grid2"><div class="f"><label>Empieza la semana del lunes</label><input type="date" name="inicio" value="${nm}" required data-act-change="ap-prev"></div><div class="f"><label>Desde la semana del programa</label><select name="desde" data-act-change="ap-prev">${Array.from({ length: p0.semanas }, (_, i) => `<option value="${i + 1}">Semana ${i + 1}</option>`).join("")}</select></div></div>
+  <label class="small"><input type="checkbox" name="reemplazar"> Borrar antes lo <b>no hecho</b> que ya tenga en esas semanas</label>
+  <label class="small"><input type="checkbox" name="ocultar"> Programarlo oculto (el cliente no lo ve hasta que lo muestres)</label>
+  <div id="ap-prev" class="card flat">${apPreview(p0, nm, 1)}</div>
+  <button class="btn pri block">Programar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`, "wide");
+}
+function apPreview(p, inicio, desde) {
+  const its = (p.items || []).filter(it => it.semana >= desde); if (!its.length) return `<p class="small muted" style="margin:0">Este programa no tiene nada a partir de esa semana.</p>`;
+  const sems = [...new Set(its.map(it => it.semana))].sort((a, b) => a - b); const ini = monday(inicio);
+  return `<p class="small" style="margin:0 0 6px"><b>${its.length}</b> elementos en <b>${sems.length}</b> semanas · del ${esc(fdate(ini))} al ${esc(fdate(addDays(ini, (Math.max(...sems) - desde) * 7 + 6)))}</p>${p.descripcion ? `<p class="tiny muted" style="margin:0 0 6px">${esc(p.descripcion)}</p>` : ""}<div class="tbl"><table><tbody>${sems.map(s => `<tr><td style="white-space:nowrap"><b>S${s}</b> · ${esc(fdate(addDays(ini, (s - desde) * 7), { day: "numeric", month: "short" }))}</td><td>${its.filter(it => it.semana === s).sort((a, b) => a.dia - b.dia).map(it => `<span class="pch tp-${esc(it.tipo)}" style="display:inline-block;margin:1px 2px">${esc(DSEM[it.dia].slice(0, 2))} · ${esc(it.titulo || TIPOS[it.tipo])}</span>`).join("")}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function apRefresh(f) {
+  const p = (S.sub.progs || []).find(x => x.id === f.pid.value); if (!p) return;
+  if (f.desde.options.length !== p.semanas) { const v = Math.min(+f.desde.value || 1, p.semanas); f.desde.innerHTML = Array.from({ length: p.semanas }, (_, i) => `<option value="${i + 1}" ${i + 1 === v ? "selected" : ""}>Semana ${i + 1}</option>`).join(""); }
+  $("#ap-prev").innerHTML = apPreview(p, f.inicio.value || today(), +f.desde.value || 1);
 }
 async function asignarPrograma(f) {
-  const cid = f.cid ? f.cid.value : S.coach.cid; const inicio = monday(f.inicio.value);
+  const cid = f.cid ? f.cid.value : S.coach.cid; const inicio = monday(f.inicio.value); const desde = +f.desde.value || 1;
   try {
     const p = (await q(sb.from("programs").select("*").eq("id", f.pid.value).limit(1)))[0]; const tpls = await tplLib();
-    const rows = (p.items || []).map((it, i) => { const tp = it.template_id && tpls.find(x => x.id === it.template_id); return { client_id: cid, fecha: addDays(inicio, (it.semana - 1) * 7 + (it.dia - 1)), orden: i, tipo: it.tipo, titulo: it.titulo || (tp && tp.nombre) || TIPOS[it.tipo], contenido: tp ? tp.contenido : (it.contenido || {}), programa: p.nombre }; });
-    if (!rows.length) { toast("El programa está vacío"); return; }
-    await q(sb.from("assignments").insert(rows)); sheet(""); toast(`${rows.length} tareas asignadas`);
+    const its = (p.items || []).filter(it => it.semana >= desde);
+    const rows = its.map((it, i) => { const tp = it.template_id && tpls.find(x => x.id === it.template_id); return { client_id: cid, fecha: addDays(inicio, (it.semana - desde) * 7 + (it.dia - 1)), orden: i, tipo: it.tipo, titulo: it.titulo || (tp && tp.nombre.replace(/^[^·]+ · /, "")) || TIPOS[it.tipo], contenido: tp ? tp.contenido : (it.contenido || {}), programa: p.nombre, visible: !f.ocultar.checked }; });
+    if (!rows.length) { toast("No hay nada que programar"); return; }
+    if (f.reemplazar.checked) { const fin = rows.reduce((m, r) => r.fecha > m ? r.fecha : m, inicio); await q(sb.from("assignments").delete().eq("client_id", cid).eq("hecho", false).gte("fecha", inicio).lte("fecha", addDays(monday(fin), 6))); }
+    await q(sb.from("assignments").insert(rows)); sheet(""); toast(`Programado: ${rows.length} elementos`);
     if (S.view.startsWith("lib")) { S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + cid; S.coach.calM = inicio.slice(0, 7); } else { S.coach.calM = inicio.slice(0, 7); S.coach.keep = true; viewCoachClient(cid); }
+  } catch (e) { toast(errMsg(e)); }
+}
+/* Guardar semanas ya planificadas de un cliente como programa reutilizable */
+function openProgDesdeCal() {
+  const mon = monday(today());
+  sheet(`<h2>Guardar como programa</h2><form id="f-progcal" style="display:flex;flex-direction:column;gap:10px">
+  <div class="f"><label>Nombre del programa</label><input name="nombre" required placeholder="Hipertrofia torso-pierna · 4 semanas"></div>
+  <div class="grid2"><div class="f"><label>Desde la semana del lunes</label><input type="date" name="de" value="${mon}" required></div><div class="f"><label>Número de semanas</label><input name="n" type="number" min="1" max="16" value="4"></div></div>
+  <fieldset class="medpick"><legend>Qué incluir</legend>${Object.entries(TIPOS).map(([k, l]) => `<label class="mchk"><input type="checkbox" name="tip" value="${k}" ${k === "nota" ? "" : "checked"}><span><b>${esc(l)}</b></span></label>`).join("")}</fieldset>
+  <div class="f"><label>Descripción (opcional)</label><input name="descripcion"></div>
+  <p class="tiny muted" style="margin:0">Se guarda una copia en Librería → Programas (sin lo que haya hecho el cliente). Luego puedes editarlo y programárselo a quien quieras.</p>
+  <button class="btn pri block">Guardar programa</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function progDesdeCal(f) {
+  const de = monday(f.de.value), n = Math.min(16, Math.max(1, +f.n.value || 1)), tips = [...f.querySelectorAll("input[name=tip]:checked")].map(i => i.value);
+  try {
+    const src = await q(sb.from("assignments").select("fecha,orden,tipo,titulo,contenido").eq("client_id", S.coach.cid).gte("fecha", de).lte("fecha", addDays(de, n * 7 - 1)).order("fecha").order("orden"));
+    const items = src.filter(x => tips.includes(x.tipo)).map(x => { const d = daysBetween(de, x.fecha); const c = { ...(x.contenido || {}) }; delete c.harbiz_id; return { semana: Math.floor(d / 7) + 1, dia: (d % 7) + 1, tipo: x.tipo, titulo: x.titulo, contenido: c }; });
+    if (!items.length) { toast("No hay nada planificado en esas semanas"); return; }
+    const r = await q(sb.from("programs").insert({ nombre: f.nombre.value.trim(), descripcion: f.descripcion.value.trim(), semanas: n, items }).select("id"));
+    sheet(""); toast(`Programa guardado (${items.length} elementos)`); location.hash = "lib-p-" + r[0].id;
   } catch (e) { toast(errMsg(e)); }
 }
 function openCopiarSemana() {
@@ -1064,25 +1099,38 @@ function renderProgram(id) {
   }
   shell(p.nombre || "Nuevo programa", `<form id="f-prog" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px"><div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="grid2"><div class="f"><label>Nombre</label><input name="nombre" required value="${esc(p.nombre)}" placeholder="Hipertrofia 4 días · 4 semanas" data-prog="nombre"></div><div class="f"><label>Semanas</label><input name="semanas" type="number" min="1" max="16" value="${p.semanas}" data-prog="semanas"></div></div><div class="f"><label>Descripción</label><input name="descripcion" value="${esc(p.descripcion || "")}" data-prog="descripcion"></div></div>
   <div class="card">${grid}<p class="tiny muted" style="margin:8px 0 0">Pulsa «+» en un día para añadir un workout de la librería, cardio, tarea, formulario o nota.</p></div>
-  <div class="savebar row"><button class="btn pri">Guardar programa</button>${id !== "new" ? `<button type="button" class="btn" data-act="prog-asignar" data-id="${esc(id)}">Asignar a un cliente</button><button type="button" class="btn" data-act="prog-dup" data-id="${esc(id)}">Duplicar</button><span class="grow"></span><button type="button" class="btn ghost" data-act="prog-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}</div></form>`, { crumb: [["lib", "Librería"], ["lib", "Programas"], [null, p.nombre || "Nuevo programa"]], keepScroll: true });
+  <div class="savebar row"><button class="btn pri">Guardar programa</button>${id !== "new" ? `<button type="button" class="btn" data-act="prog-asignar" data-id="${esc(id)}">Programar a un cliente</button><button type="button" class="btn" data-act="prog-dup" data-id="${esc(id)}">Duplicar</button><span class="grow"></span><button type="button" class="btn ghost" data-act="prog-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}</div></form>`, { crumb: [["lib", "Librería"], ["lib", "Programas"], [null, p.nombre || "Nuevo programa"]], keepScroll: true });
 }
 function openProgItem(i, s, d) {
   const it = i != null ? S.sub.prog.items[i] : { semana: s, dia: d, tipo: "workout", titulo: "", contenido: {} }; S.sub.piTipo = it.tipo;
   const tpls = S.sub.tpls || [];
   sheet(`<h2>Semana ${it.semana} · ${DSEM[it.dia]}</h2><form id="f-pi" data-i="${i ?? ""}" data-s="${it.semana}" data-d="${it.dia}" style="display:flex;flex-direction:column;gap:10px">
-  <div class="seg" role="group" aria-label="Tipo">${Object.entries(TIPOS).map(([k, l]) => `<button type="button" data-act="pi-tipo" data-t="${k}" aria-pressed="${it.tipo === k}">${l}</button>`).join("")}</div>
+  <div class="seg wrap" role="group" aria-label="Tipo">${Object.entries(TIPOS).map(([k, l]) => `<button type="button" data-act="pi-tipo" data-t="${k}" aria-pressed="${it.tipo === k}">${l}</button>`).join("")}</div>
   <div id="pi-body">${piBody(it, tpls)}</div>
   <button class="btn pri block">Aceptar</button>${i != null ? `<button type="button" class="btn ghost" data-act="pi-del" data-i="${i}" style="color:var(--bad)">Quitar del programa</button>` : ""}<button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`);
 }
 function piBody(it, tpls) {
   const t = it.tipo; const c = it.contenido || {};
-  if (t === "workout" || t === "cardio") { const opts = tpls.filter(p => p.tipo === t); return opts.length ? `<div class="f"><label>${t === "workout" ? "Workout" : "Cardio"} de la librería</label><select name="tpl">${opts.map(p => `<option value="${esc(p.id)}" ${it.template_id === p.id ? "selected" : ""}>${esc(p.nombre)}</option>`).join("")}</select></div><div class="f"><label>Título para el cliente (opcional)</label><input name="titulo" value="${esc(it.titulo || "")}" placeholder="Si lo dejas vacío, el nombre del workout"></div><p class="tiny muted" style="margin:0">Se usa la versión del workout que haya en la librería en el momento de asignar el programa.</p>` : `<div class="empty">Primero crea ${t === "workout" ? "workouts" : "cardios"} en la Librería.</div>`; }
-  return `<div class="f"><label>Título</label><input name="titulo" required value="${esc(it.titulo || "")}"></div>${t === "formulario" ? `<div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas">${esc((c.preguntas || []).join("\n"))}</textarea></div>` : `<div class="f"><label>Detalle</label><textarea name="detalle">${esc(c.detalle || "")}</textarea></div>`}`;
+  if (t === "workout" || t === "cardio") {
+    const opts = tpls.filter(p => p.tipo === t); const propio = !it.template_id && ((c.ejercicios || []).length || !opts.length);
+    return `<div class="f"><label>${t === "workout" ? "Workout" : "Cardio"}</label><select name="tpl" data-act-change="pi-src"><option value="" ${propio ? "selected" : ""}>Propio de este programa (lo editas aquí)</option>${opts.map((p, k) => `<option value="${esc(p.id)}" ${!propio && (it.template_id ? it.template_id === p.id : k === 0) ? "selected" : ""}>Librería · ${esc(p.nombre)}</option>`).join("")}</select></div>
+    <div class="f"><label>Título para el cliente</label><input name="titulo" value="${esc(it.titulo || "")}" placeholder="${t === "workout" ? "Pierna A" : "Rodaje Z2"}"></div>
+    <div id="pi-ed" ${propio ? "" : "hidden"}>${wEditor(c, t)}</div>
+    <p class="tiny muted" style="margin:0">Si eliges uno de la librería, se usa la versión que haya en la librería al programarlo.</p>`;
+  }
+  return `<div class="f"><label>Título</label><input name="titulo" required value="${esc(it.titulo || "")}" placeholder="${esc(TIPOS[t] || "")}"></div>${t === "medidas" ? medPicker(c.medidas) : ""}${t === "nota" ? `<div class="f"><label>Hora a la que le aparece</label><input type="time" name="hora" value="${esc(c.hora || "08:00")}"></div>` : ""}${t === "formulario" ? `<div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas">${esc((c.preguntas || []).join("\n"))}</textarea></div>` : `<div class="f"><label>${t === "nota" ? "Mensaje" : "Detalle"}</label><textarea name="detalle">${esc(c.detalle || "")}</textarea></div>`}`;
 }
 function saveProgItem(f) {
   const t = S.sub.piTipo; const it = { semana: +f.dataset.s, dia: +f.dataset.d, tipo: t, titulo: f.titulo ? f.titulo.value.trim() : "" };
-  if (t === "workout" || t === "cardio") { if (!f.tpl) { toast("Primero crea el workout en la Librería"); return; } it.template_id = f.tpl.value; if (!it.titulo) it.titulo = ((S.sub.tpls.find(x => x.id === it.template_id) || {}).nombre || "").replace(/^[^·]+ · /, ""); it.contenido = {}; }
-  else it.contenido = t === "formulario" ? { preguntas: lines(f.preguntas.value) } : { detalle: f.detalle.value.trim() };
+  if (t === "workout" || t === "cardio") {
+    if (f.tpl.value) { it.template_id = f.tpl.value; if (!it.titulo) it.titulo = ((S.sub.tpls.find(x => x.id === it.template_id) || {}).nombre || "").replace(/^[^·]+ · /, ""); it.contenido = {}; }
+    else { it.contenido = readWEditor($("#pi-ed"), t); if (!it.titulo) { toast("Ponle un título"); return; } }
+  } else {
+    it.contenido = t === "formulario" ? { preguntas: lines(f.preguntas.value) } : { detalle: f.detalle.value.trim() };
+    if (t === "medidas") it.contenido.medidas = [...f.querySelectorAll("input[name=med]:checked")].map(i => i.value);
+    if (t === "nota" && f.hora) it.contenido.hora = f.hora.value;
+    if (!it.titulo) it.titulo = TIPOS[t];
+  }
   if (f.dataset.i !== "") S.sub.prog.items[+f.dataset.i] = it; else S.sub.prog.items.push(it);
   sheet(""); renderProgram($("#f-prog").dataset.id);
 }
@@ -1526,6 +1574,7 @@ document.addEventListener("click", async ev => {
       case "ev-del": if (confirmar(a)) { await q(sb.from("events").delete().eq("id", id)); sheet(""); refreshClient(); } break;
       case "prog-asignar": openAsignarPrograma(id); break;
       case "copiar-semana": openCopiarSemana(); break;
+      case "prog-desde-cal": openProgDesdeCal(); break;
       case "borrar-semana": openBorrarSemana(); break;
       case "meso-edit": openMeso(); break;
       case "mb-add": $("#mbs").insertAdjacentHTML("beforeend", mesoBlock({ semanas: [{ tipo: "carga" }] })); break;
@@ -1581,6 +1630,8 @@ document.addEventListener("input", ev => {
 document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
+  if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
+  if (el.dataset && el.dataset.actChange === "pi-src") { const ed = $("#pi-ed"); if (ed) ed.hidden = !!el.value; }
   if (el.id === "ex-sel") { S.sub.ex = el.value; viewProgreso(); }
   if (el.id === "cex-sel") { S.sub.cex = el.value; refreshClient(); }
   if (el.id === "wt-tipo") { $("#wt-ed").innerHTML = wEditor({}, el.value); }
@@ -1589,7 +1640,7 @@ document.addEventListener("change", ev => {
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
   const map = { "f-login": doLogin, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
-    "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
+    "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
   if (map[f.id]) map[f.id](f);
