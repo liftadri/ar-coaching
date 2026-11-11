@@ -153,7 +153,9 @@ function renderNoAccess() {
   <div class="f"><label for="ac">Código de alta</label><input id="ac" name="codigo" autocomplete="off" autocapitalize="characters" required maxlength="12"></div>
   <button class="btn pri block">Activar</button><button type="button" class="btn ghost" data-act="logout">Cerrar sesión</button></form>`;
 }
-const pwField = (id, label, ac) => `<div class="f"><label for="${id}">${label}</label><div class="pw"><input id="${id}" name="${id}" type="password" autocomplete="${ac}" minlength="8" maxlength="72" required><button type="button" class="btn ghost sm" data-act="ver-pw" aria-label="Mostrar contraseña">Ver</button></div></div>`;
+const EYE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>`;
+const pwField = (id, label, ac) => `<div class="f"><label for="${id}">${label}</label><div class="pw"><input id="${id}" name="${id}" type="password" autocomplete="${ac}" minlength="8" maxlength="72" required><button type="button" class="eye" data-act="ver-pw" aria-label="Mostrar contraseña" title="Mostrar contraseña">${EYE}</button></div></div>`;
 function renderLogin(stage) {
   const head = `${LOGO}<h1>${esc(CFG.nombre || "Adrián Rodríguez Coaching")}</h1>`;
   const tabs = cur => `<div class="seg" role="group" aria-label="Acceso"><button type="button" data-act="login-tab" data-t="" aria-pressed="${cur === "entrar"}">Entrar</button><button type="button" data-act="login-tab" data-t="alta" aria-pressed="${cur === "alta"}">Nuevo atleta</button></div>`;
@@ -1448,7 +1450,7 @@ document.addEventListener("click", async ev => {
       case "reload": location.reload(); break;
       case "logout": await sb.auth.signOut(); clearLocal(); S.me = null; S.plan = null; S.sub = {}; history.replaceState(null, "", location.pathname); renderLogin(); break;
       case "login-tab": renderLogin(a.dataset.t); break;
-      case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; a.textContent = i.type === "password" ? "Ver" : "Ocultar"; break; }
+      case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; const v = i.type === "text"; a.innerHTML = v ? EYE_OFF : EYE; a.setAttribute("aria-label", v ? "Ocultar contraseña" : "Mostrar contraseña"); a.title = a.getAttribute("aria-label"); a.classList.toggle("on", v); i.focus(); break; }
       case "cambiar-pw": openCambiarPw(); break;
       case "close": sheet(""); break;
       // cliente
