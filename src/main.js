@@ -103,7 +103,7 @@ function renderNoAccess() {
 }
 function renderLogin(stage, email) {
   if (stage === "code") {
-    $("#app").innerHTML = `<form class="login" id="f-code" data-email="${esc(email)}"><img class="logo" src="./logo.jpg" alt=""><h1>Revisa tu correo</h1><p>Te hemos enviado un código a <b>${esc(email)}</b>. Escríbelo aquí. Caduca en unos minutos.</p>
+    $("#app").innerHTML = `<form class="login" id="f-code" data-email="${esc(email)}"><img class="logo" src="./logo.jpg" alt=""><h1>Revisa tu correo</h1><p>Te hemos enviado un correo a <b>${esc(email)}</b>. Pulsa el enlace <b>desde este mismo móvil y navegador</b>, o escribe aquí el código si viene uno. Caduca en unos minutos.</p>
     <div class="f"><label for="code">Código</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required></div>
     <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="login-back">Usar otro email</button></form>`;
     $("#code").focus(); return;
@@ -114,7 +114,7 @@ function renderLogin(stage, email) {
 }
 async function sendCode(f) {
   const email = f.email.value.trim().toLowerCase(); const b = f.querySelector("button"); b.disabled = true;
-  try { await q(sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })); renderLogin("code", email); }
+  try { await q(sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } })); renderLogin("code", email); }
   catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 async function verifyCode(f) {
