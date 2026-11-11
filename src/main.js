@@ -79,8 +79,15 @@ const ICON = {
   progreso: svg('<path d="M3 20h18M5 16l5-5 4 3 6-7"/>'),
   mas: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/>'),
   clientes: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2 20c1-3.5 4-5 7-5s6 1.5 7 5M16 4.5a3.5 3.5 0 0 1 0 7M18 15c2 .6 3.5 2.3 4 5"/>'),
-  lib: svg('<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 3 15-3.5 1z"/>')
+  lib: svg('<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 3 15-3.5 1z"/>'),
+  info: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M5.5 17c.8-2 2-3 3.5-3s2.7 1 3.5 3M14 9h5M14 13h4"/>'),
+  evo: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  doc: svg('<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/>'),
+  key: svg('<circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3M14 8l2 2"/>'),
+  plan: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h6"/>')
 };
+const initials = n => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const avatar = (n, cls = "") => `<span class="av ${cls}" aria-hidden="true">${esc(initials(n))}</span>`;
 const TIPOS = { workout: "Workout", cardio: "Cardio", tarea: "Tarea", formulario: "Formulario", nota: "Nota" };
 const EV_TIPOS = { competicion: "Competición", test: "Test", control: "Control", recordatorio: "Recordatorio", otro: "Otro" };
 const DSEM = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -195,13 +202,22 @@ const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], 
 const isCoachHash = h => ["inicio", "c", "lib"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
-  const tabs = coach ? COACH_TABS : CLIENT_TABS;
-  const v = S.view; const cur = coach ? (v.startsWith("c") ? "c" : v.startsWith("lib") ? "lib" : v) : v.split("-")[0];
-  const right = !coach && !opts.back ? `<button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${ICON.mas}</button>` : (opts.right || "");
-  document.body.classList.toggle("is-coach", coach);
-  $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
-  <main class="${coach ? "wide" : ""}" id="main">${body}</main>
-  ${opts.noTabs ? "" : `<nav class="tabs${coach ? " coach" : ""}" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
+  const v = S.view; document.body.classList.toggle("is-coach", coach);
+  if (coach) {
+    const cur = v.startsWith("c") ? "c" : v.startsWith("lib") ? "lib" : v;
+    const crumb = opts.crumb || [[null, title]];
+    $("#app").innerHTML = `<header class="hnav"><a class="hlogo" href="#inicio" aria-label="Inicio"><img src="./logo.jpg" alt=""></a>
+    <nav class="hmenu" aria-label="Secciones">${COACH_TABS.filter(t => t[0] !== "mas").map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
+    <span class="grow"></span><button class="hme" data-act="go" data-h="mas" aria-label="Tu perfil" aria-current="${cur === "mas"}">${avatar(S.me.nombre || "A", "dark")}</button></header>
+    <div class="crumb"><div class="crumbin">${crumb.map(([h, l, av], k) => `${k ? `<span class="sep">/</span>` : ""}${h ? `<a href="#${esc(h)}">${esc(l)}</a>` : `<b>${av ? avatar(l, "xs") : ""}${esc(l)}</b>`}`).join("")}${opts.sub ? `<span class="csub">${esc(opts.sub)}</span>` : ""}<span class="grow"></span>${opts.right || ""}</div></div>
+    <main class="wide" id="main">${body}</main>`;
+  } else {
+    const tabs = CLIENT_TABS; const cur = v.split("-")[0];
+    const right = !opts.back ? `<button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre)}</button>` : (opts.right || "");
+    $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
+    <main id="main">${body}</main>
+    ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
+  }
   if (!opts.keepScroll) window.scrollTo(0, 0);
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
@@ -548,13 +564,13 @@ async function viewInicio() {
   const agenda = activos.map(c => { const f = asAll.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop(); const d = f ? daysBetween(t, f) : null; return { c, d }; }).sort((a, b) => (a.d ?? -999) - (b.d ?? -999));
   const mon = monday(t), m1 = t.slice(0, 7) + "-01";
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
-  shell("Inicio", `<div class="row"><button class="btn pri sm" data-act="new-client">+ Cliente</button><button class="btn sm" data-act="go" data-h="lib-w-new">+ Workout</button><button class="btn sm" data-act="go" data-h="lib-p-new">+ Programa</button></div>
+  shell("Inicio", `<div class="quick"><button class="qa" data-act="new-client">${ICON.clientes}<span>Añade un cliente</span></button><button class="qa" data-act="go" data-h="lib-w-new">${ICON.entreno}<span>Crea un workout</span></button><button class="qa" data-act="go" data-h="lib-p-new">${ICON.plan}<span>Crea un programa</span></button><button class="qa" data-act="go" data-h="lib">${ICON.lib}<span>Librería</span></button></div>
   <div class="cols">
-  <div class="card"><h2>Actividad reciente <small>7 días</small></h2>${act.length ? `<div class="list">${act.map(a => `<button class="it" data-act="go" data-h="c-${esc(encodeURIComponent(a.c))}"><span><b>${esc(clientName(a.c))}</b> completó <b>${esc(a.t)}</b><br><span class="tiny muted">${esc(a.k)} · ${esc(relTime(a.ts))}</span></span></button>`).join("")}</div>` : `<div class="empty">Sin actividad esta semana.</div>`}</div>
+  <div class="card"><h2 class="hh">${ICON.evo}Actividad reciente <span class="cnt">${act.length}</span></h2>${act.length ? `<div class="list">${act.map(a => `<button class="it feed" data-act="go" data-h="c-${esc(encodeURIComponent(a.c))}">${avatar(clientName(a.c))}<span class="grow"><span class="lnk">${esc(clientName(a.c).toUpperCase())}</span> completó <span class="lnk">${esc(a.t)}</span><br><span class="tag tag-${esc(slug(a.k))}">${esc(a.k)}</span> <span class="tiny muted">${esc(relTime(a.ts))}</span></span></button>`).join("")}</div>` : `<div class="empty">Sin actividad esta semana.</div>`}</div>
   <div style="display:flex;flex-direction:column;gap:12px">
-  <div class="card"><h2>Agendar tareas</h2>${agenda.length ? `<div class="list">${agenda.map(({ c, d }) => `<button class="it" data-act="go-plan" data-cid="${esc(c.id)}"><span><b>${esc(c.nombre)}</b><br><span class="tiny ${d == null || d < 3 ? "" : "muted"}" style="${d == null || d < 3 ? "color:var(--bad)" : ""}">${d == null ? "No tiene nada programado" : d < 0 ? `Lleva sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`}</span></span><span class="chip acc">Planificar</span></button>`).join("")}</div>` : `<div class="empty">Sin clientes activos.</div>`}</div>
-  <div class="card"><h2>Cumplimiento <small>semana · mes</small></h2><table><tbody>${activos.map(c => { const s = pct(c.id, mon), mm = pct(c.id, m1); const cl2 = v => v == null ? "" : v >= 80 ? "ok" : v >= 50 ? "warn" : "bad"; return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td>${esc(c.nombre)}</td><td class="n"><span class="chip ${cl2(s)}">S. ${s == null ? "—" : s + " %"}</span></td><td class="n"><span class="chip ${cl2(mm)}">M. ${mm == null ? "—" : mm + " %"}</span></td></tr>`; }).join("")}</tbody></table><p class="tiny muted" style="margin:8px 0 0">Tareas completadas de las programadas hasta hoy.</p></div>
-  <div class="card"><h2>Próximos eventos</h2>${ev.length ? ev.map(e => `<p class="small" style="margin:6px 0"><b>${esc(fdate(e.fecha, { day: "numeric", month: "short" }))}</b> · ${esc(clientName(e.client_id))} · ${esc(e.titulo)}</p>`).join("") : `<p class="small muted" style="margin:0">Nada en las próximas semanas.</p>`}</div>
+  <div class="card"><h2 class="hh">${ICON.plan}Agendar tareas <span class="cnt">${agenda.length}</span></h2>${agenda.length ? `<div class="list">${agenda.map(({ c, d }) => `<button class="it feed" data-act="go-plan" data-cid="${esc(c.id)}">${avatar(c.nombre)}<span class="grow"><span class="lnk">${esc(c.nombre)}</span><br><span class="tiny ${d == null || d < 3 ? "" : "muted"}" style="${d == null || d < 3 ? "color:var(--bad)" : ""}">${d == null ? "No tiene nada programado" : d < 0 ? `Lleva sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`}</span></span><span class="chip acc">Planificar</span></button>`).join("")}</div>` : `<div class="empty">Sin clientes activos.</div>`}</div>
+  <div class="card"><h2 class="hh">${ICON.progreso}Revisar cumplimiento <span class="cnt">${activos.length}</span></h2><table><tbody>${activos.map(c => { const s = pct(c.id, mon), mm = pct(c.id, m1); const cl2 = v => v == null ? "" : v >= 80 ? "ok" : v >= 50 ? "warn" : "bad"; return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre, "sm")}<span class="lnk">${esc(c.nombre)}</span></span></td><td class="n"><span class="chip ${cl2(s)}">S. ${s == null ? "—" : s + " %"}</span></td><td class="n"><span class="chip ${cl2(mm)}">M. ${mm == null ? "—" : mm + " %"}</span></td></tr>`; }).join("")}</tbody></table><p class="tiny muted" style="margin:8px 0 0">Tareas completadas de las programadas hasta hoy.</p></div>
+  <div class="card"><h2 class="hh">${ICON.cal}Próximos eventos <span class="cnt">${ev.length}</span></h2>${ev.length ? ev.map(e => `<p class="small" style="margin:6px 0"><b>${esc(fdate(e.fecha, { day: "numeric", month: "short" }))}</b> · ${esc(clientName(e.client_id))} · ${esc(e.titulo)}</p>`).join("") : `<p class="small muted" style="margin:0">Nada en las próximas semanas.</p>`}</div>
   </div></div>`);
 }
 
@@ -563,8 +579,8 @@ async function viewCoachList() {
   loading("Clientes"); const since = addDays(today(), -7);
   const [cl, wl, wo, as] = await Promise.all([loadClients(), q(sb.from("wellness").select("client_id,fecha,sueno,fatiga,dolor,estres,animo,motivacion,articular").gte("fecha", since)), q(sb.from("workouts").select("client_id,fecha").gte("fecha", since)), q(sb.from("assignments").select("client_id,fecha").gte("fecha", since))]);
   const row = c => { const w = wl.filter(x => x.client_id === c.id), o = wo.filter(x => x.client_id === c.id); const wi = avg(w.map(wellIdx).filter(x => x != null)); const hasta = as.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop();
-    return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><b>${esc(c.nombre)}</b><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
-  shell("Clientes", `<div class="row"><p class="small muted grow" style="margin:0">Últimos 7 días</p><button class="btn pri sm" data-act="new-client">+ Nuevo cliente</button></div>
+    return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre)}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
+  shell("Clientes", `<div class="pghead"><h1 class="ptitle">Mis clientes <sup>${cl.length}</sup></h1><span class="grow"></span><button class="btn dark" data-act="new-client"><span class="plus">+</span>Añadir cliente</button></div><p class="small muted" style="margin:0">Datos de los últimos 7 días</p>
   <div class="card"><div class="tbl"><table><thead><tr><th>Cliente</th><th class="n">Entrenos</th><th class="n">Cuestionarios</th><th class="n">Bienestar</th><th>Planificado hasta</th><th></th></tr></thead><tbody>${cl.map(row).join("") || `<tr><td colspan="6" class="muted">Sin clientes todavía.</td></tr>`}</tbody></table></div></div>`);
 }
 function openNewClient() {
@@ -579,7 +595,7 @@ async function saveNewClient(f) {
 }
 
 /* ================= Entrenador: ficha del cliente ================= */
-const CTABS = [["plan", "Planificación"], ["info", "Información"], ["evo", "Evolución"], ["nutri", "Nutrición"], ["informes", "Informes"], ["cuenta", "Cuenta"]];
+const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Informes", "doc"], ["cuenta", "Cuenta", "key"]];
 async function viewCoachClient(cid) {
   if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; }
   const tab = S.coach.tab || "plan";
@@ -589,7 +605,8 @@ async function viewCoachClient(cid) {
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
-  shell(c.nombre, `${alertas.length ? `<div class="banner"><b>Salud:</b> ${alertas.map(s => esc(String(s).slice(1))).join(" · ")}</div>` : ""}<div class="seg" role="group" aria-label="Apartado">${CTABS.map(([k, l]) => `<button data-act="ctab" data-t="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`, { back: "c", keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
+  shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
+  <div class="cmain"><h1 class="ptitle">${esc((CTABS.find(t => t[0] === tab) || CTABS[0])[1])}</h1>${alertas.length ? `<div class="banner"><b>Salud:</b> ${alertas.map(s => esc(String(s).slice(1))).join(" · ")}</div>` : ""}${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
   S.coach.keep = false;
 }
 
@@ -834,20 +851,22 @@ async function saveCuenta(f) { try { await q(sb.from("clients").update({ email: 
 
 /* ================= Librería ================= */
 async function viewLib() {
-  loading("Librería"); const tab = S.lib.tab || "workouts"; let body = "";
+  loading("Librería"); const tab = S.lib.tab || "workouts"; let body = ""; const qy = (S.lib.q || "").toLowerCase();
+  const LT = [["workouts", "Workouts"], ["programas", "Programas"], ["ejercicios", "Ejercicios"]];
+  const head = (titulo, n, act, h, label) => `<div class="pghead"><h1 class="ptitle">${titulo} <sup>${n}</sup></h1></div><div class="row"><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="ex-q" type="search" placeholder="Buscar por nombre o descripción…" value="${esc(S.lib.q || "")}" aria-label="Buscar"></label><span class="grow"></span><button class="btn dark" data-act="${act}" ${h ? `data-h="${h}"` : ""}><span class="plus">+</span>${label}</button></div>`;
+  const desc = c => { const ej = (c && c.ejercicios) || []; return ej.length ? ej.map(e => e.nombre).join(", ") : ((c && c.detalle) || ""); };
   if (tab === "ejercicios") {
-    const ex = await exLib(true); const qy = (S.lib.q || "").toLowerCase(); const list = ex.filter(e => !qy || (e.nombre + " " + e.grupo + " " + e.material).toLowerCase().includes(qy));
-    body = `<div class="row"><input id="ex-q" type="search" placeholder="Buscar ejercicio, grupo o material" value="${esc(S.lib.q || "")}" class="grow" aria-label="Buscar"><button class="btn pri sm" data-act="ex-new">+ Ejercicio</button></div>
-    <div class="card"><div class="tbl"><table><thead><tr><th>Ejercicio</th><th>Grupo</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}" style="cursor:pointer"><td><b>${esc(e.nombre)}</b>${e.notas ? `<div class="tiny muted">${esc(e.notas)}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? "▶" : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div><p class="tiny muted">${ex.length} ejercicios. Los que escribas al programar se añaden solos.</p></div>`;
+    const ex = await exLib(true); const list = ex.filter(e => !qy || (e.nombre + " " + e.grupo + " " + e.material).toLowerCase().includes(qy));
+    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="card flat"><div class="tbl"><table class="htable"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.notas ? `<div class="tiny muted clamp">${esc(e.notas)}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? `<span class="tag tag-workout">▶ vídeo</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
   } else if (tab === "workouts") {
-    const ts = await tplLib();
-    body = `<div class="row"><p class="small muted grow" style="margin:0">Plantillas de entreno para asignar en un clic.</p><button class="btn pri sm" data-act="go" data-h="lib-w-new">+ Workout</button></div><div class="grid-cards">${ts.map(t => `<button class="card tcard" data-act="go" data-h="lib-w-${esc(t.id)}"><b>${esc(t.nombre)}</b><span class="tiny muted">${esc(TIPOS[t.tipo])}${t.tipo === "workout" ? ` · ${((t.contenido || {}).ejercicios || []).length} ejercicios` : ""}</span>${t.descripcion ? `<span class="tiny muted">${esc(t.descripcion)}</span>` : ""}</button>`).join("") || `<div class="empty">Sin workouts todavía.</div>`}</div>`;
+    const ts = await tplLib(); const list = ts.filter(t => !qy || (t.nombre + " " + t.descripcion + " " + desc(t.contenido)).toLowerCase().includes(qy));
+    body = head("Workouts", ts.length, "go", "lib-w-new", "Añadir workout") + `<div class="card flat"><div class="tbl"><table class="htable"><thead><tr><th>Nombre</th><th>Tipo</th><th>Descripción</th><th>Actualizado</th></tr></thead><tbody>${list.map(t => `<tr data-act="go" data-h="lib-w-${esc(t.id)}"><td><span class="lnk">${esc(t.nombre)}</span></td><td><span class="tag tag-${esc(t.tipo)}">${esc(TIPOS[t.tipo])}</span></td><td><div class="tiny muted clamp">${esc(t.descripcion ? t.descripcion + ". " : "")}${esc(desc(t.contenido))}</div></td><td class="tiny muted">${esc(fdate((t.updated_at || "").slice(0, 10)))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin workouts.</td></tr>`}</tbody></table></div></div>`;
   } else {
-    const ps = await q(sb.from("programs").select("id,nombre,descripcion,semanas,items").order("nombre"));
-    body = `<div class="row"><p class="small muted grow" style="margin:0">Mesociclos completos que se cargan en el calendario del cliente desde una fecha.</p><button class="btn pri sm" data-act="go" data-h="lib-p-new">+ Programa</button></div><div class="grid-cards">${ps.map(p => `<button class="card tcard" data-act="go" data-h="lib-p-${esc(p.id)}"><b>${esc(p.nombre)}</b><span class="tiny muted">${p.semanas} semanas · ${(p.items || []).length} tareas</span>${p.descripcion ? `<span class="tiny muted">${esc(p.descripcion)}</span>` : ""}</button>`).join("") || `<div class="empty">Sin programas todavía.</div>`}</div>`;
+    const ps = await q(sb.from("programs").select("id,nombre,descripcion,semanas,items").order("nombre")); const list = ps.filter(p => !qy || (p.nombre + " " + p.descripcion).toLowerCase().includes(qy));
+    body = head("Programas", ps.length, "go", "lib-p-new", "Añadir programa") + `<div class="card flat"><div class="tbl"><table class="htable"><thead><tr><th>Nombre</th><th>Duración</th><th>Descripción</th><th>Elementos</th></tr></thead><tbody>${list.map(p => `<tr data-act="go" data-h="lib-p-${esc(p.id)}"><td><span class="lnk">${esc(p.nombre)}</span></td><td>${p.semanas} semanas</td><td><div class="tiny muted clamp">${esc(p.descripcion || "")}</div></td><td class="n">${(p.items || []).length}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin programas.</td></tr>`}</tbody></table></div></div>`;
   }
-  shell("Librería", `<div class="seg" role="group" aria-label="Librería">${[["workouts", "Workouts"], ["programas", "Programas"], ["ejercicios", "Ejercicios"]].map(([k, l]) => `<button data-act="lib-tab" data-t="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`);
-  if (tab === "ejercicios") { const i = $("#ex-q"); if (S.lib.focusQ) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); S.lib.focusQ = false; } }
+  shell("Librería", body, { crumb: [["lib", "Librería"]], right: `<div class="subtabs">${LT.map(([k, l]) => `<button data-act="lib-tab" data-t="${k}" aria-current="${tab === k}">${l}</button>`).join("")}</div>` });
+  const i = $("#ex-q"); if (i && S.lib.focusQ) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); S.lib.focusQ = false; }
 }
 function openEx(id) {
   const e = id ? (S.lib.ex || []).find(x => x.id === id) : {}; if (!e) return;
@@ -860,7 +879,7 @@ async function viewLibWorkout(id) {
   if (!t) { location.hash = "lib"; return; } S.sub.wtTipo = t.tipo;
   shell(t.nombre || "Nuevo workout", `<form id="f-wt" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px"><div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="grid2"><div class="f"><label>Nombre</label><input name="nombre" required value="${esc(t.nombre)}" placeholder="Torso A · Hipertrofia"></div><div class="f"><label>Tipo</label><select name="tipo" id="wt-tipo"><option value="workout" ${t.tipo === "workout" ? "selected" : ""}>Workout</option><option value="cardio" ${t.tipo === "cardio" ? "selected" : ""}>Cardio</option></select></div></div><div class="f"><label>Descripción (solo para ti)</label><input name="descripcion" value="${esc(t.descripcion || "")}"></div></div>
   <div class="card" id="wt-ed">${wEditor(t.contenido || {}, t.tipo)}</div>
-  <div class="savebar row"><button class="btn pri">Guardar</button>${id !== "new" ? `<button type="button" class="btn" data-act="wt-asignar" data-id="${esc(id)}">Asignar a un cliente</button><button type="button" class="btn" data-act="wt-dup" data-id="${esc(id)}">Duplicar</button><span class="grow"></span><button type="button" class="btn ghost" data-act="wt-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}</div></form>${exDatalist()}`, { back: "lib" });
+  <div class="savebar row"><button class="btn pri">Guardar</button>${id !== "new" ? `<button type="button" class="btn" data-act="wt-asignar" data-id="${esc(id)}">Asignar a un cliente</button><button type="button" class="btn" data-act="wt-dup" data-id="${esc(id)}">Duplicar</button><span class="grow"></span><button type="button" class="btn ghost" data-act="wt-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}</div></form>${exDatalist()}`, { crumb: [["lib", "Librería"], ["lib", "Workouts"], [null, t.nombre || "Nuevo workout"]] });
 }
 async function saveWt(f) {
   const tipo = f.tipo.value; const contenido = readWEditor($("#wt-ed"), tipo); if (tipo === "workout") await newExercisesFrom(contenido);
@@ -890,7 +909,7 @@ function renderProgram(id) {
   }
   shell(p.nombre || "Nuevo programa", `<form id="f-prog" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px"><div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="grid2"><div class="f"><label>Nombre</label><input name="nombre" required value="${esc(p.nombre)}" placeholder="Hipertrofia 4 días · 4 semanas" data-prog="nombre"></div><div class="f"><label>Semanas</label><input name="semanas" type="number" min="1" max="16" value="${p.semanas}" data-prog="semanas"></div></div><div class="f"><label>Descripción</label><input name="descripcion" value="${esc(p.descripcion || "")}" data-prog="descripcion"></div></div>
   <div class="card">${grid}<p class="tiny muted" style="margin:8px 0 0">Pulsa «+» en un día para añadir un workout de la librería, cardio, tarea, formulario o nota.</p></div>
-  <div class="savebar row"><button class="btn pri">Guardar programa</button>${id !== "new" ? `<button type="button" class="btn" data-act="prog-asignar" data-id="${esc(id)}">Asignar a un cliente</button><button type="button" class="btn" data-act="prog-dup" data-id="${esc(id)}">Duplicar</button><span class="grow"></span><button type="button" class="btn ghost" data-act="prog-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}</div></form>`, { back: "lib", keepScroll: true });
+  <div class="savebar row"><button class="btn pri">Guardar programa</button>${id !== "new" ? `<button type="button" class="btn" data-act="prog-asignar" data-id="${esc(id)}">Asignar a un cliente</button><button type="button" class="btn" data-act="prog-dup" data-id="${esc(id)}">Duplicar</button><span class="grow"></span><button type="button" class="btn ghost" data-act="prog-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}</div></form>`, { crumb: [["lib", "Librería"], ["lib", "Programas"], [null, p.nombre || "Nuevo programa"]], keepScroll: true });
 }
 function openProgItem(i, s, d) {
   const it = i != null ? S.sub.prog.items[i] : { semana: s, dia: d, tipo: "workout", titulo: "", contenido: {} }; S.sub.piTipo = it.tipo;
