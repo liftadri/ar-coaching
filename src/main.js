@@ -343,7 +343,7 @@ async function viewHoy() {
   ${w && w.foco ? `<div class="card"><h2>Esta semana <small>${esc(w.tipo && w.tipo !== "carga" ? cap(w.tipo) : "")}</small></h2><p class="small" style="margin:0">${esc(w.foco)}</p></div>` : ""}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it" style="cursor:default"><span><b>Hoy no tienes entreno</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : "Descansa y recupera"}</span></span></div>`}
-    <button class="it" data-act="wellness"><span class="itl"><i class="dot dot-formulario"></i><span><b>Cuestionario diario</b><br><span class="tiny muted">1 minuto · sueño y cómo te sientes</span></span></span>${wl[0] ? `<span class="done">Hecho ✓</span>` : `<span class="chip acc">Rellenar</span>`}</button>
+    ${hoy.some(x => x.tipo === "formulario" && (x.contenido || {}).wellness) ? "" : `<button class="it" data-act="wellness"><span class="itl"><i class="dot dot-formulario"></i><span><b>Cuestionario diario</b><br><span class="tiny muted">1 minuto · sueño y cómo te sientes</span></span></span>${wl[0] ? `<span class="done">Hecho ✓</span>` : `<span class="chip acc">Rellenar</span>`}</button>`}
     <button class="it" data-act="peso"><span class="itl"><i class="dot dot-nota"></i><span><b>Peso</b><br><span class="tiny muted">${lastW ? `Último: ${fmt(lastW.kg)} kg (${esc(fdate(lastW.fecha))})` : "En ayunas, después de ir al baño"}</span></span></span>${lastW && lastW.fecha === t ? `<span class="done">Hecho ✓</span>` : `<span class="chip">Apuntar</span>`}</button>
   </div></div>
   ${atras.length ? `<div class="card"><h2>Pendiente de días anteriores</h2><div class="list">${atras.map(asigRow).join("")}</div></div>` : ""}
@@ -354,22 +354,33 @@ async function viewHoy() {
 }
 async function openItem(id) {
   const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
-  if (!x.hecho) { if (x.tipo === "peso") return openPeso(); if (x.tipo === "fotos") return openFotos(); if (x.tipo === "medidas") return openMedidas((x.contenido || {}).medidas); }
-  const c = x.contenido || {}; const pre = (c.preguntas || []);
-  const prevR = (x.resultado && x.resultado.respuestas) || [];
-  sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:0">${esc(TIPOS[x.tipo] || "")} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</p>
+  const c = x.contenido || {};
+  if (!x.hecho) { if (x.tipo === "peso") return openPeso(c); if (x.tipo === "fotos") return openFotos(c); if (x.tipo === "medidas") return openMedidas(c.medidas, c); }
+  if (x.tipo === "formulario" && c.wellness) { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); return openWellness(r[0], c); }
+  const pre = (c.preguntas || []).map(parseQ); const R0 = x.resultado || {}; const prevR = R0.respuestas || [];
+  const regs = x.tipo === "cardio" ? (c.registrar && c.registrar.length ? c.registrar : ["min", "rpe"]) : [];
+  const ck = c.checklist || []; const resumen = x.tipo === "cardio" ? cardioResumen(c) : "";
+  const responde = x.tipo !== "nota" || c.responder;
+  const scale = (i, n, v) => `<div class="scale${n > 5 ? " s10" : ""}" role="group">${Array.from({ length: n }, (_, k) => k + 1).map(k => `<button type="button" data-act="qscale" data-q="${i}" data-v="${k}" aria-pressed="${String(v) === String(k)}">${k}</button>`).join("")}</div>`;
+  sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:0">${esc(TIPOS[x.tipo] || "")} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}${x.tipo === "nota" && c.hora ? " · " + esc(c.hora) : ""}</p>
+  ${resumen ? `<div class="obj">🎯 ${esc(resumen)}</div>` : ""}
   ${c.detalle ? `<p class="small" style="white-space:pre-wrap;margin:0">${esc(c.detalle)}</p>` : ""}
-  <form id="f-item" data-id="${esc(x.id)}" style="display:flex;flex-direction:column;gap:10px">
-  ${pre.map((p, i) => `<div class="f"><label for="q${i}">${esc(p)}</label><textarea id="q${i}" name="q${i}" maxlength="1000" style="min-height:60px">${esc((prevR[i] && prevR[i].r) || "")}</textarea></div>`).join("")}
-  ${x.tipo !== "nota" ? `<div class="f"><label for="it-r">Comentario para Adrián (opcional)</label><textarea id="it-r" name="respuesta" maxlength="2000" style="min-height:60px">${esc(x.respuesta || "")}</textarea></div>` : ""}
-  <button class="btn pri block">${x.tipo === "nota" ? (x.hecho ? "Leída ✓" : "Marcar como leída") : x.hecho ? "Guardar" : x.tipo === "formulario" ? "Enviar respuestas" : "Marcar como hecho"}</button>
+  ${c.enlace ? `<a class="btn sm" href="${esc(c.enlace)}" target="_blank" rel="noopener noreferrer" style="align-self:flex-start">Abrir enlace ↗</a>` : ""}
+  <form id="f-item" data-id="${esc(x.id)}" style="display:flex;flex-direction:column;gap:12px">
+  ${ck.length ? `<div class="cklist">${ck.map((t, i) => `<label class="mchk"><input type="checkbox" name="ck" value="${i}" ${(R0.check || [])[i] ? "checked" : ""}><span>${esc(t)}</span></label>`).join("")}</div>` : ""}
+  ${pre.map((qq, i) => { const v = (prevR[i] && prevR[i].r) || ""; return `<div class="f"><label for="q${i}">${esc(qq.texto)}</label>${qq.tipo === "txt" ? `<textarea id="q${i}" name="q${i}" maxlength="1000" style="min-height:60px">${esc(v)}</textarea>` : `<input type="hidden" id="q${i}" name="q${i}" value="${esc(v)}">${qq.tipo === "sn" ? `<div class="scale sn" role="group">${["Sí", "No"].map(k => `<button type="button" data-act="qscale" data-q="${i}" data-v="${k}" aria-pressed="${v === k}">${k}</button>`).join("")}</div>` : scale(i, qq.tipo === "1-10" ? 10 : 5, v)}${qq.tipo !== "sn" ? (/estr[eé]s|dolor|fatiga|molest|cansa|agujet/i.test(qq.texto) ? `<div class="anchors"><span>Nada</span><span>Muchísimo</span></div>` : `<div class="anchors"><span>Muy mal</span><span>Muy bien</span></div>`) : ""}`}</div>`; }).join("")}
+  ${regs.length ? `<div class="grid2">${regs.map(k => { const l = (CARDIO_REG.find(r => r[0] === k) || [k, k])[1]; return k === "rpe" ? `<div class="f"><label for="r-rpe">${l}</label><select id="r-rpe" name="r_rpe"><option value="">—</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<option ${R0.rpe == n ? "selected" : ""}>${n}</option>`).join("")}</select></div>` : `<div class="f"><label for="r-${k}">${l}</label><input id="r-${k}" name="r_${k}" inputmode="decimal" value="${esc(R0[k] ?? "")}"></div>`; }).join("")}</div>` : ""}
+  ${responde && (x.tipo !== "tarea" || c.pedir_comentario || !ck.length) ? `<div class="f"><label for="it-r">${x.tipo === "nota" ? "Tu respuesta" : x.tipo === "tarea" && c.pedir_comentario ? "Comentario para Adrián" : "Comentario para Adrián (opcional)"}</label><textarea id="it-r" name="respuesta" maxlength="2000" style="min-height:60px" ${x.tipo === "tarea" && c.pedir_comentario ? "required" : ""}>${esc(x.respuesta || "")}</textarea></div>` : ""}
+  <button class="btn pri block">${x.tipo === "nota" ? (c.responder ? "Enviar" : x.hecho ? "Leído ✓" : "Marcar como leído") : x.hecho ? "Guardar" : x.tipo === "formulario" ? "Enviar respuestas" : "Marcar como hecho"}</button>
   ${x.hecho && x.tipo !== "nota" ? `<button type="button" class="btn ghost" data-act="item-undo" data-id="${esc(x.id)}">Marcar como no hecho</button>` : ""}<button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`);
 }
 async function saveItem(f) {
-  const pre = [...f.querySelectorAll("textarea[name^=q]")]; const x = (await q(sb.from("assignments").select("contenido").eq("id", f.dataset.id).limit(1)))[0] || {};
-  const qs = (x.contenido && x.contenido.preguntas) || [];
-  const resultado = pre.length ? { respuestas: pre.map((t, i) => ({ p: qs[i] || "", r: t.value.trim() })) } : null;
-  try { await q(sb.rpc("completar_asignacion", { p_id: f.dataset.id, p_hecho: true, p_respuesta: f.respuesta ? f.respuesta.value.trim() : "", p_resultado: resultado })); sheet(""); toast("¡Hecho!"); route(); } catch (e) { toast(errMsg(e)); }
+  const x = (await q(sb.from("assignments").select("tipo,contenido").eq("id", f.dataset.id).limit(1)))[0] || {}; const c = x.contenido || {};
+  const pre = (c.preguntas || []).map(parseQ); const resultado = {};
+  if (pre.length) { const rs = pre.map((qq, i) => ({ p: qq.texto, r: ((f[`q${i}`] || {}).value || "").trim() })); if (rs.some(r => !r.r)) { toast("Te falta alguna respuesta"); return; } resultado.respuestas = rs; }
+  if ((c.checklist || []).length) resultado.check = c.checklist.map((_, i) => !!f.querySelector(`input[name=ck][value="${i}"]:checked`));
+  if (x.tipo === "cardio") ["min", "km", "pasos", "fc", "rpe"].forEach(k => { const e = f[`r_${k}`]; if (e && num(e.value) != null) resultado[k] = num(e.value); });
+  try { await q(sb.rpc("completar_asignacion", { p_id: f.dataset.id, p_hecho: true, p_respuesta: f.respuesta ? f.respuesta.value.trim() : "", p_resultado: Object.keys(resultado).length ? resultado : null })); sheet(""); toast(x.tipo === "nota" ? (c.responder ? "Enviado" : "Leído") : "¡Hecho!"); route(); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Cliente: Calendario ================= */
@@ -416,6 +427,7 @@ async function viewWorkout(id) {
   const exs = c.ejercicios || [];
   shell(a.titulo, `
   ${a.hecho ? `<div class="banner" style="background:var(--ok-soft);border-color:var(--ok)">Ya registraste este entreno. Si lo guardas otra vez se añade como un registro nuevo.</div>` : ""}
+  ${c.objetivo || c.dur_est ? `<div class="card obj-card"><h2>Objetivo de hoy${c.dur_est ? ` <small>≈ ${esc(c.dur_est)} min</small>` : ""}</h2>${c.objetivo ? `<p class="small" style="margin:0">${esc(c.objetivo)}</p>` : ""}</div>` : ""}
   ${c.calentamiento ? `<div class="card"><h2>Calentamiento</h2><p class="small" style="margin:0;white-space:pre-wrap">${esc(c.calentamiento)}</p></div>` : ""}
   ${c.notas ? `<div class="card"><h2>Notas</h2><p class="small" style="margin:0;white-space:pre-wrap">${esc(c.notas)}</p></div>` : ""}
   ${c.detalle ? `<div class="card"><p class="small" style="margin:0;white-space:pre-wrap">${esc(c.detalle)}</p></div>` : ""}
@@ -468,26 +480,34 @@ async function saveWorkout(f) {
 
 /* ================= Cliente: Nutrición ================= */
 
-function openWellness(prev) {
-  const w = prev || {}; S.sub.well = { ...w };
-  sheet(`<h2>¿Cómo estás hoy?</h2><p class="small muted" style="margin:0">Toca un número del 1 al 5. El 5 siempre es lo mejor.</p>
+function openWellness(prev, c = {}) {
+  const w = prev || {}; S.sub.well = { ...w }; const on = k => !(c.campos) || c.campos.includes(k);
+  sheet(`<h2>¿Cómo estás hoy?</h2><p class="small muted" style="margin:0">${c.detalle ? esc(c.detalle) + " " : ""}Toca un número del 1 al 5. El 5 siempre es lo mejor.</p>
   <form id="f-well" class="col" style="display:flex;flex-direction:column;gap:14px">
   ${WK.map(([k, l, a, b]) => `<div><div class="small" style="font-weight:700;margin-bottom:6px">${l}</div><div class="scale" role="group" aria-label="${l}">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-act="scale" data-k="${k}" data-v="${n}" aria-pressed="${num(w[k]) === n}">${n}</button>`).join("")}</div><div class="anchors"><span>${a}</span><span>${b}</span></div></div>`).join("")}
-  <div class="grid2"><div class="f"><label for="w-h">Horas dormidas</label><input id="w-h" name="sueno_h" inputmode="decimal" value="${esc(w.sueno_h ?? "")}" placeholder="7,5"></div><div class="f"><label for="w-fc">Pulso en reposo (opcional)</label><input id="w-fc" name="fc" inputmode="numeric" value="${esc(w.fc ?? "")}"></div></div>
-  <div class="grid2"><div class="f"><label for="w-hrv">HRV / VFC en ms (si tienes reloj)</label><input id="w-hrv" name="hrv" inputmode="numeric" value="${esc(w.hrv ?? "")}"></div><div class="f"><label for="w-ap">Apetito</label><select id="w-ap" name="apetito"><option value="">—</option>${[[1, "1 · Sin ganas de comer"], [2, "2 · Poco apetito"], [3, "3 · Normal"], [4, "4 · Más hambre de lo normal"], [5, "5 · Hambre voraz"]].map(([v, l]) => `<option value="${v}" ${num(w.apetito) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
-  <div class="grid2"><div class="f"><label for="w-mz">¿Alguna molestia? Zona</label><input id="w-mz" name="molestia_zona" value="${esc(w.molestia_zona || "")}" placeholder="Rodilla derecha"></div><div class="f"><label for="w-mi">Dolor 0–10</label><input id="w-mi" name="molestia_0a10" inputmode="numeric" value="${esc(w.molestia_0a10 ?? "")}"></div></div>
-  <div class="f"><label for="w-c">Comentario (opcional)</label><textarea id="w-c" name="comentario" maxlength="1000">${esc(w.comentario || "")}</textarea></div>
+  <div class="grid2">${on("sueno_h") ? `<div class="f"><label for="w-h">Horas dormidas</label><input id="w-h" name="sueno_h" inputmode="decimal" value="${esc(w.sueno_h ?? "")}" placeholder="7,5"></div>` : ""}${on("fc") ? `<div class="f"><label for="w-fc">Pulso en reposo</label><input id="w-fc" name="fc" inputmode="numeric" value="${esc(w.fc ?? "")}" placeholder="lpm, nada más despertar"></div>` : ""}${on("hrv") ? `<div class="f"><label for="w-hrv">HRV / VFC en ms</label><input id="w-hrv" name="hrv" inputmode="numeric" value="${esc(w.hrv ?? "")}" placeholder="La que marque tu reloj"></div>` : ""}${on("apetito") ? `<div class="f"><label for="w-ap">Apetito</label><select id="w-ap" name="apetito"><option value="">—</option>${[[1, "1 · Sin ganas de comer"], [2, "2 · Poco apetito"], [3, "3 · Normal"], [4, "4 · Más hambre de lo normal"], [5, "5 · Hambre voraz"]].map(([v, l]) => `<option value="${v}" ${num(w.apetito) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>` : ""}${c.campos && on("peso") ? `<div class="f"><label for="w-kg">Peso en ayunas (kg)</label><input id="w-kg" name="kg" inputmode="decimal" placeholder="80,5"></div>` : ""}</div>
+  ${on("molestia") ? `<div class="grid2"><div class="f"><label for="w-mz">¿Alguna molestia? Zona</label><input id="w-mz" name="molestia_zona" value="${esc(w.molestia_zona || "")}" placeholder="Rodilla derecha"></div><div class="f"><label for="w-mi">Dolor 0–10</label><input id="w-mi" name="molestia_0a10" inputmode="numeric" value="${esc(w.molestia_0a10 ?? "")}"></div></div>` : ""}
+  ${on("comentario") ? `<div class="f"><label for="w-c">Comentario (opcional)</label><textarea id="w-c" name="comentario" maxlength="1000">${esc(w.comentario || "")}</textarea></div>` : ""}
   <button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 async function saveWellness(f) {
   const v = S.sub.well || {}; const missing = WK.filter(([k]) => num(v[k]) == null);
   if (missing.length === WK.length) { toast("Marca al menos una respuesta"); return; }
-  const row = { client_id: S.me.cid, fecha: today(), comentario: f.comentario.value.trim(), molestia_zona: f.molestia_zona.value.trim(), sueno_h: num(f.sueno_h.value), fc: num(f.fc.value), hrv: num(f.hrv.value), apetito: num(f.apetito.value), molestia_0a10: num(f.molestia_0a10.value) };
+  const val = n => f[n] ? f[n].value : null; const prev = S.sub.well || {};
+  const row = { client_id: S.me.cid, fecha: today(), comentario: f.comentario ? f.comentario.value.trim() : (prev.comentario || ""), molestia_zona: f.molestia_zona ? f.molestia_zona.value.trim() : (prev.molestia_zona || "") };
+  ["sueno_h", "fc", "hrv", "apetito", "molestia_0a10"].forEach(k => { row[k] = f[k] ? num(val(k)) : (prev[k] ?? null); });
   WK.forEach(([k]) => row[k] = num(v[k]));
-  try { await q(sb.from("wellness").upsert(row, { onConflict: "client_id,fecha" })); await completarAccion("wellness"); sheet(""); toast("Guardado. ¡Gracias!"); route(); } catch (e) { toast(errMsg(e)); }
+  const kg = f.kg ? num(f.kg.value) : null; if (kg != null && (kg < 25 || kg > 350)) { toast("Revisa el peso"); return; }
+  try { await q(sb.from("wellness").upsert(row, { onConflict: "client_id,fecha" }));
+    if (kg != null) { await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })); await completarAccion("peso"); }
+    // completa los formularios de wellness pendientes (hoy o atrasados)
+    try { const xs = await q(sb.from("assignments").select("id,contenido").eq("tipo", "formulario").eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
+      for (const x of xs.filter(x => (x.contenido || {}).wellness)) await q(sb.rpc("completar_asignacion", { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null })); } catch { }
+    sheet(""); toast("Guardado. ¡Gracias!"); route(); } catch (e) { toast(errMsg(e)); }
 }
-function openPeso() {
-  sheet(`<h2>Peso de hoy</h2><p class="small muted" style="margin:0">Mejor por la mañana, en ayunas y después de ir al baño. Lo que cuenta es la media de la semana, no un día suelto.</p>
+function openPeso(c = {}) {
+  const mom = { ayunas: "Por la mañana, en ayunas y después de ir al baño.", libre: "Cuando puedas, pero intenta que sea siempre a la misma hora.", noche: "Por la noche, antes de dormir." }[c.momento || "ayunas"];
+  sheet(`<h2>Peso de hoy</h2><div class="tips"><p>⏰ ${esc(mom)}</p>${c.misma_bascula !== false ? `<p>⚖️ Siempre con la misma báscula y en suelo duro (nada de alfombras).</p>` : ""}<p>📈 Lo que cuenta es la media de la semana, no un día suelto.</p></div>${c.detalle ? `<p class="small" style="white-space:pre-wrap;margin:0">${esc(c.detalle)}</p>` : ""}
   <form id="f-peso" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="kg">Kilos</label><input id="kg" name="kg" inputmode="decimal" placeholder="80,5" required></div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
   $("#kg").focus();
 }
@@ -538,29 +558,31 @@ function medTable(ms) {
   return `<table><thead><tr><th>Fecha</th>${ks.map(k => `<th class="n">${esc(medLabel(k))}</th>`).join("")}</tr></thead><tbody>${ms.map(m => `<tr><td>${esc(fdate(m.fecha))}</td>${ks.map(k => `<td class="n">${fmt(m[k])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
 }
 // El cliente ve solo las medidas que le ha pedido Adrián (si no hay nada pedido, las básicas)
-async function openMedidas(sel) {
+async function openMedidas(sel, c = {}) {
   if (!sel) { const p = await q(sb.from("assignments").select("contenido").eq("tipo", "medidas").eq("hecho", false).lte("fecha", today()).order("fecha", { ascending: false }).limit(1)).catch(() => []); sel = p[0] && (p[0].contenido || {}).medidas; }
   const ks = (sel && sel.length ? sel : MED_DEF).filter(k => MEDIDAS.some(m => m[0] === k));
-  sheet(`<h2>Medidas</h2><p class="small muted" style="margin:0">Por la mañana, en ayunas, con cinta métrica pegada a la piel y sin apretar. Siempre del mismo lado.</p>
+  sheet(`<h2>Medidas</h2><p class="small muted" style="margin:0">Por la mañana, en ayunas, con cinta métrica pegada a la piel y sin apretar. Brazo, muslo y gemelo del lado <b>${esc(c.lado || "derecho")}</b>.</p>${c.detalle ? `<p class="small" style="margin:0">${esc(c.detalle)}</p>` : ""}
   <form id="f-med" data-ks="${esc(ks.join(","))}" style="display:flex;flex-direction:column;gap:10px"><div class="grid2">${ks.map(k => { const m = MEDIDAS.find(x => x[0] === k); return `<div class="f"><label for="m-${k}">${esc(m[1])}<br><span class="tiny muted" style="font-weight:400">${esc(m[2])}</span></label><input id="m-${k}" name="${k}" inputmode="decimal" placeholder="cm"></div>`; }).join("")}</div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; f.dataset.ks.split(",").filter(Boolean).forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await q(sb.from("measurements").insert(row)); await completarAccion("medidas"); sheet(""); toast("Medidas guardadas"); route(); } catch (e) { toast(errMsg(e)); } }
-function openFotos() {
-  sheet(`<h2>Subir fotos</h2><p class="small muted" style="margin:0">Las fotos se reducen y se les quita la ubicación y los datos de la cámara antes de subirlas.</p>
-  <form id="f-fotos" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="ph-v">Vista</label><select id="ph-v" name="vista"><option value="frente">De frente</option><option value="perfil">De perfil</option><option value="espalda">De espaldas</option><option value="otra">Otra</option></select></div><div class="f"><label for="ph-f">Foto</label><input id="ph-f" name="foto" type="file" accept="image/*" required></div><button class="btn pri block">Subir</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
-}
-async function shrink(file) { // re-codifica a JPEG: elimina EXIF/GPS
-  const url = URL.createObjectURL(file); try {
-    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-    const k = Math.min(1, 1600 / Math.max(img.width, img.height)); const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    return await new Promise(res => c.toBlob(res, "image/jpeg", 0.85));
-  } finally { URL.revokeObjectURL(url); }
+function openFotos(c) {
+  const vs = c && (c.vistas || []).length ? c.vistas : null;
+  const conds = c ? (c.condiciones || []) : [];
+  sheet(`<h2>Subir fotos</h2>${conds.length ? `<div class="tips">${conds.map(t => `<p>✓ ${esc(t)}</p>`).join("")}</div>` : ""}${c && c.detalle ? `<p class="small" style="white-space:pre-wrap;margin:0">${esc(c.detalle)}</p>` : ""}
+  <form id="f-fotos" style="display:flex;flex-direction:column;gap:10px">
+  ${vs ? vs.map(v => `<div class="f fotoin"><label for="ph-${v}">${esc((FOTO_V.find(x => x[0] === v) || [v, v])[1])}</label><input id="ph-${v}" type="file" accept="image/*" data-vista="${esc(v)}" required></div>`).join("")
+    : `<div class="f"><label for="ph-v">Vista</label><select id="ph-v" name="vista">${FOTO_V.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}<option value="otra">Otra</option></select></div><div class="f"><label for="ph-f">Foto</label><input id="ph-f" type="file" accept="image/*" data-vista="" required></div>`}
+  <p class="tiny muted" style="margin:0">Solo las ves tú y Adrián. Se reducen y se les quita la ubicación y los datos de la cámara antes de subirlas.</p>
+  <button class="btn pri block">Subir</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 async function saveFotos(f) {
-  const file = f.foto.files[0]; if (!file) return; const b = f.querySelector("button.pri"); b.disabled = true; b.textContent = "Subiendo…";
-  try { const blob = await shrink(file); const path = `${S.me.cid}/${today()}-${f.vista.value}-${uid()}.jpg`;
-    const { error } = await sb.storage.from("fotos").upload(path, blob, { contentType: "image/jpeg", upsert: false }); if (error) throw error;
-    await q(sb.from("photos").insert({ client_id: S.me.cid, fecha: today(), vista: f.vista.value, path })); await completarAccion("fotos"); sheet(""); toast("Foto subida"); route();
+  const ins = [...f.querySelectorAll("input[type=file]")].filter(i => i.files[0]); if (!ins.length) return;
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try {
+    for (const [k, i] of ins.entries()) { b.textContent = `Subiendo ${k + 1} de ${ins.length}…`; const vista = i.dataset.vista || f.vista.value; const blob = await shrink(i.files[0]); const path = `${S.me.cid}/${today()}-${vista}-${uid()}.jpg`;
+      const { error } = await sb.storage.from("fotos").upload(path, blob, { contentType: "image/jpeg", upsert: false }); if (error) throw error;
+      await q(sb.from("photos").insert({ client_id: S.me.cid, fecha: today(), vista, path })); }
+    await completarAccion("fotos"); sheet(""); toast(ins.length > 1 ? `${ins.length} fotos subidas` : "Foto subida"); route();
   } catch (e) { toast(errMsg(e)); b.disabled = false; b.textContent = "Subir"; }
 }
 
@@ -624,7 +646,7 @@ function wRow(e = {}) {
   return `<div class="wrow" data-row><input name="r_b" value="${esc(e.bloque || "")}" placeholder="A1" aria-label="Bloque" class="rb"><input name="r_n" list="dl-ex" value="${esc(e.nombre || "")}" placeholder="Ejercicio" aria-label="Ejercicio" class="rn"><input name="r_sxr" value="${esc(e.sxr || "")}" placeholder="3×8–10" aria-label="Series × reps"><input name="r_rir" value="${esc(e.rir || "")}" placeholder="RIR" aria-label="RIR o RPE"><input name="r_des" value="${esc(e.descanso || "")}" placeholder="Descanso" aria-label="Descanso"><select name="r_prog" class="rprog" aria-label="Progresión de carga">${PROG.map(([v, l]) => `<option value="${v}" ${(e.prog || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select><input name="r_not" value="${esc(e.notas || "")}" placeholder="Notas técnicas" aria-label="Notas técnicas" class="rnot"><span class="ra"><button type="button" class="btn ghost sm" data-act="w-up" aria-label="Subir">↑</button><button type="button" class="btn ghost sm" data-act="w-down" aria-label="Bajar">↓</button><button type="button" class="btn ghost sm" data-act="w-del" aria-label="Quitar">✕</button></span></div>`;
 }
 function wEditor(c = {}, tipo = "workout") {
-  if (tipo === "cardio") return `<div class="wed"><div class="f"><label>Descripción del cardio</label><textarea name="w_det" placeholder="45–60 min en zona 2 (120–140 ppm)">${esc(c.detalle || "")}</textarea></div></div>`;
+  if (tipo === "cardio") return cardioEditor(c);
   return `<div class="wed"><div class="f"><label>Calentamiento</label><textarea name="w_cal" style="min-height:60px">${esc(c.calentamiento || "")}</textarea></div>
   <div class="whead tiny muted"><span>Bloque</span><span>Ejercicio</span><span>Series×reps</span><span>RIR/RPE</span><span>Descanso</span></div>
   <div class="wrows">${((c.ejercicios && c.ejercicios.length) ? c.ejercicios : [{}]).map(wRow).join("")}</div>
@@ -632,7 +654,7 @@ function wEditor(c = {}, tipo = "workout") {
   <div class="f"><label>Notas del workout</label><textarea name="w_not" style="min-height:60px">${esc(c.notas || "")}</textarea></div></div>`;
 }
 function readWEditor(root, tipo) {
-  if (tipo === "cardio") return { detalle: (root.querySelector('[name="w_det"]') || {}).value || "" };
+  if (tipo === "cardio") return readCardio(root);
   const vid = n => { const e = (S.lib.ex || []).find(x => x.nombre.toLowerCase() === n.toLowerCase()); return e && e.video_url ? e.video_url : ""; };
   const ejercicios = [...root.querySelectorAll("[data-row]")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); const nombre = g("r_n"); return { bloque: g("r_b"), nombre, sxr: g("r_sxr"), rir: g("r_rir"), descanso: g("r_des"), notas: g("r_not"), prog: (r.querySelector('[name="r_prog"]') || {}).value || "", video: vid(nombre) }; }).filter(e => e.nombre);
   return { calentamiento: root.querySelector('[name="w_cal"]').value.trim(), notas: root.querySelector('[name="w_not"]').value.trim(), ejercicios };
@@ -739,10 +761,98 @@ async function openAsig(id, fecha) {
   ${!id ? `<div class="seg wrap" role="group" aria-label="Tipo">${[...Object.entries(TIPOS), ["evento", "Evento"]].map(([k, l]) => `<button type="button" data-act="asig-tipo" data-t="${k}" aria-pressed="${x.tipo === k}">${l}</button>`).join("")}</div>` : `<p class="small" style="margin:0">${tipoChip(x.tipo)}${x.hecho ? ` <span class="chip ok">Hecho ${x.hecho_en ? esc(relTime(x.hecho_en)) : ""}</span>` : ""}${x.programa ? ` <span class="chip">${esc(x.programa)}</span>` : ""}</p>`}
   <div id="asig-body">${asigBody(x, tpls)}</div>
   ${logs.length ? `<div class="card"><h2>Lo que registró</h2>${logs.map(w => `<p class="tiny muted" style="margin:0 0 4px">${esc(fdate(w.fecha))}${w.rpe_sesion != null ? " · dureza " + w.rpe_sesion + "/10" : ""}${w.duracion_min ? " · " + w.duracion_min + " min" : ""}</p><table><tbody>${Object.entries((w.sets || []).reduce((a, s) => { (a[s.ejercicio] = a[s.ejercicio] || []).push(s); return a; }, {})).map(([ex, ss]) => `<tr><td>${esc(ex)}</td><td class="n">${ss.map(s => s.hecho ? "hecho" : `${s.kg ?? "?"}×${s.reps ?? "?"}${s.rir != null ? " @" + s.rir : ""}`).join(" · ")}</td></tr>`).join("")}</tbody></table>${w.comentario ? `<p class="small">${esc(w.comentario)}</p>` : ""}`).join("")}</div>` : ""}
-  ${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta ? `<p class="small" style="margin:4px 0"><b>Comentario:</b> ${esc(x.respuesta)}</p>` : ""}</div>` : ""}
+  ${resExtra(x)}${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta ? `<p class="small" style="margin:4px 0"><b>Comentario:</b> ${esc(x.respuesta)}</p>` : ""}</div>` : ""}
   <button class="btn pri block">Guardar</button>
   ${id ? `<div class="row"><input type="date" name="dup_fecha" value="${esc(addDays(x.fecha, 7))}" aria-label="Fecha para duplicar" style="width:auto"><button type="button" class="btn sm" data-act="asig-dup" data-id="${esc(id)}">Duplicar en esa fecha</button><span class="grow"></span><button type="button" class="btn sm ghost" data-act="asig-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button></div>` : ""}
   <button type="button" class="btn ghost" data-act="close">Cerrar</button></form>${exDatalist()}`, "wide");
+}
+/* ================= Detalles propios de cada tipo ================= */
+const CARDIO_MOD = [["pasos", "Pasos / caminar"], ["correr", "Correr"], ["bici", "Bici"], ["eliptica", "Elíptica"], ["remo", "Remo"], ["airbike", "Air-bike"], ["natacion", "Natación"], ["comba", "Comba"], ["otro", "Otro"]];
+const CARDIO_FMT = [["continuo", "Continuo"], ["intervalos", "Intervalos"], ["diario", "Objetivo diario"]];
+const CARDIO_REG = [["min", "Minutos"], ["km", "Distancia (km)"], ["pasos", "Pasos"], ["fc", "FC media"], ["rpe", "Dureza 1–10"]];
+const CARDIO_REG_DEF = { pasos: ["pasos"], correr: ["min", "km", "fc", "rpe"], bici: ["min", "km", "fc", "rpe"], natacion: ["min", "km", "rpe"] };
+const ZONAS = [["", "Sin indicar"], ["Z1", "Z1 · Muy suave (RPE 2–3)"], ["Z2", "Z2 · Suave, puedes hablar (RPE 3–4)"], ["Z3", "Z3 · Moderado (RPE 5–6)"], ["Z4", "Z4 · Duro (RPE 7–8)"], ["Z5", "Z5 · Máximo (RPE 9–10)"]];
+const FOTO_V = [["frente", "De frente"], ["perfil_d", "Perfil derecho"], ["perfil_i", "Perfil izquierdo"], ["espalda", "De espaldas"], ["frente_c", "Frente contraído"], ["espalda_c", "Espalda contraída"]];
+const FOTO_DEF = ["frente", "perfil_d", "espalda"];
+const FOTO_COND = ["Misma luz y mismo sitio que la última vez", "Ropa interior o bañador", "Por la mañana, en ayunas", "Móvil a la altura del ombligo, a 2–3 metros", "Postura relajada, brazos a los lados"];
+const PESO_MOM = [["ayunas", "En ayunas, después de ir al baño"], ["libre", "Cuando pueda (siempre a la misma hora)"], ["noche", "Por la noche, antes de dormir"]];
+const MSG_PLANT = ["Buenos días 💪 Hoy toca entreno. ¡A por ello!", "Recuerda rellenar el cuestionario por la mañana, en ayunas y después de ir al baño.", "Recuerda pesarte mañana en ayunas, después de ir al baño.", "¿Qué tal va la semana? Cualquier cosa me escribes.", "Esta semana es de descarga: baja el ritmo y recupera. Es parte del plan.", "Mañana toca revisión semanal: fotos, medidas y cuestionario. ¡Gracias!"];
+const REV_SEMANAL = ["1-10: ¿Cómo valoras la semana en general?", "1-10: ¿Cómo has cumplido los entrenos?", "1-10: ¿Y los hábitos (pasos, sueño, comida)?", "1-5: Estrés medio de la semana", "Sí/No: ¿Has tenido alguna molestia o dolor?", "¿Qué ha ido mejor esta semana?", "¿Qué te ha costado más?", "¿Algo que deba saber para la semana que viene?"];
+const WELL_OPC = [["sueno_h", "Horas de sueño"], ["fc", "Pulso en reposo"], ["hrv", "HRV / VFC"], ["apetito", "Apetito"], ["molestia", "Molestias (zona y dolor)"], ["peso", "Peso en ayunas"], ["comentario", "Comentario libre"]];
+const WELL_DEF = ["sueno_h", "fc", "hrv", "apetito", "molestia", "comentario"];
+const chk = (name, val, on, label, sub) => `<label class="mchk"><input type="checkbox" name="${name}" value="${esc(val)}" ${on ? "checked" : ""}><span><b>${esc(label)}</b>${sub ? `<br><span class="tiny muted">${esc(sub)}</span>` : ""}</span></label>`;
+const chkSet = (root, name) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value);
+const gv = (root, n) => { const e = root.querySelector(`[name="${n}"]`); return e ? (e.type === "checkbox" ? e.checked : e.value.trim()) : ""; };
+// Preguntas: "1-10: texto", "1-5: texto", "Sí/No: texto" o texto libre
+const parseQ = p => { const m = String(p).match(/^\s*(1-10|1-5|s[ií]\/no)\s*:\s*(.+)$/i); return m ? { tipo: /s/i.test(m[1]) ? "sn" : m[1], texto: m[2] } : { tipo: "txt", texto: String(p) }; };
+
+function cardioEditor(c = {}) {
+  const mod = c.modalidad || "", reg = c.registrar || CARDIO_REG_DEF[mod] || ["min", "rpe"];
+  return `<div class="wed"><div class="grid3"><div class="f"><label>Modalidad</label><select name="c_mod" data-act-change="c-mod">${CARDIO_MOD.map(([k, l]) => `<option value="${k}" ${mod === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Formato</label><select name="c_fmt" data-act-change="c-fmt">${CARDIO_FMT.map(([k, l]) => `<option value="${k}" ${(c.formato || "continuo") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Intensidad</label><select name="c_zona">${ZONAS.map(([k, l]) => `<option value="${k}" ${(c.zona || "") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
+  <div class="grid4"><div class="f"><label>Minutos</label><input name="c_min" inputmode="numeric" value="${esc(c.min ?? "")}" placeholder="45"></div><div class="f"><label>Distancia (km)</label><input name="c_km" inputmode="decimal" value="${esc(c.km ?? "")}"></div><div class="f"><label>Pasos</label><input name="c_pasos" inputmode="numeric" value="${esc(c.pasos ?? "")}" placeholder="10000"></div><div class="f"><label>FC objetivo (ppm)</label><input name="c_fc" value="${esc(c.fc || "")}" placeholder="120–140"></div></div>
+  <div class="grid3 c-int" ${(c.formato || "continuo") === "intervalos" ? "" : "hidden"}><div class="f"><label>Series</label><input name="c_series" inputmode="numeric" value="${esc(c.series ?? "")}" placeholder="6"></div><div class="f"><label>Trabajo</label><input name="c_trabajo" value="${esc(c.trabajo || "")}" placeholder="1' fuerte"></div><div class="f"><label>Descanso</label><input name="c_desc" value="${esc(c.descanso || "")}" placeholder="2' suave"></div></div>
+  <div class="f"><label>Explicación para el cliente</label><textarea name="w_det" placeholder="5' suave para calentar, luego…">${esc(c.detalle || "")}</textarea></div>
+  <fieldset class="medpick"><legend>Qué tiene que apuntar al terminar</legend>${CARDIO_REG.map(([k, l]) => chk("c_reg", k, reg.includes(k), l)).join("")}</fieldset></div>`;
+}
+function readCardio(root) {
+  const n = k => num(gv(root, k));
+  return { modalidad: gv(root, "c_mod"), formato: gv(root, "c_fmt"), zona: gv(root, "c_zona"), min: n("c_min"), km: n("c_km"), pasos: n("c_pasos"), fc: gv(root, "c_fc"), series: n("c_series"), trabajo: gv(root, "c_trabajo"), descanso: gv(root, "c_desc"), detalle: gv(root, "w_det"), registrar: chkSet(root, "c_reg") };
+}
+// Resumen del objetivo de cardio en una línea
+function cardioResumen(c = {}) {
+  const mod = (CARDIO_MOD.find(m => m[0] === c.modalidad) || [])[1];
+  const p = [mod, c.formato === "intervalos" && c.series ? `${c.series} × ${c.trabajo || "?"}${c.descanso ? " / " + c.descanso : ""}` : "", c.min ? c.min + " min" : "", c.km ? fmt(c.km) + " km" : "", c.pasos ? Number(c.pasos).toLocaleString("es-ES") + " pasos" : "", c.zona || "", c.fc ? c.fc + " ppm" : ""].filter(Boolean);
+  return p.join(" · ");
+}
+
+// Campos extra del editor del entrenador según el tipo
+function typeExtras(t, c = {}) {
+  if (t === "workout") return `<div class="grid2"><div class="f"><label>Objetivo de la sesión (lo ve el cliente)</label><input name="x_obj" value="${esc(c.objetivo || "")}" placeholder="Técnica en sentadilla y subir el press"></div><div class="f"><label>Duración aproximada (min)</label><input name="x_dur" inputmode="numeric" value="${esc(c.dur_est ?? "")}" placeholder="60"></div></div>${wEditor(c, "workout")}`;
+  if (t === "cardio") return cardioEditor(c);
+  if (t === "formulario") { const pre = c.wellness ? "wellness" : (c.preset || ((c.preguntas || []).length ? "libre" : "wellness")); const opc = c.campos || WELL_DEF;
+    return `<div class="f"><label>Tipo de formulario</label><select name="f_tipo" data-act-change="f-preset"><option value="wellness" ${pre === "wellness" ? "selected" : ""}>Wellness diario (sueño, energía, agujetas, estrés…)</option><option value="revision" ${pre === "revision" ? "selected" : ""}>Revisión semanal</option><option value="libre" ${pre === "libre" ? "selected" : ""}>Personalizado</option></select></div>
+    <div class="f-well" ${pre === "wellness" ? "" : "hidden"}><p class="tiny muted" style="margin:0 0 6px">Siempre pregunta calidad de sueño, energía, agujetas, estrés, ánimo, ganas de entrenar y salud articular (1–5). Además:</p><fieldset class="medpick"><legend>Datos extra</legend>${WELL_OPC.map(([k, l]) => chk("f_opc", k, opc.includes(k), l)).join("")}</fieldset></div>
+    <div class="f-q" ${pre === "wellness" ? "hidden" : ""}><div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas" style="min-height:150px">${esc((c.preguntas && c.preguntas.length ? c.preguntas : pre === "revision" ? REV_SEMANAL : []).join("\n"))}</textarea></div><p class="tiny muted" style="margin:4px 0 0">Empieza la línea con <b>1-10:</b>, <b>1-5:</b> o <b>Sí/No:</b> para que responda tocando; sin nada, responde escribiendo.</p></div>
+    <div class="f"><label>Instrucciones (opcional)</label><textarea name="detalle" style="min-height:60px" placeholder="Rellénalo por la mañana, en ayunas">${esc(c.detalle || "")}</textarea></div>`; }
+  if (t === "nota") return `<div class="grid2"><div class="f"><label>Hora a la que le aparece</label><input type="time" name="hora" value="${esc(c.hora || "08:00")}"></div><div class="f"><label>Plantilla</label><select data-act-change="msg-plant"><option value="">Escribir uno nuevo…</option>${MSG_PLANT.map(m => `<option>${esc(m)}</option>`).join("")}</select></div></div>
+    <div class="f"><label>Mensaje</label><textarea name="detalle" style="min-height:110px" required>${esc(c.detalle || "")}</textarea></div>
+    <label class="small"><input type="checkbox" name="x_resp" ${c.responder ? "checked" : ""}> Que pueda contestarte desde el mensaje</label>`;
+  if (t === "peso") return `<div class="f"><label>Cuándo se tiene que pesar</label><select name="x_mom">${PESO_MOM.map(([k, l]) => `<option value="${k}" ${(c.momento || "ayunas") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <label class="small"><input type="checkbox" name="x_misma" ${c.misma_bascula !== false ? "checked" : ""}> Recordarle usar siempre la misma báscula, en suelo duro</label>
+    <div class="f"><label>Nota (opcional)</label><textarea name="detalle" style="min-height:60px">${esc(c.detalle || "")}</textarea></div>`;
+  if (t === "fotos") { const v = c.vistas || FOTO_DEF, co = c.condiciones || FOTO_COND.slice(0, 4);
+    return `<fieldset class="medpick"><legend>Qué fotos tiene que subir</legend>${FOTO_V.map(([k, l]) => chk("x_vis", k, v.includes(k), l)).join("")}</fieldset>
+    <fieldset class="medpick one"><legend>Condiciones que le recuerdas</legend>${FOTO_COND.map(l => chk("x_cond", l, co.includes(l), l)).join("")}</fieldset>
+    <div class="f"><label>Nota (opcional)</label><textarea name="detalle" style="min-height:60px">${esc(c.detalle || "")}</textarea></div>`; }
+  if (t === "medidas") return `${medPicker(c.medidas)}<div class="grid2"><div class="f"><label>Lado para brazo, muslo y gemelo</label><select name="x_lado"><option value="derecho" ${(c.lado || "derecho") === "derecho" ? "selected" : ""}>Derecho</option><option value="izquierdo" ${c.lado === "izquierdo" ? "selected" : ""}>Izquierdo</option></select></div><div class="f"><label>Nota (opcional)</label><input name="detalle" value="${esc(c.detalle || "")}"></div></div>`;
+  return `<div class="f"><label>Qué tiene que hacer</label><textarea name="detalle" style="min-height:90px">${esc(c.detalle || "")}</textarea></div>
+    <div class="f"><label>Pasos para marcar (uno por línea, opcional)</label><textarea name="x_check" style="min-height:70px" placeholder="Comprar cinta métrica\nDescargar app de pasos">${esc((c.checklist || []).join("\n"))}</textarea></div>
+    <div class="grid2"><div class="f"><label>Enlace (opcional)</label><input name="x_link" type="url" value="${esc(c.enlace || "")}" placeholder="https://"></div><label class="small" style="align-self:end"><input type="checkbox" name="x_com" ${c.pedir_comentario ? "checked" : ""}> Pedirle un comentario al terminar</label></div>`;
+}
+function readTypeExtras(root, t) {
+  if (t === "workout") { const c = readWEditor(root, "workout"); c.objetivo = gv(root, "x_obj"); c.dur_est = num(gv(root, "x_dur")); return c; }
+  if (t === "cardio") return readCardio(root);
+  if (t === "formulario") { const p = gv(root, "f_tipo") || "libre"; if (p === "wellness") return { wellness: true, campos: chkSet(root, "f_opc"), detalle: gv(root, "detalle") }; return { preset: p, preguntas: lines(gv(root, "preguntas")), detalle: gv(root, "detalle") }; }
+  if (t === "nota") return { hora: gv(root, "hora"), detalle: gv(root, "detalle"), responder: gv(root, "x_resp") };
+  if (t === "peso") return { momento: gv(root, "x_mom"), misma_bascula: gv(root, "x_misma"), detalle: gv(root, "detalle") };
+  if (t === "fotos") return { vistas: chkSet(root, "x_vis"), condiciones: chkSet(root, "x_cond"), detalle: gv(root, "detalle") };
+  if (t === "medidas") return { medidas: chkSet(root, "med"), lado: gv(root, "x_lado"), detalle: gv(root, "detalle") };
+  return { detalle: gv(root, "detalle"), checklist: lines(gv(root, "x_check")), enlace: /^https:\/\//.test(gv(root, "x_link")) ? gv(root, "x_link") : "", pedir_comentario: gv(root, "x_com") };
+}
+function validExtras(t, c) {
+  if (t === "medidas" && !(c.medidas || []).length) return "Elige al menos una medida";
+  if (t === "fotos" && !(c.vistas || []).length) return "Elige al menos una foto";
+  if (t === "nota" && !c.detalle) return "Escribe el mensaje";
+  if (t === "formulario" && !c.wellness && !(c.preguntas || []).length) return "Escribe al menos una pregunta";
+  return "";
+}
+
+// Lo que registró el cliente en cardio y tareas con pasos (vista del entrenador)
+function resExtra(x) {
+  const r = x.resultado || {}, c = x.contenido || {}; const out = [];
+  if (x.tipo === "cardio") { const p = [["min", " min"], ["km", " km"], ["pasos", " pasos"], ["fc", " ppm"], ["rpe", "/10 dureza"]].filter(([k]) => r[k] != null).map(([k, u]) => `${k === "pasos" ? Number(r[k]).toLocaleString("es-ES") : fmt(r[k])}${u}`); if (p.length) out.push(`<p class="small" style="margin:0"><b>Hizo:</b> ${esc(p.join(" · "))}</p>${cardioResumen(c) ? `<p class="tiny muted" style="margin:2px 0 0">Objetivo: ${esc(cardioResumen(c))}</p>` : ""}`); }
+  if ((c.checklist || []).length && r.check) out.push(c.checklist.map((t, i) => `<p class="small" style="margin:2px 0">${r.check[i] ? "✅" : "⬜️"} ${esc(t)}</p>`).join(""));
+  return out.length ? `<div class="card"><h2>Lo que registró</h2>${out.join("")}</div>` : "";
 }
 function medPicker(sel) {
   const on = new Set(sel && sel.length ? sel : MED_DEF);
@@ -756,10 +866,7 @@ function asigBody(x, tpls) {
   const opts = tpls.filter(p => (t === "cardio" ? p.tipo === "cardio" : p.tipo === "workout"));
   return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="${{ workout: "Pierna A", cardio: "Rodaje Z2", formulario: "Revisión semanal", nota: "Buenos días", peso: "Pesarte en ayunas", fotos: "Fotos de progreso", medidas: "Medidas", tarea: "Comprar cinta métrica" }[t] || ""}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div></div>
   ${(t === "workout" || t === "cardio") && opts.length ? `<div class="row"><select id="tpl-sel" aria-label="Cargar de la librería" style="flex:1"><option value="">Cargar de la librería…</option>${opts.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="tpl-load">Cargar</button></div>` : ""}
-  ${t === "medidas" ? medPicker(c.medidas) : ""}
-  ${t === "peso" || t === "fotos" || t === "medidas" ? `<p class="tiny muted" style="margin:0">Al cliente se le abre directamente la pantalla para ${t === "peso" ? "apuntar su peso" : t === "fotos" ? "subir sus fotos" : "apuntar estas medidas"} y se marca como hecho sola cuando lo hace.</p>` : ""}
-  ${t === "nota" ? `<div class="f"><label>Hora a la que le aparece</label><input type="time" name="hora" value="${esc(c.hora || "08:00")}"></div>` : ""}
-  ${t === "workout" || t === "cardio" ? wEditor(c, t) : t === "formulario" ? `<div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas" style="min-height:120px">${esc((c.preguntas || []).join("\n"))}</textarea></div><div class="f"><label>Instrucciones (opcional)</label><textarea name="detalle">${esc(c.detalle || "")}</textarea></div>` : `<div class="f"><label>${t === "nota" ? "Mensaje" : "Detalle"}</label><textarea name="detalle" style="min-height:120px">${esc(c.detalle || "")}</textarea></div>`}
+  ${typeExtras(t, c)}
   <label class="small"><input type="checkbox" name="visible" ${x.visible !== false ? "checked" : ""}> Lo ve el cliente</label>
   ${!x.id ? `<div class="grid2"><div class="f"><label>Repetir</label><select name="rep"><option value="">No repetir</option><option value="1">Cada día</option><option value="2">Cada 2 días</option><option value="7">Cada semana</option></select></div><div class="f"><label>Hasta el</label><input type="date" name="rep_hasta"></div></div>` : ""}`;
 }
@@ -769,12 +876,8 @@ async function saveAsig(f) {
     if (tipo === "evento") {
       await q(sb.from("events").insert({ client_id: cid, titulo: f.titulo.value.trim(), tipo: f.ev_tipo.value, fecha: f.fecha.value, fin: f.fin.value || null, notas: f.notas.value.trim(), visible_cliente: f.visible.checked }));
     } else {
-      let contenido;
-      if (tipo === "workout" || tipo === "cardio") { contenido = readWEditor(f, tipo); if (tipo === "workout") await newExercisesFrom(contenido); }
-      else if (tipo === "formulario") contenido = { preguntas: lines(f.preguntas.value), detalle: f.detalle.value.trim() };
-      else contenido = { detalle: f.detalle.value.trim() };
-      if (tipo === "medidas") { contenido.medidas = [...f.querySelectorAll("input[name=med]:checked")].map(i => i.value); if (!contenido.medidas.length) { toast("Elige al menos una medida"); return; } }
-      if (tipo === "nota" && f.hora) contenido.hora = f.hora.value;
+      const contenido = readTypeExtras(f, tipo); const bad = validExtras(tipo, contenido); if (bad) { toast(bad); return; }
+      if (tipo === "workout") await newExercisesFrom(contenido);
       const row = { titulo: f.titulo.value.trim(), fecha: f.fecha.value, contenido, visible: f.visible.checked };
       if (id) await q(sb.from("assignments").update(row).eq("id", id));
       else {
@@ -1115,20 +1218,18 @@ function piBody(it, tpls) {
     const opts = tpls.filter(p => p.tipo === t); const propio = !it.template_id && ((c.ejercicios || []).length || !opts.length);
     return `<div class="f"><label>${t === "workout" ? "Workout" : "Cardio"}</label><select name="tpl" data-act-change="pi-src"><option value="" ${propio ? "selected" : ""}>Propio de este programa (lo editas aquí)</option>${opts.map((p, k) => `<option value="${esc(p.id)}" ${!propio && (it.template_id ? it.template_id === p.id : k === 0) ? "selected" : ""}>Librería · ${esc(p.nombre)}</option>`).join("")}</select></div>
     <div class="f"><label>Título para el cliente</label><input name="titulo" value="${esc(it.titulo || "")}" placeholder="${t === "workout" ? "Pierna A" : "Rodaje Z2"}"></div>
-    <div id="pi-ed" ${propio ? "" : "hidden"}>${wEditor(c, t)}</div>
+    <div id="pi-ed" ${propio ? "" : "hidden"}>${typeExtras(t, c)}</div>
     <p class="tiny muted" style="margin:0">Si eliges uno de la librería, se usa la versión que haya en la librería al programarlo.</p>`;
   }
-  return `<div class="f"><label>Título</label><input name="titulo" required value="${esc(it.titulo || "")}" placeholder="${esc(TIPOS[t] || "")}"></div>${t === "medidas" ? medPicker(c.medidas) : ""}${t === "nota" ? `<div class="f"><label>Hora a la que le aparece</label><input type="time" name="hora" value="${esc(c.hora || "08:00")}"></div>` : ""}${t === "formulario" ? `<div class="f"><label>Preguntas (una por línea)</label><textarea name="preguntas">${esc((c.preguntas || []).join("\n"))}</textarea></div>` : `<div class="f"><label>${t === "nota" ? "Mensaje" : "Detalle"}</label><textarea name="detalle">${esc(c.detalle || "")}</textarea></div>`}`;
+  return `<div class="f"><label>Título</label><input name="titulo" required value="${esc(it.titulo || "")}" placeholder="${esc(TIPOS[t] || "")}"></div>${typeExtras(t, c)}`;
 }
 function saveProgItem(f) {
   const t = S.sub.piTipo; const it = { semana: +f.dataset.s, dia: +f.dataset.d, tipo: t, titulo: f.titulo ? f.titulo.value.trim() : "" };
   if (t === "workout" || t === "cardio") {
     if (f.tpl.value) { it.template_id = f.tpl.value; if (!it.titulo) it.titulo = ((S.sub.tpls.find(x => x.id === it.template_id) || {}).nombre || "").replace(/^[^·]+ · /, ""); it.contenido = {}; }
-    else { it.contenido = readWEditor($("#pi-ed"), t); if (!it.titulo) { toast("Ponle un título"); return; } }
+    else { it.contenido = readTypeExtras($("#pi-ed"), t); if (!it.titulo) { toast("Ponle un título"); return; } }
   } else {
-    it.contenido = t === "formulario" ? { preguntas: lines(f.preguntas.value) } : { detalle: f.detalle.value.trim() };
-    if (t === "medidas") it.contenido.medidas = [...f.querySelectorAll("input[name=med]:checked")].map(i => i.value);
-    if (t === "nota" && f.hora) it.contenido.hora = f.hora.value;
+    it.contenido = readTypeExtras(f, t); const bad = validExtras(t, it.contenido); if (bad) { toast(bad); return; }
     if (!it.titulo) it.titulo = TIPOS[t];
   }
   if (f.dataset.i !== "") S.sub.prog.items[+f.dataset.i] = it; else S.sub.prog.items.push(it);
@@ -1168,7 +1269,7 @@ const sdOf = a => { if (a.length < 2) return null; const m = meanOf(a); return M
 function rolling(days, v, n, minN = 3) { const out = {}; days.forEach((d, i) => { const w = days.slice(Math.max(0, i - n + 1), i + 1).map(x => v[x]).filter(x => x != null); if (w.length >= minN) out[d] = meanOf(w); }); return out; }
 async function tabRecup(c) {
   const t = today(), d0 = addDays(t, -119), win = +(S.coach.recW || 42);
-  const [wl, wo] = await Promise.all([q(sb.from("wellness").select("*").eq("client_id", c.id).gte("fecha", d0).order("fecha")), q(sb.from("workouts").select("fecha,rpe_sesion,duracion_min,dia").eq("client_id", c.id).gte("fecha", d0).order("fecha"))]);
+  const [wl, wo, ca] = await Promise.all([q(sb.from("wellness").select("*").eq("client_id", c.id).gte("fecha", d0).order("fecha")), q(sb.from("workouts").select("fecha,rpe_sesion,duracion_min,dia").eq("client_id", c.id).gte("fecha", d0).order("fecha")), q(sb.from("assignments").select("fecha,resultado").eq("client_id", c.id).eq("tipo", "cardio").eq("hecho", true).gte("fecha", d0))]);
   const all = []; for (let d = d0; d <= t; d = addDays(d, 1)) all.push(d);
   const days = all.slice(-win);
   const by = k => { const o = {}; wl.forEach(w => { if (num(w[k]) != null) o[w.fecha] = num(w[k]); }); return o; };
@@ -1180,6 +1281,7 @@ async function tabRecup(c) {
   const wi7 = rolling(all, wi, 7);
   // Carga interna (RPE de sesión × minutos, Foster)
   const load = {}; wo.forEach(w => { if (w.rpe_sesion != null && w.duracion_min) load[w.fecha] = (load[w.fecha] || 0) + w.rpe_sesion * w.duracion_min; });
+  ca.forEach(x => { const r = x.resultado || {}; if (r.rpe != null && r.min) load[x.fecha] = (load[x.fecha] || 0) + r.rpe * r.min; }); // el cardio también suma carga
   const sumR = (end, n) => { let s = 0; for (let k = 0; k < n; k++) s += load[addDays(end, -k)] || 0; return s; };
   const acwr = {}; all.forEach(d => { const ch = sumR(d, 28) / 4; if (ch > 0 && Object.keys(load).some(x => x <= addDays(d, -21))) acwr[d] = sumR(d, 7) / ch; });
   const lastW = Array.from({ length: 7 }, (_, k) => load[addDays(t, -k)] || 0), mono = sdOf(lastW) ? meanOf(lastW) / sdOf(lastW) : null, strain = mono ? lastW.reduce((a, b) => a + b, 0) * mono : null;
@@ -1543,6 +1645,7 @@ document.addEventListener("click", async ev => {
       case "close": sheet(""); break;
       // cliente
       case "wellness": { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); openWellness(r[0]); break; }
+      case "qscale": { const h = $("#q" + a.dataset.q); if (h) h.value = a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "peso": openPeso(); break;
       case "medidas": openMedidas(); break;
@@ -1631,6 +1734,10 @@ document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
+  if (el.dataset && el.dataset.actChange === "c-mod") { const w = el.closest(".wed"); const def = CARDIO_REG_DEF[el.value] || ["min", "rpe"]; w.querySelectorAll('input[name="c_reg"]').forEach(i => { i.checked = def.includes(i.value); }); }
+  if (el.dataset && el.dataset.actChange === "c-fmt") { const w = el.closest(".wed"); const b = w && w.querySelector(".c-int"); if (b) b.hidden = el.value !== "intervalos"; }
+  if (el.dataset && el.dataset.actChange === "f-preset") { const fm = el.form; fm.querySelector(".f-well").hidden = el.value !== "wellness"; fm.querySelector(".f-q").hidden = el.value === "wellness"; const ta = fm.querySelector('[name="preguntas"]'); if (el.value === "revision" && ta && !ta.value.trim()) ta.value = REV_SEMANAL.join("\n"); }
+  if (el.dataset && el.dataset.actChange === "msg-plant" && el.value) { const ta = el.form.querySelector('[name="detalle"]'); if (ta) ta.value = el.value; el.value = ""; }
   if (el.dataset && el.dataset.actChange === "pi-src") { const ed = $("#pi-ed"); if (ed) ed.hidden = !!el.value; }
   if (el.id === "ex-sel") { S.sub.ex = el.value; viewProgreso(); }
   if (el.id === "cex-sel") { S.sub.cex = el.value; refreshClient(); }

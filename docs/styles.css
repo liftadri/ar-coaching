@@ -408,3 +408,13 @@ label.small{flex:0 1 auto}
 .lnk{background:none;border:0;padding:0;color:var(--accent);font-weight:600;cursor:pointer;font-size:12px}
 .mchk{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:8px;cursor:pointer;font-size:13.5px}.mchk:hover{background:rgba(0,0,0,.03)}
 .mchk input{width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--accent)}
+
+/* Detalles por tipo */
+.obj{background:var(--accent-soft);color:#8a3305;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600}
+.obj-card{border-left:4px solid var(--accent)}
+.tips{background:#f6f7f9;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}.tips p{margin:0;font-size:13.5px}
+.scale.s10{grid-template-columns:repeat(10,1fr)}.scale.s10 button{min-height:40px;font-size:14px;padding:0}
+.scale.sn{grid-template-columns:1fr 1fr}
+.cklist{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:10px;padding:6px}
+.medpick.one{grid-template-columns:1fr}
+.fotoin input[type=file]{padding:8px}
