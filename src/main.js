@@ -164,7 +164,7 @@ async function init() {
   });
   const { data } = await sb.auth.getSession();
   if (S.recovery) return;
-  if (!data || !data.session) return renderLogin();
+  if (!data || !data.session) return location.hash === "#empezar" ? renderEmpezar() : renderLogin();
   S.email = data.session.user.email || "";
   await afterLogin();
 }
@@ -175,6 +175,7 @@ async function afterLogin() {
     S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre }; S.plan = null;
     const hc = isCoachHash(location.hash.slice(1));
     if (!location.hash || (S.me.role === "coach") !== hc) location.hash = S.me.role === "coach" ? "inicio" : "hoy";
+    if (S.me.role === "client") { const ob = await q(sb.from("onboarding").select("client_id").limit(1)).catch(() => [{}]); S.needCom = !ob.length; if (S.needCom && location.hash !== "#comienzo") { location.hash = "comienzo"; return; } }
     await route();
   } catch (e) { $("#app").innerHTML = `<div class="login">${LOGO}<h1>No se pudo cargar</h1><p>${esc(errMsg(e))}</p><button class="btn pri" data-act="reload">Reintentar</button><button class="btn ghost" data-act="logout">Cerrar sesión</button></div>`; }
 }
@@ -207,7 +208,7 @@ function renderLogin(stage) {
   $("#app").innerHTML = `<form class="login" id="f-login">${head}${tabs("entrar")}
   <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required></div>
   ${pwField("pw", "Contraseña", "current-password")}
-  <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="login-tab" data-t="olvido">He olvidado mi contraseña</button></form>`;
+  <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="login-tab" data-t="olvido">He olvidado mi contraseña</button><p class="tiny muted" style="text-align:center;margin:6px 0 0">¿Aún no eres cliente? <a href="#empezar">Quiero empezar</a></p></form>`;
 }
 function authMsg(e) {
   const m = (e && e.message) || "";
@@ -281,7 +282,9 @@ function shell(title, body, opts = {}) {
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
 async function route() {
-  if (!S.me) return;
+  if (!S.me) { const h0 = location.hash.slice(1); if (h0 === "empezar") renderEmpezar(); else if (document.body.classList.contains("pub")) { document.body.classList.remove("pub"); renderLogin(); } return; }
+  if (location.hash === "#empezar") { renderEmpezar(); return; }
+  document.body.classList.remove("pub");
   const coach = S.me.role === "coach";
   let h = location.hash.slice(1) || (coach ? "inicio" : "hoy");
   if (!coach && isCoachHash(h)) h = "hoy"; // la vista de entrenador no existe para clientes
@@ -298,6 +301,7 @@ async function route() {
       if (h === "mas") return await viewMas();
       return await viewInicio();
     }
+    if (h === "comienzo") return await viewComienzo();
     if (h === "cal") return await viewCal();
     if (h === "entreno") return await viewEntreno();
     if (h.startsWith("a-")) return await viewWorkout(h.slice(2));
@@ -338,6 +342,7 @@ async function viewHoy() {
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
+  ${S.needCom ? `<button class="card com-cta" data-act="go" data-h="comienzo"><b>Antes de empezar: tu cuestionario inicial</b><span class="small">10 minutos para que Adrián prepare tu plan. Pulsa aquí →</span></button>` : ""}
   <section class="hello"><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2><p>${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}${w ? ` · ${esc(w.bloque)} · ${esc(w.nombre)}` : ""}</p></section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${w && w.foco ? `<div class="card"><h2>Esta semana <small>${esc(w.tipo && w.tipo !== "carga" ? cap(w.tipo) : "")}</small></h2><p class="small" style="margin:0">${esc(w.foco)}</p></div>` : ""}
@@ -668,13 +673,14 @@ async function newExercisesFrom(c) { // añade a la librería los ejercicios esc
 /* ================= Entrenador: Inicio ================= */
 async function viewInicio() {
   loading("Inicio"); const t = today(); const since = addDays(t, -7); const sinceTs = new Date(Date.now() - 7 * 864e5).toISOString();
-  const [cl, wo, wl, ws, as, asAll, ev] = await Promise.all([loadClients(), q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)), q(sb.from("wellness").select("client_id,created_at").gte("created_at", sinceTs)), q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)), q(sb.from("assignments").select("client_id,titulo,tipo,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)), q(sb.from("assignments").select("client_id,fecha,hecho,visible").gte("fecha", t.slice(0, 7) + "-01").lte("fecha", addDays(t, 120))), q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha"))]);
+  const [[cl, wo, wl, ws, as, asAll, ev], leads, onb] = await Promise.all([Promise.all([loadClients(), q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)), q(sb.from("wellness").select("client_id,created_at").gte("created_at", sinceTs)), q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)), q(sb.from("assignments").select("client_id,titulo,tipo,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)), q(sb.from("assignments").select("client_id,fecha,hecho,visible").gte("fecha", t.slice(0, 7) + "-01").lte("fecha", addDays(t, 120))), q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha"))]), q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []), q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => [])]);
   const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] }))].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 30);
   const activos = cl.filter(c => c.estado === "activo");
   const agenda = activos.map(c => { const f = asAll.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop(); const d = f ? daysBetween(t, f) : null; return { c, d }; }).sort((a, b) => (a.d ?? -999) - (b.d ?? -999));
   const mon = monday(t), m1 = t.slice(0, 7) + "-01";
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
   shell("Inicio", `<div class="quick"><button class="qa" data-act="new-client">${ICON.clientes}<span>Añade un cliente</span></button><button class="qa" data-act="go" data-h="lib-w-new">${ICON.entreno}<span>Crea un workout</span></button><button class="qa" data-act="go" data-h="lib-p-new">${ICON.plan}<span>Crea un programa</span></button><button class="qa" data-act="go" data-h="lib">${ICON.lib}<span>Librería</span></button></div>
+  ${inicioEmbudo(leads, onb)}
   <div class="cols">
   <div class="card"><h2 class="hh">${ICON.evo}Actividad reciente <span class="cnt">${act.length}</span></h2>${act.length ? `<div class="list">${act.map(a => `<button class="it feed" data-act="go" data-h="c-${esc(encodeURIComponent(a.c))}">${avatar(clientName(a.c))}<span class="grow"><span class="lnk">${esc(clientName(a.c).toUpperCase())}</span> completó <span class="lnk">${esc(a.t)}</span><br><span class="tag tag-${esc(slug(a.k))}">${esc(a.k)}</span> <span class="tiny muted">${esc(relTime(a.ts))}</span></span></button>`).join("")}</div>` : `<div class="empty">Sin actividad esta semana.</div>`}</div>
   <div style="display:flex;flex-direction:column;gap:12px">
@@ -682,6 +688,237 @@ async function viewInicio() {
   <div class="card"><h2 class="hh">${ICON.progreso}Revisar cumplimiento <span class="cnt">${activos.length}</span></h2><table><tbody>${activos.map(c => { const s = pct(c.id, mon), mm = pct(c.id, m1); const cl2 = v => v == null ? "" : v >= 80 ? "ok" : v >= 50 ? "warn" : "bad"; return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre, "sm")}<span class="lnk">${esc(c.nombre)}</span></span></td><td class="n"><span class="chip ${cl2(s)}">S. ${s == null ? "—" : s + " %"}</span></td><td class="n"><span class="chip ${cl2(mm)}">M. ${mm == null ? "—" : mm + " %"}</span></td></tr>`; }).join("")}</tbody></table><p class="tiny muted" style="margin:8px 0 0">Tareas completadas de las programadas hasta hoy.</p></div>
   <div class="card"><h2 class="hh">${ICON.cal}Próximos eventos <span class="cnt">${ev.length}</span></h2>${ev.length ? ev.map(e => `<p class="small" style="margin:6px 0"><b>${esc(fdate(e.fecha, { day: "numeric", month: "short" }))}</b> · ${esc(clientName(e.client_id))} · ${esc(e.titulo)}</p>`).join("") : `<p class="small muted" style="margin:0">Nada en las próximas semanas.</p>`}</div>
   </div></div>`);
+}
+
+/* ================= Embudo: Contacto (público) y Cuestionario inicial ================= */
+const OBJ_CONTACTO = ["Ganar masa muscular", "Perder grasa", "Ganar fuerza", "Mejorar mi salud/hábitos", "Mejorar mi resistencia/cardio"];
+const COMIENZO = [
+  { b: "Datos personales y generales", i: "Vamos a empezar por lo básico. Quiero ponerle cara y contexto a la persona con la que voy a trabajar, y entender cómo es tu día a día.", q: [
+    { k: "nombre", t: "Nombre y apellidos", y: "t", r: 1 }, { k: "edad", t: "Edad", y: "n", r: 1 },
+    { k: "sexo", t: "Sexo", y: "r", o: ["Hombre", "Mujer", "Prefiero no especificarlo"], r: 1 },
+    { k: "altura", t: "Altura (cm)", y: "n", r: 1 }, { k: "peso", t: "Peso actual (kg)", y: "n", r: 1 },
+    { k: "peso_obj", t: "¿Tienes en mente un peso objetivo o de referencia? Coméntame cuál y por qué", y: "l", r: 1 },
+    { k: "profesion", t: "¿A qué te dedicas? (profesión/ocupación)", y: "t", r: 1 },
+    { k: "jornada", t: "¿Cómo es tu jornada laboral en cuanto a actividad física?", y: "r", r: 1, o: ["Predominantemente sentado/a (oficina, teletrabajo, conducción...)", "Predominantemente de pie, pero sin gran esfuerzo físico", "Actividad física moderada (caminar mucho, cargar peso ocasionalmente)", "Actividad física intensa (trabajo físico exigente, esfuerzo constante)"] },
+    { k: "dia_normal", t: "Describe brevemente un día normal de tu semana (horario laboral, comidas, momentos libres...)", y: "l", r: 1 },
+    { k: "como_conociste", t: "¿Cómo me conociste y qué te ha hecho decidirte a empezar esta asesoría?", y: "l", r: 1 }] },
+  { b: "Salud, lesiones y condiciones médicas", i: "Esta parte es clave para tu seguridad. Quiero conocer tu historial para elegir los ejercicios adecuados y evitar cualquier movimiento que pueda perjudicarte. Ante la duda, cuéntamelo todo, siempre podemos adaptar.", q: [
+    { k: "lesion", t: "¿Tienes actualmente alguna lesión o molestia (aunque sea leve)?", y: "r", o: ["Sí", "No"], r: 1 },
+    { k: "lesion_det", t: "Descríbela (zona, tipo de dolor, cuándo aparece y desde cuándo la sufres)", y: "l", r: 1, if: ["lesion", "Sí"] },
+    { k: "lesiones_pasadas", t: "¿Has sufrido lesiones importantes en el pasado (aunque ya estén recuperadas)? Indica zona y tipo.", y: "l", r: 1 },
+    { k: "cirugias", t: "¿Te has sometido a alguna cirugía u operación? ¿Cuál y cuándo?", y: "l", r: 1 },
+    { k: "enfermedad", t: "¿Padeces alguna enfermedad, patología o condición médica diagnosticada?", y: "r", o: ["Sí", "No"], r: 1 },
+    { k: "enfermedad_det", t: "Especifica cuál/es y si tienes alguna limitación indicada por tu médico", y: "l", r: 1, if: ["enfermedad", "Sí"] },
+    { k: "medicacion", t: "¿Tomas algún medicamento de forma habitual?", y: "r", o: ["Sí", "No"], r: 1 },
+    { k: "medicacion_det", t: "Indica cuál y para qué", y: "l", r: 1, if: ["medicacion", "Sí"] },
+    { k: "molestias_ej", t: "¿Hay algún ejercicio o movimiento que sepas, por experiencia, que te genera molestias?", y: "l", r: 1 }] },
+  { b: "Experiencia y hábitos de entrenamiento", i: "Ahora vamos a hablar de tu relación con el entrenamiento de fuerza. Esto me permite poner el punto de partida exacto, sin quedarme corto ni pasarme.", q: [
+    { k: "entrena", t: "¿Entrenas actualmente o has entrenado en los últimos 3 meses?", y: "r", r: 1, o: ["Sí, de forma regular", "Sí, pero de forma irregular", "No, llevo un tiempo parado/a"] },
+    { k: "exp_fuerza", t: "¿Cuánto tiempo llevas entrenando fuerza de forma continua?", y: "r", r: 1, o: ["Nunca he entrenado fuerza", "Menos de 3 meses", "Entre 3 y 6 meses", "Entre 6 meses y 1 año", "Entre 1 y 3 años", "Más de 3 años"] },
+    { k: "entrenador_previo", t: "¿Has trabajado antes con un entrenador personal (presencial u online)?", y: "r", o: ["Sí", "No"], r: 1 },
+    { k: "entrenador_exp", t: "¿Qué fue lo que más te gustó y lo que menos de esa experiencia?", y: "l", if: ["entrenador_previo", "Sí"] },
+    { k: "basicos", t: "¿Qué ejercicios básicos dominas técnicamente? (marca los que haces con confianza)", y: "c", r: 1, o: ["Sentadilla libre", "Peso muerto", "Press de banca", "Press militar", "Dominadas", "Remo", "Ninguno de los anteriores / no estoy seguro"] },
+    { k: "otros_deportes", t: "¿Has entrenado otras disciplinas deportivas (pasadas o presentes)?", y: "l", r: 1 },
+    { k: "forma", t: "¿Cómo puntuarías tu nivel de forma física general en este momento?", y: "s", min: 0, max: 10, a: ["Empiezo de cero", "Mi mejor forma"], r: 1 }] },
+  { b: "Objetivos y disponibilidad", i: "Vamos a hablar del «para qué» y el «cómo»: tu objetivo principal y el contexto real en el que vas a entrenar.", q: [
+    { k: "objetivos", t: "¿Cuáles son tus objetivos?", y: "c", r: 1, otro: 1, o: ["Ganar masa muscular (hipertrofia)", "Perder grasa corporal", "Ganar fuerza", "Mejorar mi salud y mis hábitos", "Preparación para una competición o evento específico"] },
+    { k: "objetivos_sec", t: "Si tienes objetivos secundarios, cuéntame cuáles", y: "l" },
+    { k: "lugar", t: "¿Dónde vas a entrenar principalmente?", y: "r", r: 1, o: ["Gimnasio completo", "Gimnasio pequeño con equipamiento limitado", "En casa con material básico", "En casa sin apenas material", "Parque de calistenia / Peso corporal", "Combinación de varios de los anteriores"] },
+    { k: "horario", t: "¿Tu horario laboral es fijo o rotativo/irregular?", y: "r", r: 1, o: ["Fijo y estable", "Rotativo/turnos", "Irregular (viajes, cambios frecuentes...)"] },
+    { k: "dias", t: "¿Cuántos días a la semana puedes comprometerte a entrenar de forma realista?", y: "r", r: 1, o: ["2 días", "3 días", "4 días", "5 días", "6 días"] },
+    { k: "tiempo", t: "¿Cuánto tiempo tienes disponible por sesión?", y: "r", r: 1, o: ["Menos de 30 minutos", "30-45 minutos", "45-60 minutos", "60-75 minutos", "Más de 75 minutos"] },
+    { k: "franjas", t: "¿Hay franjas horarias del día que prefieras o que te condicionen (mañana, mediodía, noche)?", y: "t", r: 1 }] },
+  { b: "Estilo de vida, descanso y estrés", i: "El entrenamiento es solo una pieza del puzle. Lo que haces el resto del día influye directamente en tus resultados y en cómo debo dosificar tu carga.", q: [
+    { k: "neat", t: "¿Cómo describirías tu nivel de actividad diaria fuera del entrenamiento?", y: "r", r: 1, o: ["Muy bajo (paso la mayor parte del día sentado/a)", "Bajo (algo de movimiento, pero mayormente sedentario)", "Moderado (camino con regularidad, me muevo bastante)", "Alto (trabajo físico o vida muy activa)"] },
+    { k: "pasos", t: "Si usas reloj o móvil para contar pasos, ¿cuántos das de media al día?", y: "n" },
+    { k: "alimentacion", t: "¿Consideras que llevas una alimentación equilibrada actualmente?", y: "r", r: 1, o: ["Sí, cuido bastante mi alimentación", "Más o menos, tengo margen de mejora", "No, mi alimentación es bastante desordenada"] },
+    { k: "habitos_alim", t: "Cuéntame un poco más sobre tus hábitos alimentarios (número de comidas, restricciones, alergias, intolerancias, si sigues alguna dieta particular...)", y: "l", r: 1 },
+    { k: "sueno_h", t: "¿Cuántas horas duermes de media por noche?", y: "r", r: 1, o: ["Menos de 5 horas", "Entre 5 y 6 horas", "Entre 6 y 7 horas", "Entre 7 y 8 horas", "Más de 8 horas"] },
+    { k: "sueno_cal", t: "¿Cómo calificarías la calidad de tu sueño?", y: "r", r: 1, o: ["Duermo mal, me cuesta conciliar el sueño o me despierto varias veces", "Duermo de forma irregular", "Duermo bien la mayoría de las noches", "Duermo muy bien y me levanto descansado/a"] },
+    { k: "estres", t: "¿Cómo describirías tu nivel de estrés habitual?", y: "r", r: 1, o: ["Bajo, llevo una vida bastante tranquila", "Moderado, tengo días buenos y días más intensos", "Alto, vivo con estrés de forma frecuente", "Muy alto, siento que el estrés me desborda"] },
+    { k: "relacion", t: "¿Cuál es tu relación actual con el ejercicio físico?", y: "r", r: 1, o: ["Me encanta, disfruto entrenando", "Me gusta, aunque no siempre tengo ganas", "Me resulta indiferente, pero cumplo porque sé que es bueno para mí", "Me cuesta motivarme, lo veo más como una obligación", "Tengo una relación complicada con el ejercicio"] },
+    { k: "dificultades", t: "¿Hay algo de tu estilo de vida actual que creas que puede dificultar seguir el plan? Cuéntamelo con confianza", y: "l", r: 1 }] },
+  { b: "Adherencia, motivación y mentalidad", i: "Y para cerrar, lo más importante: tú. Cómo te sientes, qué esperas de este proceso y qué necesitas para mantenerte constante.", q: [
+    { k: "animo", t: "¿Cómo describirías tu estado de ánimo habitual en el último mes?", y: "r", r: 1, o: ["Alegre y con energía", "Tranquilo/a y relajado/a", "Cambiante, con altibajos frecuentes", "Estresado/a", "Desanimado/a con poca energía"] },
+    { k: "valoras", t: "¿Qué es lo que más valoras en un proceso de entrenamiento?", y: "r", r: 1, o: ["Ver resultados visibles", "Sentirme acompañado/a y guiado/a", "Aprender y entender el porqué de lo que hago", "Disfrutar del proceso, no solo del resultado", "Tener una estructura clara", "Flexibilidad para adaptar el plan a mi día a día"] },
+    { k: "motivacion", t: "Del 1 al 10, ¿cómo valorarías tu motivación actual para empezar este proceso?", y: "s", min: 1, max: 10, a: ["Muy poca", "Al máximo"], r: 1 },
+    { k: "abandono", t: "¿Qué es lo que más veces te ha hecho abandonar un plan de entrenamiento en el pasado (si te ha pasado)?", y: "l", r: 1 },
+    { k: "espera", t: "¿Qué esperas conseguir exactamente con esta programación (resultados físicos, sensaciones, hábitos, plazos...)?", y: "l", r: 1 },
+    { k: "comunicacion", t: "¿Cómo prefieres que sea la comunicación conmigo durante el proceso?", y: "r", r: 1, o: ["Contacto frecuente y cercano (dudas, seguimiento constante)", "Contacto puntual, prefiero autonomía y consultar solo si es necesario", "Un punto intermedio"] },
+    { k: "algo_mas", t: "¿Hay algo más que quieras contarme y que creas importante para entenderte mejor antes de empezar?", y: "l" }] }];
+const COM_Q = COMIENZO.flatMap(b => b.q);
+// Avisos para Adrián a partir del cuestionario inicial
+function comienzoAlertas(r = {}) {
+  const a = [];
+  if (r.lesion === "Sí") a.push(["bad", "Lesión o molestia actual: " + (r.lesion_det || "sin detallar") + " → valorar fisioterapeuta antes de cargar la zona"]);
+  if (r.enfermedad === "Sí") a.push(["bad", "Condición médica: " + (r.enfermedad_det || "sin detallar") + " → confirmar con su médico si hay limitaciones"]);
+  if (r.medicacion === "Sí") a.push(["warn", "Medicación habitual: " + (r.medicacion_det || "sin detallar")]);
+  if (r.cirugias && !/^\s*(no|ninguna|nada)\b/i.test(r.cirugias)) a.push(["warn", "Cirugías: " + r.cirugias]);
+  if (r.sueno_h === "Menos de 5 horas") a.push(["warn", "Duerme menos de 5 h"]);
+  if (/^Muy alto/.test(r.estres || "")) a.push(["warn", "Estrés muy alto"]);
+  if (/^Desanimado/.test(r.animo || "")) a.push(["warn", "Ánimo bajo el último mes: tenerlo en cuenta y preguntar con tacto"]);
+  if (/complicada/.test(r.relacion || "")) a.push(["warn", "Relación complicada con el ejercicio"]);
+  if (/desordenada/.test(r.alimentacion || "")) a.push(["warn", "Alimentación desordenada: si hay algo más que hábitos, derivar a dietista-nutricionista"]);
+  return a;
+}
+const comAns = (q, v) => Array.isArray(v) ? v.join(", ") : v == null || v === "" ? "—" : String(v);
+
+/* ---- Página pública «Quiero empezar» ---- */
+function renderEmpezar(ok) {
+  document.body.classList.add("pub");
+  if (ok) { $("#app").innerHTML = `<div class="login pubw"><img class="logo" src="./logo.jpg" alt=""><h1>¡Recibido!</h1><p>Esto no es un simple formulario, es el inicio de tu cambio. Hoy ya ganaste dando este paso.</p><p>Te escribo lo antes posible para contarte cómo funciona y empezar. ¡Gracias por tu confianza!</p></div>`; return; }
+  $("#app").innerHTML = `<form class="login pubw" id="f-contacto" novalidate>
+  <img class="logo" src="./logo.jpg" alt=""><h1>Empieza tu cambio</h1>
+  <p>Cuéntame un poco sobre ti y lo que buscas. Te escribo lo antes posible para hablar y ver si encajamos.</p>
+  <div class="f"><label for="ct-n">Nombre y apellidos</label><input id="ct-n" name="nombre" autocomplete="name" required maxlength="120"></div>
+  <div class="grid2"><div class="f"><label for="ct-e">Edad</label><input id="ct-e" name="edad" inputmode="numeric" required maxlength="3"></div><div class="f"><label for="ct-s">Sexo</label><select id="ct-s" name="sexo" required><option value="">—</option><option>Hombre</option><option>Mujer</option><option>Otro</option></select></div></div>
+  <div class="f"><label for="ct-m">Correo electrónico</label><input id="ct-m" name="email" type="email" autocomplete="email" required maxlength="200"></div>
+  <div class="f"><label for="ct-t">Teléfono (WhatsApp)</label><input id="ct-t" name="telefono" type="tel" autocomplete="tel" required maxlength="30" placeholder="600 000 000"></div>
+  <fieldset class="opts"><legend>¿Cuál es tu objetivo principal?</legend>${OBJ_CONTACTO.map(o => `<label class="choice"><input type="radio" name="objetivo" value="${esc(o)}" required><span>${esc(o)}</span></label>`).join("")}<label class="choice"><input type="radio" name="objetivo" value="__otro"><span>Otro</span></label><input name="objetivo_otro" placeholder="¿Cuál?" maxlength="150" hidden></fieldset>
+  <fieldset class="opts row2"><legend>¿Has estado antes con un entrenador personal?</legend><label class="choice"><input type="radio" name="previo" value="si" required><span>Sí</span></label><label class="choice"><input type="radio" name="previo" value="no"><span>No</span></label></fieldset>
+  <div class="f"><label for="ct-x">Cuéntame brevemente qué buscas o qué te gustaría conseguir</label><textarea id="ct-x" name="mensaje" required maxlength="2000"></textarea></div>
+  <input name="web" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+  <label class="small consent"><input type="checkbox" name="ok" required> Acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren en cualquier momento.</label>
+  <button class="btn pri block">Enviar</button>
+  <p class="tiny muted" style="text-align:center;margin:0">¿Ya eres cliente? <a href="#">Entra en la app</a></p></form>`;
+}
+async function enviarContacto(f) {
+  const v = n => (f[n] && f[n].value || "").trim(); const obj = (f.querySelector('[name="objetivo"]:checked') || {}).value || ""; const prev = (f.querySelector('[name="previo"]:checked') || {}).value || "";
+  const edad = num(v("edad"));
+  const falta = !v("nombre") ? "tu nombre" : !(edad >= 12 && edad <= 100) ? "tu edad" : !v("sexo") ? "el sexo" : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v("email")) ? "un email válido" : v("telefono").replace(/\D/g, "").length < 9 ? "un teléfono válido" : !obj || (obj === "__otro" && !v("objetivo_otro")) ? "tu objetivo" : !prev ? "si has tenido entrenador" : !v("mensaje") ? "qué buscas" : !f.ok.checked ? "aceptar el uso de tus datos" : "";
+  if (falta) { toast("Falta " + falta); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true; b.textContent = "Enviando…";
+  try { await q(sb.rpc("enviar_contacto", { p: { nombre: v("nombre"), edad: String(edad), sexo: v("sexo"), email: v("email"), telefono: v("telefono"), objetivo: obj === "__otro" ? v("objetivo_otro") : obj, entrenador_previo: prev, mensaje: v("mensaje"), web: v("web"), consentimiento: true } })); renderEmpezar(true); window.scrollTo(0, 0); }
+  catch (e) { toast(errMsg(e)); b.disabled = false; b.textContent = "Enviar"; }
+}
+
+/* ---- Entrenador: solicitudes ---- */
+const LEAD_EST = { nuevo: "Nueva", contactado: "Contactado", alta: "Dado de alta", descartado: "Descartado" };
+const telWa = t => { let d = String(t || "").replace(/\D/g, ""); if (d.length === 9) d = "34" + d; return d; };
+async function openLead(id) {
+  const l = (await q(sb.from("leads").select("*").eq("id", id).limit(1)))[0]; if (!l) return;
+  const msg = `¡Hola ${l.nombre.split(" ")[0]}! Soy Adrián. He recibido tu mensaje sobre las asesorías 💪 ¿Te viene bien que hablemos un momento para contarte cómo funciona?`;
+  sheet(`<h2>${esc(l.nombre)}</h2><p class="tiny muted" style="margin:0">${esc(relTime(l.created_at))} · ${esc(LEAD_EST[l.estado])}</p>
+  <div class="tbl"><table><tbody>
+  <tr><td>Edad / sexo</td><td>${esc(l.edad ?? "—")} · ${esc(l.sexo || "—")}</td></tr>
+  <tr><td>Email</td><td>${esc(l.email)}</td></tr><tr><td>Teléfono</td><td>${esc(l.telefono || "—")}</td></tr>
+  <tr><td>Objetivo</td><td>${esc(l.objetivo || "—")}</td></tr><tr><td>Entrenador antes</td><td>${l.entrenador_previo == null ? "—" : l.entrenador_previo ? "Sí" : "No"}</td></tr>
+  </tbody></table></div>${l.mensaje ? `<div class="tips"><p style="white-space:pre-wrap">${esc(l.mensaje)}</p></div>` : ""}
+  <div class="row" style="flex-wrap:wrap">${l.telefono ? `<a class="btn sm" href="https://wa.me/${telWa(l.telefono)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}<a class="btn sm" href="mailto:${esc(l.email)}?subject=${encodeURIComponent("Asesorías · Adrián Rodríguez Coaching")}&body=${encodeURIComponent(msg)}">Email</a></div>
+  <form id="f-lead" data-id="${esc(l.id)}" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="ld-e">Estado</label><select id="ld-e" name="estado">${Object.entries(LEAD_EST).filter(([k]) => k !== "alta" || l.estado === "alta").map(([k, v]) => `<option value="${k}" ${l.estado === k ? "selected" : ""}>${v}</option>`).join("")}</select></div><div class="f"><label for="ld-n">Notas (solo tú)</label><textarea id="ld-n" name="notas">${esc(l.notas || "")}</textarea></div>
+  <button class="btn block">Guardar</button>
+  ${l.estado !== "alta" ? `<button type="button" class="btn pri block" data-act="lead-alta" data-id="${esc(l.id)}">Dar de alta como cliente</button>` : l.client_id ? `<button type="button" class="btn block" data-act="go" data-h="c-${esc(encodeURIComponent(l.client_id))}">Ver cliente</button>` : ""}
+  ${l.estado !== "alta" ? `<button type="button" class="btn ghost" data-act="lead-del" data-id="${esc(l.id)}" style="color:var(--bad)">Borrar solicitud y sus datos</button>` : ""}<button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`);
+}
+async function saveLead(f) { try { await q(sb.from("leads").update({ estado: f.estado.value, notas: f.notas.value.trim() }).eq("id", f.dataset.id)); sheet(""); toast("Guardado"); route(); } catch (e) { toast(errMsg(e)); } }
+async function leadAlta(id) {
+  const l = (await q(sb.from("leads").select("*").eq("id", id).limit(1)))[0]; if (!l) return;
+  if (!S.coach.list.length) await loadClients();
+  const p = l.nombre.trim().split(/\s+/); let cid = slug(p[0] + "-" + (p[1] || "x").slice(0, 1)); if (S.coach.list.some(c => c.id === cid)) cid += "-" + Math.random().toString(36).slice(2, 5);
+  const obj = /masa/i.test(l.objetivo) ? "hipertrofia" : /fuerza/i.test(l.objetivo) ? "fuerza" : /grasa|salud/i.test(l.objetivo) ? "salud" : "";
+  try {
+    const r = await q(sb.from("clients").insert({ id: cid, nombre: l.nombre, email: l.email, estado: "activo", ficha: { telefono: l.telefono, edad: l.edad != null ? String(l.edad) : "", sexo: l.sexo, fechaInicio: today(), ...(obj ? { perfil: obj } : {}), origen: "Contacto web" } }).select("id,codigo_alta"));
+    await q(sb.from("plans").insert({ client_id: cid, objetivo: l.objetivo || "" }));
+    await q(sb.from("leads").update({ estado: "alta", client_id: cid }).eq("id", id));
+    let cod = r && r[0] && r[0].codigo_alta; if (!cod) cod = ((await q(sb.from("clients").select("codigo_alta").eq("id", cid).limit(1)))[0] || {}).codigo_alta;
+    S.coach.list = []; bienvenida({ id: cid, codigo_alta: cod || "(míralo en su pestaña Cuenta)", nombre: l.nombre, email: l.email, telefono: l.telefono });
+  } catch (e) { toast(errMsg(e)); }
+}
+function bienvenida(c) {
+  const url = location.origin + location.pathname.replace(/[^/]*$/, "");
+  const txt = `¡Bienvenid@ ${c.nombre.split(" ")[0]}! 🎉 Ya tienes tu acceso a la app de las asesorías:\n\n1️⃣ Entra en ${url}\n2️⃣ Pulsa «Nuevo atleta»\n3️⃣ Pon este email: ${c.email}\n4️⃣ Crea tu contraseña y escribe el código: ${c.codigo_alta}\n\nLo primero que verás es el cuestionario inicial: tómate 10 minutos y sé lo más sincer@ posible. Con eso preparo tu plan. ¡Vamos a por ello! 💪`;
+  sheet(`<h2>Cliente creado</h2><p class="small" style="margin:0">Mándale este mensaje. Al registrarse, lo primero que hará es el cuestionario inicial y te aparecerá en Inicio.</p>
+  <textarea id="bv-t" style="min-height:220px" readonly>${esc(txt)}</textarea>
+  <div class="row" style="flex-wrap:wrap"><button class="btn pri sm" data-act="copy" data-src="bv-t">Copiar</button>${c.telefono ? `<a class="btn sm" href="https://wa.me/${telWa(c.telefono)}?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>` : ""}<a class="btn sm" href="mailto:${esc(c.email)}?subject=${encodeURIComponent("Tu acceso a la app · Adrián Rodríguez Coaching")}&body=${encodeURIComponent(txt)}">Enviar por email</a></div>
+  <button class="btn block" data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}">Ir a su ficha</button><button type="button" class="btn ghost" data-act="close">Cerrar</button>`);
+}
+// Bloque de Inicio del entrenador
+function inicioEmbudo(leads, onb) {
+  const ls = leads.filter(l => l.estado === "nuevo" || l.estado === "contactado"), os = onb.filter(o => !o.revisado);
+  if (!ls.length && !os.length) return `<div class="card embudo"><h2 class="hh">${ICON.clientes}Embudo</h2><p class="small muted" style="margin:0">Sin solicitudes nuevas. Tu enlace para Instagram: <b class="sel">${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar</b> <button class="btn ghost sm" data-act="copy-txt" data-t="${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar">Copiar</button></p></div>`;
+  return `<div class="card embudo"><h2 class="hh">${ICON.clientes}Embudo <span class="cnt">${ls.length + os.length}</span></h2><div class="list">
+  ${ls.map(l => `<button class="it feed" data-act="lead" data-id="${esc(l.id)}">${avatar(l.nombre)}<span class="grow"><span class="lnk">${esc(l.nombre)}</span> <span class="chip ${l.estado === "nuevo" ? "acc" : ""}">${esc(LEAD_EST[l.estado])}</span><br><span class="tiny muted">${esc(l.objetivo || "Solicitud de contacto")} · ${esc(relTime(l.created_at))}</span></span></button>`).join("")}
+  ${os.map(o => `<button class="it feed" data-act="go-inicial" data-cid="${esc(o.client_id)}">${avatar(clientName(o.client_id))}<span class="grow"><span class="lnk">${esc(clientName(o.client_id))}</span> <span class="chip ok">Cuestionario inicial</span><br><span class="tiny muted">Rellenado ${esc(relTime(o.enviado_en))} · sin revisar</span></span></button>`).join("")}
+  </div><p class="tiny muted" style="margin:8px 0 0">Enlace para Instagram: <b class="sel">${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar</b></p></div>`;
+}
+
+/* ---- Cliente: cuestionario inicial ---- */
+const COM_KEY = () => "arc-comienzo-" + (S.me && S.me.cid);
+function comDraft() { try { return JSON.parse(localStorage.getItem(COM_KEY()) || "{}"); } catch { return {}; } }
+async function viewComienzo(step) {
+  const ex = (await q(sb.from("onboarding").select("client_id,revisado,enviado_en").limit(1)))[0];
+  if (ex && step == null) { shell("Cuestionario inicial", `<div class="card"><h2>¡Hecho! ✅</h2><p class="small" style="margin:0">Enviaste tu cuestionario inicial ${esc(relTime(ex.enviado_en))}. Adrián lo está usando para preparar tu plan.</p>${ex.revisado ? "" : `<button class="btn block" style="margin-top:10px" data-act="com-step" data-s="0">Revisar o cambiar respuestas</button>`}</div>`); return; }
+  const d = comDraft(); if (!d.nombre && S.me.nombre) d.nombre = S.me.nombre;
+  if (ex && !d.__cargado) { const r = (await q(sb.from("onboarding").select("respuestas").limit(1)))[0]; Object.assign(d, r ? r.respuestas : {}, { __cargado: 1 }); }
+  S.sub.com = d; const s = Math.max(0, Math.min(COMIENZO.length, step ?? d.__paso ?? 0));
+  if (s === COMIENZO.length) {
+    shell("Cuestionario inicial", `<div class="comp"><div class="combar"><i style="width:100%"></i></div></div><div class="card"><h2>¡Eso es todo!</h2><p class="small">Gracias por dedicarle tiempo y sinceridad. Con esta información voy a diseñar un plan pensado específicamente para ti, tu cuerpo, tu vida y tus objetivos.</p>
+    <form id="f-com-fin" style="display:flex;flex-direction:column;gap:12px"><label class="small consent"><input type="checkbox" name="ok" required> Acepto que Adrián Rodríguez trate estos datos, incluidos los de salud, solo para prepararme y ajustarme el entrenamiento. Solo él puede verlos y puedo pedir que se borren cuando quiera.</label>
+    <button class="btn pri block">Enviar a Adrián</button><button type="button" class="btn ghost" data-act="com-step" data-s="${COMIENZO.length - 1}">Atrás</button></form></div>`); return;
+  }
+  const bl = COMIENZO[s];
+  shell("Cuestionario inicial", `<div class="comp"><div class="tiny muted">Parte ${s + 1} de ${COMIENZO.length}</div><div class="combar"><i style="width:${Math.round(100 * s / COMIENZO.length)}%"></i></div></div>
+  ${s === 0 ? `<div class="card com-hi"><h2>¡Hola! Estás a un paso de empezar 💪</h2><p class="small" style="margin:0">Para crear un plan que se adapte a ti necesito saber algunas cosas sobre tu rutina y tus preferencias. No hay respuestas correctas ni incorrectas: sé totalmente sincero/a. Se guarda solo mientras avanzas.</p></div>` : ""}
+  <form id="f-com" data-s="${s}" class="card" style="display:flex;flex-direction:column;gap:16px"><div><h2 style="margin-bottom:4px">${esc(bl.b)}</h2><p class="small muted" style="margin:0">${esc(bl.i)}</p></div>
+  ${bl.q.map(qq => comField(qq, d)).join("")}
+  <div class="row"><button type="button" class="btn" data-act="com-step" data-s="${s - 1}" ${s === 0 ? "hidden" : ""}>Atrás</button><span class="grow"></span><button class="btn pri">${s === COMIENZO.length - 1 ? "Terminar" : "Siguiente"}</button></div></form>`);
+}
+function comField(qq, d) {
+  const v = d[qq.k]; const hide = qq.if && d[qq.if[0]] !== qq.if[1];
+  const lab = `<div class="cq-t">${esc(qq.t)}${qq.r ? ' <span class="req">*</span>' : ""}</div>`;
+  let inp;
+  if (qq.y === "t" || qq.y === "n") inp = `<input name="${qq.k}" value="${esc(v ?? "")}" ${qq.y === "n" ? 'inputmode="decimal"' : ""} maxlength="300" aria-label="${esc(qq.t)}">`;
+  else if (qq.y === "l") inp = `<textarea name="${qq.k}" maxlength="2000" aria-label="${esc(qq.t)}">${esc(v ?? "")}</textarea>`;
+  else if (qq.y === "r") inp = `<div class="opts">${qq.o.map(o => `<label class="choice"><input type="radio" name="${qq.k}" value="${esc(o)}" ${v === o ? "checked" : ""} data-com-if="${qq.k}"><span>${esc(o)}</span></label>`).join("")}</div>`;
+  else if (qq.y === "c") { const arr = Array.isArray(v) ? v : []; const extra = arr.filter(x => !qq.o.includes(x)).join(", ");
+    inp = `<div class="opts">${qq.o.map(o => `<label class="choice"><input type="checkbox" name="${qq.k}" value="${esc(o)}" ${arr.includes(o) ? "checked" : ""}><span>${esc(o)}</span></label>`).join("")}${qq.otro ? `<input name="${qq.k}__otro" value="${esc(extra)}" placeholder="Otro (opcional)" maxlength="150">` : ""}</div>`; }
+  else inp = `<input type="hidden" name="${qq.k}" value="${esc(v ?? "")}"><div class="scale${qq.max - qq.min > 5 ? " s10" : ""}${qq.min === 0 ? " s11" : ""}" role="group">${Array.from({ length: qq.max - qq.min + 1 }, (_, i) => qq.min + i).map(n => `<button type="button" data-act="cq-scale" data-k="${qq.k}" data-v="${n}" aria-pressed="${String(v) === String(n)}">${n}</button>`).join("")}</div><div class="anchors"><span>${esc(qq.a[0])}</span><span>${esc(qq.a[1])}</span></div>`;
+  return `<div class="cq" data-k="${qq.k}" ${hide ? "hidden" : ""}>${lab}${inp}</div>`;
+}
+function comRead(f) {
+  const d = S.sub.com || {}; const s = +f.dataset.s;
+  for (const qq of COMIENZO[s].q) {
+    if (qq.y === "r") d[qq.k] = (f.querySelector(`[name="${qq.k}"]:checked`) || {}).value || "";
+    else if (qq.y === "c") { const a = [...f.querySelectorAll(`[name="${qq.k}"]:checked`)].map(i => i.value); const o = f[`${qq.k}__otro`] ? f[`${qq.k}__otro`].value.trim() : ""; d[qq.k] = o ? [...a, o] : a; }
+    else d[qq.k] = (f[qq.k] && f[qq.k].value || "").trim();
+  }
+  return d;
+}
+function comSaveDraft(d) { try { localStorage.setItem(COM_KEY(), JSON.stringify(d)); } catch { } }
+async function comNext(f) {
+  const d = comRead(f); const s = +f.dataset.s;
+  const falta = COMIENZO[s].q.find(qq => qq.r && !(qq.if && d[qq.if[0]] !== qq.if[1]) && (Array.isArray(d[qq.k]) ? !d[qq.k].length : !String(d[qq.k] ?? "").trim()));
+  if (falta) { toast("Te falta: " + falta.t.slice(0, 60) + (falta.t.length > 60 ? "…" : "")); const el = f.querySelector(`.cq[data-k="${falta.k}"]`); if (el) { el.classList.add("err"); el.scrollIntoView({ behavior: "smooth", block: "center" }); } return; }
+  for (const k of ["edad", "altura", "peso", "pasos"]) if (d[k] && num(d[k]) == null) { toast("Revisa: " + (COM_Q.find(x => x.k === k) || {}).t); return; }
+  d.__paso = s + 1; comSaveDraft(d); window.scrollTo(0, 0); viewComienzo(s + 1);
+}
+async function comEnviar(f) {
+  if (!f.ok.checked) { toast("Marca la casilla para poder enviarlo"); return; }
+  const d = { ...(S.sub.com || comDraft()) }; delete d.__paso; delete d.__cargado;
+  const b = f.querySelector("button.pri"); b.disabled = true; b.textContent = "Enviando…";
+  try {
+    await q(sb.from("onboarding").upsert({ client_id: S.me.cid, respuestas: d, consentimiento: true, revisado: false, enviado_en: new Date().toISOString() }, { onConflict: "client_id" }));
+    const kg = num(d.peso); if (kg && kg >= 25 && kg <= 350) await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })).catch(() => { });
+    try { localStorage.removeItem(COM_KEY()); } catch { }
+    toast("¡Enviado! Gracias 🙌"); location.hash = "hoy";
+  } catch (e) { toast(errMsg(e)); b.disabled = false; b.textContent = "Enviar a Adrián"; }
+}
+
+/* ---- Entrenador: pestaña Cuestionario inicial ---- */
+async function tabInicial(c) {
+  const o = (await q(sb.from("onboarding").select("*").eq("client_id", c.id).limit(1)))[0];
+  if (!o) return `<div class="card"><p class="small" style="margin:0">${c.user_id ? "Aún no ha rellenado el cuestionario inicial. Le aparece nada más entrar en la app." : "Cuando se registre en la app, lo primero que verá es el cuestionario inicial."}</p></div>`;
+  const r = o.respuestas || {}; const al = comienzoAlertas(r);
+  return `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="small muted">Enviado ${esc(relTime(o.enviado_en))} · ${o.consentimiento ? "con consentimiento" : "sin consentimiento"}</span><span class="grow"></span><button class="btn sm" data-act="com-ficha" data-cid="${esc(c.id)}">Pasar datos básicos a la ficha</button>${o.revisado ? `<span class="chip ok">Revisado</span>` : `<button class="btn sm pri" data-act="com-rev" data-cid="${esc(c.id)}">Marcar como revisado</button>`}</div>
+  ${al.length ? `<div class="card"><h2>A tener en cuenta</h2>${al.map(([k, t]) => `<div class="alr ${k}">${k === "bad" ? "⚠️" : "•"} ${esc(t)}</div>`).join("")}</div>` : `<div class="card"><div class="alr ok">✓ Sin avisos de salud en el cuestionario.</div></div>`}
+  ${COMIENZO.map(bl => `<div class="card"><h2>${esc(bl.b)}</h2><div class="qa-list">${bl.q.filter(qq => !(qq.if && r[qq.if[0]] !== qq.if[1])).map(qq => `<div class="qa-i"><div class="tiny muted">${esc(qq.t)}</div><div class="small">${esc(comAns(qq, r[qq.k]))}</div></div>`).join("")}</div></div>`).join("")}`;
+}
+async function comFicha(cid) {
+  const o = (await q(sb.from("onboarding").select("respuestas").eq("client_id", cid).limit(1)))[0]; const c = (await q(sb.from("clients").select("ficha").eq("id", cid).limit(1)))[0]; if (!o || !c) return;
+  const r = o.respuestas; const f = { ...(c.ficha || {}) };
+  if (r.edad) f.edad = r.edad; if (r.altura) f.altura = r.altura; if (r.peso) f.pesoInicial = r.peso; if (r.sexo) f.sexo = r.sexo;
+  const salud = (f.salud || []).slice(); comienzoAlertas(r).filter(a => a[0] === "bad").forEach(a => { const t = "!" + a[1]; if (!salud.includes(t)) salud.push(t); }); f.salud = salud;
+  try { await q(sb.from("clients").update({ ficha: f }).eq("id", cid)); toast("Ficha actualizada"); S.coach.keep = true; viewCoachClient(cid); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Entrenador: Clientes ================= */
@@ -705,7 +942,7 @@ async function saveNewClient(f) {
 }
 
 /* ================= Entrenador: ficha del cliente ================= */
-const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Informes", "doc"], ["cuenta", "Cuenta", "key"]];
+const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["inicial", "Cuestionario inicial", "doc"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Informes", "doc"], ["cuenta", "Cuenta", "key"]];
 async function viewCoachClient(cid) {
   if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; }
   const tab = S.coach.tab || "plan";
@@ -713,7 +950,7 @@ async function viewCoachClient(cid) {
   if (!c) { shell("Cliente", `<div class="empty">No existe.</div>`, { back: "c" }); return; }
   const pl = (await q(sb.from("plans").select("*").eq("client_id", cid).limit(1)))[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
   S.coach.c = c; S.coach.pl = pl;
-  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl);
+  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
   <div class="cmain"><h1 class="ptitle">${esc((CTABS.find(t => t[0] === tab) || CTABS[0])[1])}</h1>${alertas.length ? `<div class="banner"><b>Salud:</b> ${alertas.map(s => esc(String(s).slice(1))).join(" · ")}</div>` : ""}${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
@@ -1439,7 +1676,7 @@ function planEditorHTML() {
 function comidaHTML(cm, ci, obj) {
   const opts = cm.opciones || [];
   return `<div class="card comida"><div class="row"><input class="ctit" value="${esc(cm.nombre)}" data-n-cm="${ci}" aria-label="Nombre de la comida"><input class="chora" value="${esc(cm.hora || "")}" placeholder="Hora (opcional)" data-n-hora="${ci}" aria-label="Hora"><span class="grow"></span><button class="btn ghost sm" data-act="n-cm-up" data-ci="${ci}" aria-label="Subir">↑</button><button class="btn ghost sm" data-act="n-cm-del" data-ci="${ci}">Quitar comida</button></div>
-  <div class="opts">${opts.map((o, oi) => { const m = optMacros(o); return `<div class="opt"><div class="row"><input class="otit" value="${esc(o.nombre || `Opción ${oi + 1}`)}" data-n-on="${ci}.${oi}" aria-label="Nombre de la opción"><span class="grow"></span><button class="btn ghost sm" data-act="n-opt-dup" data-k="${ci}.${oi}">Duplicar</button><button class="btn ghost sm" data-act="n-opt-del" data-k="${ci}.${oi}" aria-label="Quitar opción">✕</button></div>
+  <div class="opts">${opts.map((o, oi) => { const m = optMacros(o); return `<div class="choice"><div class="row"><input class="otit" value="${esc(o.nombre || `Opción ${oi + 1}`)}" data-n-on="${ci}.${oi}" aria-label="Nombre de la opción"><span class="grow"></span><button class="btn ghost sm" data-act="n-opt-dup" data-k="${ci}.${oi}">Duplicar</button><button class="btn ghost sm" data-act="n-opt-del" data-k="${ci}.${oi}" aria-label="Quitar opción">✕</button></div>
     <div class="items">${(o.items || []).map((it, ii) => `<div class="itm"><span class="grow">${it.receta_id ? `<span class="tag tag-nota">Receta</span> ` : ""}${esc(itemName(it))}</span>${it.receta_id ? `<input class="g" inputmode="decimal" value="${esc(it.raciones || 1)}" data-n-r="${ci}.${oi}.${ii}" aria-label="Raciones"><span class="tiny">rac.</span>` : `<input class="g" inputmode="decimal" value="${esc(it.g || "")}" data-n-g="${ci}.${oi}.${ii}" aria-label="Gramos en crudo"><span class="tiny">g crudo</span>`}<span class="tiny muted mm">${r0(itemMacros(it).kcal)} kcal</span><button class="btn ghost sm" data-act="n-it-del" data-k="${ci}.${oi}.${ii}" aria-label="Quitar">✕</button></div>`).join("") || `<p class="tiny muted" style="margin:4px 0">Sin alimentos todavía.</p>`}</div>
     <div class="fsearch"><input placeholder="Añadir alimento o receta (pollo, avena, Hacendado…)" data-n-search="${ci}.${oi}" aria-label="Buscar alimento"><div class="fres" hidden></div></div>
     <div class="f"><input value="${esc(o.notas || "")}" data-n-notas="${ci}.${oi}" placeholder="Notas de la opción (preparación, alternativas…)" aria-label="Notas"></div>
@@ -1638,6 +1875,16 @@ document.addEventListener("click", async ev => {
     switch (act) {
       case "go": if (location.hash === "#" + a.dataset.h) route(); else location.hash = a.dataset.h; break;
       case "reload": location.reload(); break;
+      case "lead": openLead(id); break;
+      case "lead-alta": await leadAlta(id); break;
+      case "lead-del": if (confirm("¿Borrar esta solicitud y sus datos?")) { await q(sb.from("leads").delete().eq("id", id)); sheet(""); toast("Borrada"); route(); } break;
+      case "go-inicial": S.coach.tab = "inicial"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
+      case "copy": { const t = $("#" + a.dataset.src); try { await navigator.clipboard.writeText(t.value); toast("Copiado"); } catch { t.select(); document.execCommand("copy"); toast("Copiado"); } break; }
+      case "copy-txt": try { await navigator.clipboard.writeText(a.dataset.t); toast("Copiado"); } catch { toast(a.dataset.t); } break;
+      case "com-step": { const f = $("#f-com"); if (f) { const d = comRead(f); comSaveDraft(d); } window.scrollTo(0, 0); viewComienzo(+a.dataset.s); break; }
+      case "cq-scale": { const w = a.closest(".cq"); w.querySelector("input[type=hidden]").value = a.dataset.v; w.querySelectorAll("[data-act=cq-scale]").forEach(b => b.setAttribute("aria-pressed", String(b === a))); w.classList.remove("err"); break; }
+      case "com-rev": await q(sb.from("onboarding").update({ revisado: true }).eq("client_id", a.dataset.cid)); toast("Marcado como revisado"); S.coach.keep = true; viewCoachClient(a.dataset.cid); break;
+      case "com-ficha": await comFicha(a.dataset.cid); break;
       case "logout": await sb.auth.signOut(); clearLocal(); S.me = null; S.plan = null; S.sub = {}; history.replaceState(null, "", location.pathname); renderLogin(); break;
       case "login-tab": renderLogin(a.dataset.t); break;
       case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; const v = i.type === "text"; a.innerHTML = v ? EYE_OFF : EYE; a.setAttribute("aria-label", v ? "Ocultar contraseña" : "Mostrar contraseña"); a.title = a.getAttribute("aria-label"); a.classList.toggle("on", v); i.focus(); break; }
@@ -1734,6 +1981,9 @@ document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
+  if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
+    el.form.querySelectorAll(".cq").forEach(w => { const qq = COM_Q.find(x => x.k === w.dataset.k); if (qq && qq.if) w.hidden = d[qq.if[0]] !== qq.if[1]; }); }
+  if (el.form && el.form.id === "f-contacto" && el.name === "objetivo") { const o = el.form.objetivo_otro; o.hidden = el.value !== "__otro"; if (!o.hidden) o.focus(); }
   if (el.dataset && el.dataset.actChange === "c-mod") { const w = el.closest(".wed"); const def = CARDIO_REG_DEF[el.value] || ["min", "rpe"]; w.querySelectorAll('input[name="c_reg"]').forEach(i => { i.checked = def.includes(i.value); }); }
   if (el.dataset && el.dataset.actChange === "c-fmt") { const w = el.closest(".wed"); const b = w && w.querySelector(".c-int"); if (b) b.hidden = el.value !== "intervalos"; }
   if (el.dataset && el.dataset.actChange === "f-preset") { const fm = el.form; fm.querySelector(".f-well").hidden = el.value !== "wellness"; fm.querySelector(".f-q").hidden = el.value === "wellness"; const ta = fm.querySelector('[name="preguntas"]'); if (el.value === "revision" && ta && !ta.value.trim()) ta.value = REV_SEMANAL.join("\n"); }
@@ -1746,7 +1996,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-login": doLogin, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
