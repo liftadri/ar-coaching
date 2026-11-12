@@ -1121,3 +1121,5 @@ body.pub #app::before{content:"";position:fixed;inset:0;pointer-events:none;back
 .ctrow{grid-template-columns:84px minmax(0,1fr)}
 .ctrow .ctseg{flex-wrap:nowrap}.ctrow .ctseg label{min-width:0}
 .ctch span{overflow-wrap:anywhere}
+#ct-x{min-height:120px}
+#ct-x{min-height:150px;resize:vertical;line-height:1.5;overflow:auto}

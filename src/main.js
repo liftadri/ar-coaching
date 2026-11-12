@@ -350,7 +350,7 @@ async function doNueva(f) {
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
 const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["mas", "Perfil", "mas"]];
 const isCoachHash = h => ["inicio", "c", "lib", "tablon"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
-function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; t.style.height = Math.min(Math.max(t.scrollHeight + 2, 64), 460) + "px"; }
+function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; let h = t.scrollHeight; if (!t.value && t.placeholder) { t.value = t.placeholder; h = Math.max(h, t.scrollHeight); t.value = ""; } t.style.height = Math.min(Math.max(h + 2, 64), 460) + "px"; }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
   const v = S.view; document.body.classList.toggle("is-coach", coach);
@@ -1311,11 +1311,12 @@ function renderEmpezar(ok) {
   <div class="ctsec"><h2><i>4</i>¿Has tenido entrenador personal antes?</h2>
     <div class="ctseg big"><label><input type="radio" name="previo" value="si" required><span>Sí</span></label><label><input type="radio" name="previo" value="no"><span>No, sería la primera vez</span></label></div></div>
   <div class="ctsec"><h2><i>5</i>Cuéntame qué buscas</h2>
-    <div class="f"><textarea id="ct-x" name="mensaje" required maxlength="2000" aria-label="Qué buscas" placeholder="Qué te gustaría conseguir, qué has probado antes, cuánto tiempo tienes para entrenar…"></textarea></div></div>
+    <div class="f"><textarea id="ct-x" name="mensaje" rows="5" required maxlength="2000" aria-label="Qué buscas" placeholder="Qué te gustaría conseguir, qué has probado antes y cuánto tiempo tienes para entrenar."></textarea></div></div>
   <input name="web" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
   <label class="ctok2"><input type="checkbox" name="ok" required><span>Acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren cuando quiera.</span></label>
   <button class="btn pri block ctsend">Quiero empezar <span aria-hidden="true">→</span></button></form>
   <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`;
+  requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow));
 }
 async function enviarContacto(f) {
   const v = n => (f[n] && f[n].value || "").trim(); const obj = (f.querySelector('[name="objetivo"]:checked') || {}).value || ""; const prev = (f.querySelector('[name="previo"]:checked') || {}).value || "";
