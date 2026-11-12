@@ -1051,7 +1051,7 @@ async function tabPlan(c, pl) {
       const day = addDays(d, k); const items = as.filter(x => x.fecha === day); const evs = ev.filter(e => e.fecha <= day && day <= (e.fin || e.fecha)); const libres = wo.filter(w => w.fecha === day && !w.assignment_id);
       const cls = `${day.slice(0, 7) !== m ? " out" : ""}${day === t ? " hoy" : ""}${day < t ? " past" : ""}${k >= 5 ? " we" : ""}`;
       if (day.slice(0, 7) !== m) { rows += `<div class="pday out" data-day="${day}"></div>`; continue; }
-      rows += `<div class="pday${cls}" data-day="${day}"><div class="pdh"><span class="dn">${+day.slice(8)}</span><button class="padd" data-act="asig-new" data-d="${day}" aria-label="Añadir el ${esc(fdate(day))}">+</button></div>
+      rows += `<div class="pday${cls}" data-day="${day}" data-act="day-open" data-d="${day}" role="button" tabindex="0" aria-label="Ver el ${esc(fdate(day, { weekday: "long", day: "numeric" }))}"><div class="pdh"><span class="dn">${+day.slice(8)}</span><button class="padd" data-act="asig-new" data-d="${day}" aria-label="Añadir el ${esc(fdate(day))}">+</button></div>
       ${evs.map(e => `<button class="pch tp-evento" data-act="ev-edit" data-id="${esc(e.id)}"><i class="pi">★</i>${esc(e.titulo)}</button>`).join("")}
       ${items.map(x => `<button class="pch tp-${esc(x.tipo)}${x.hecho ? " ok" : !x.hecho && day < t ? " late" : ""}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}" data-drag="${esc(x.id)}" title="${esc(TIPOS[x.tipo] || "")}${x.hecho ? " · hecho" : day < t ? " · sin hacer" : ""}${x.visible ? "" : " · oculto"}">${x.hecho ? `<i class="pi ok">✓</i>` : !x.hecho && day < t && x.tipo !== "nota" ? `<i class="pi no">!</i>` : ""}${esc(x.titulo)}</button>`).join("")}
       ${libres.map(w => `<span class="pch tp-workout ok"><i class="pi ok">✓</i>${esc(w.dia || "Entreno libre")}</span>`).join("")}</div>`;
@@ -1949,7 +1949,10 @@ function move(row, dir) { const sib = dir < 0 ? row.previousElementSibling : row
 
 document.addEventListener("click", async ev => {
   if (DR.justDragged && Date.now() - DR.justDragged < 450) { ev.preventDefault(); ev.stopPropagation(); return; }
-  const a = ev.target.closest("[data-act]"); if (!a) return; const act = a.dataset.act; const id = a.dataset.id; const dd = a.closest("details.more"); if (dd) dd.removeAttribute("open");
+  let a = ev.target.closest("[data-act]"); if (!a) return;
+  // en el móvil, tocar una tarea dentro del calendario abre el día en grande (las tareas ahí son muy pequeñas)
+  if (a.matches(".cal .pday .pch") && window.matchMedia("(max-width:700px)").matches) a = a.closest(".pday");
+  const act = a.dataset.act; const id = a.dataset.id; const dd = a.closest("details.more"); if (dd) dd.removeAttribute("open");
   if (act === "close-bg") { if (ev.target === a) sheet(""); return; }
   try {
     switch (act) {
@@ -1958,6 +1961,7 @@ document.addEventListener("click", async ev => {
       case "lead": openLead(id); break;
       case "lead-alta": await leadAlta(id); break;
       case "lead-del": if (confirm("¿Borrar esta solicitud y sus datos?")) { await q(sb.from("leads").delete().eq("id", id)); sheet(""); toast("Borrada"); route(); } break;
+      case "day-open": await openDay(a.dataset.d); break;
       case "go-tab": S.coach.tab = a.dataset.t; S.coach.cid = null; if (location.hash === "#c-" + a.dataset.cid) route(); else location.hash = "c-" + a.dataset.cid; break;
       case "go-inicial": S.coach.tab = "inicial"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
       case "copy": { const t = $("#" + a.dataset.src); try { await navigator.clipboard.writeText(t.value); toast("Copiado"); } catch { t.select(); document.execCommand("copy"); toast("Copiado"); } break; }
@@ -2047,6 +2051,30 @@ document.addEventListener("click", async ev => {
   } catch (e) { toast(errMsg(e)); }
 });
 // Arrastrar tareas entre días en la planificación
+
+/* Día ampliado del calendario del entrenador */
+async function openDay(day) {
+  const cid = S.coach.cid; const pl = S.coach.pl || {}; const t = today();
+  const [as, ev, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("client_id", cid).eq("fecha", day).order("orden")), q(sb.from("events").select("*").eq("client_id", cid).lte("fecha", day).order("fecha")), q(sb.from("workouts").select("id,dia,assignment_id,rpe_sesion,duracion_min").eq("client_id", cid).eq("fecha", day))]);
+  const evs = ev.filter(e => (e.fin || e.fecha) >= day); const libres = wo.filter(w => !w.assignment_id);
+  let wk = null; for (const b of pl.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= day && day <= s.fin); if (w) { wk = { b: b.nombre, ...w }; break; } }
+  const sub = x => { const c = x.contenido || {}; const p = [TIPOS[x.tipo] || x.tipo];
+    if (x.tipo === "workout") { const ex = c.ejercicios || []; if (ex.length) p.push(ex.length + " ejercicios"); if (c.dur_est) p.push("≈" + c.dur_est + " min"); }
+    if (x.tipo === "cardio" && cardioResumen(c)) p.push(cardioResumen(c));
+    if (x.tipo === "nota" && c.hora) p.push(c.hora);
+    if (x.tipo === "medidas" && (c.medidas || []).length) p.push(c.medidas.map(medLabel).join(", "));
+    return p.join(" · "); };
+  const det = x => { const c = x.contenido || {};
+    if (x.tipo === "workout" && (c.ejercicios || []).length) return `<ol class="dex">${c.ejercicios.slice(0, 8).map(e => `<li><b>${esc(e.nombre)}</b> <span>${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : ""].filter(Boolean).join(" · "))}</span></li>`).join("")}${c.ejercicios.length > 8 ? `<li class="muted">y ${c.ejercicios.length - 8} más…</li>` : ""}</ol>`;
+    if (c.detalle) return `<p class="ddet">${esc(String(c.detalle).slice(0, 220))}</p>`; return ""; };
+  const st = x => x.hecho ? `<span class="chip ok">Hecho ✓</span>` : day < t && x.tipo !== "nota" ? `<span class="chip bad">Sin hacer</span>` : `<span class="chip">Pendiente</span>`;
+  const prev = addDays(day, -1), next = addDays(day, 1);
+  sheet(`<div class="dayhd"><button class="cnav" data-act="day-open" data-d="${prev}" aria-label="Día anterior">‹</button><div class="grow"><h2>${esc(cap(fdate(day, { weekday: "long", day: "numeric", month: "long" })))}</h2><span class="tiny muted">${day === t ? "Hoy · " : ""}${wk ? `${esc(wk.b)} · ${esc(wk.nombre)}${wk.foco ? " · " + esc(wk.foco) : ""}` : (as.length ? as.length + " programadas" : "Sin nada programado")}</span></div><button class="cnav" data-act="day-open" data-d="${next}" aria-label="Día siguiente">›</button></div>
+  ${evs.map(e => `<button class="dit tp-evento" data-act="ev-edit" data-id="${esc(e.id)}"><i></i><div class="grow"><b>★ ${esc(e.titulo)}</b><span>${esc(EV_TIPOS[e.tipo] || "Evento")}${e.fin && e.fin !== e.fecha ? ` · hasta el ${esc(fdate(e.fin, { day: "numeric", month: "short" }))}` : ""}</span></div></button>`).join("")}
+  ${as.length || libres.length ? `<div class="dlist">${as.map(x => `<button class="dit tp-${esc(x.tipo)}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}"><i></i><div class="grow"><b>${esc(x.titulo)}</b><span>${esc(sub(x))}${x.visible ? "" : " · oculto al cliente"}</span>${det(x)}${x.respuesta ? `<p class="ddet">«${esc(x.respuesta.slice(0, 160))}»</p>` : ""}</div>${st(x)}</button>`).join("")}${libres.map(w => `<div class="dit tp-workout"><i></i><div class="grow"><b>${esc(w.dia || "Entreno libre")}</b><span>Entreno registrado por el cliente${w.rpe_sesion != null ? " · dureza " + esc(w.rpe_sesion) + "/10" : ""}${w.duracion_min ? " · " + esc(w.duracion_min) + " min" : ""}</span></div><span class="chip ok">Hecho ✓</span></div>`).join("")}</div>` : `<div class="empty">Nada programado este día.</div>`}
+  <div class="row dayft"><button class="btn ghost" data-act="close">Cerrar</button><span class="grow"></span><button class="btn pri" data-act="asig-new" data-d="${day}">+ Añadir este día</button></div>`, "wide");
+}
+
 /* Arrastrar tareas del calendario a otro día, con ratón o con el dedo (mantener pulsado) */
 const DR = { el: null, on: false };
 function dragStart(x, y) {

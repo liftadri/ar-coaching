@@ -645,3 +645,18 @@ body.dragmode{cursor:grabbing;-webkit-user-select:none;user-select:none}
 html{-webkit-tap-highlight-color:transparent}
 button,a,.btn,.chip,.pch,.it,.tabs,.rail,.seg,.hnav,.cal,.calg,.pday,.ktile,.ai,.fi,.evi,.rowcard,.qa,summary,label{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 input,textarea,select,[contenteditable]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+/* Día ampliado */
+.cal .pday[data-act]{cursor:pointer}
+.dayhd{display:flex;align-items:center;gap:10px}.dayhd h2{margin:0;font-size:20px}
+.dlist{display:flex;flex-direction:column;gap:8px}
+.dit{all:unset;box-sizing:border-box;display:flex;align-items:flex-start;gap:12px;width:100%;padding:12px 14px 12px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface);cursor:pointer;position:relative;overflow:hidden}
+.dit:hover{border-color:var(--k)}
+.dit > i{flex:none;width:5px;align-self:stretch;background:var(--k);border-radius:0}
+.dit b{font-size:15.5px;display:block}.dit .grow > span{font-size:13px;color:var(--muted);display:block;margin-top:2px}
+.dit.hid{border-style:dashed}
+.dit .chip{flex:none;margin-top:2px}
+.dex{margin:8px 0 0;padding-left:18px;font-size:13.5px;display:flex;flex-direction:column;gap:3px}.dex li b{font-size:13.5px;display:inline}.dex li span{color:var(--muted);font-size:12.5px}
+.ddet{margin:6px 0 0;font-size:13px;color:var(--text,#1f2130);white-space:pre-wrap}
+.dayft{margin-top:4px}
+@media (max-width:700px){.dayft .btn.pri{flex:1}}
