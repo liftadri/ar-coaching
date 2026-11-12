@@ -735,6 +735,18 @@ function openFotos(c) {
   <p class="tiny muted" style="margin:0">Solo las ves tú y Adrián. Se reducen y se les quita la ubicación y los datos de la cámara antes de subirlas.</p>
   <button class="btn pri block">Subir</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
+// Reduce la foto antes de subirla: lado largo máx. 1600 px, JPEG ~80 % (≈200–400 KB en vez de 3–5 MB)
+async function shrink(file, max = 1600, calidad = 0.8) {
+  try {
+    let img; try { img = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch { img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = URL.createObjectURL(file); }); }
+    const w0 = img.width, h0 = img.height; const k = Math.min(1, max / Math.max(w0, h0));
+    const c = document.createElement("canvas"); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
+    const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high"; ctx.drawImage(img, 0, 0, c.width, c.height); if (img.close) img.close();
+    const blob = await new Promise(ok => c.toBlob(ok, "image/jpeg", calidad));
+    return blob && blob.size < file.size ? blob : (/jpe?g$/i.test(file.type) ? file : blob || file);
+  } catch { return file; }
+}
 async function saveFotos(f) {
   const ins = [...f.querySelectorAll("input[type=file]")].filter(i => i.files[0]); if (!ins.length) return;
   const b = f.querySelector("button.pri"); b.disabled = true;
