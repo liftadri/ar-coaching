@@ -1053,7 +1053,7 @@ async function tabPlan(c, pl) {
       if (day.slice(0, 7) !== m) { rows += `<div class="pday out" data-day="${day}"></div>`; continue; }
       rows += `<div class="pday${cls}" data-day="${day}"><div class="pdh"><span class="dn">${+day.slice(8)}</span><button class="padd" data-act="asig-new" data-d="${day}" aria-label="Añadir el ${esc(fdate(day))}">+</button></div>
       ${evs.map(e => `<button class="pch tp-evento" data-act="ev-edit" data-id="${esc(e.id)}"><i class="pi">★</i>${esc(e.titulo)}</button>`).join("")}
-      ${items.map(x => `<button class="pch tp-${esc(x.tipo)}${x.hecho ? " ok" : !x.hecho && day < t ? " late" : ""}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}" draggable="true" data-drag="${esc(x.id)}" title="${esc(TIPOS[x.tipo] || "")}${x.hecho ? " · hecho" : day < t ? " · sin hacer" : ""}${x.visible ? "" : " · oculto"}">${x.hecho ? `<i class="pi ok">✓</i>` : !x.hecho && day < t && x.tipo !== "nota" ? `<i class="pi no">!</i>` : ""}${esc(x.titulo)}</button>`).join("")}
+      ${items.map(x => `<button class="pch tp-${esc(x.tipo)}${x.hecho ? " ok" : !x.hecho && day < t ? " late" : ""}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}" data-drag="${esc(x.id)}" title="${esc(TIPOS[x.tipo] || "")}${x.hecho ? " · hecho" : day < t ? " · sin hacer" : ""}${x.visible ? "" : " · oculto"}">${x.hecho ? `<i class="pi ok">✓</i>` : !x.hecho && day < t && x.tipo !== "nota" ? `<i class="pi no">!</i>` : ""}${esc(x.titulo)}</button>`).join("")}
       ${libres.map(w => `<span class="pch tp-workout ok"><i class="pi ok">✓</i>${esc(w.dia || "Entreno libre")}</span>`).join("")}</div>`;
     }
     rows += `</div></div>`;
@@ -1948,6 +1948,7 @@ const refreshClient = () => { S.coach.keep = true; return viewCoachClient(S.coac
 function move(row, dir) { const sib = dir < 0 ? row.previousElementSibling : row.nextElementSibling; if (!sib) return; if (dir < 0) row.parentElement.insertBefore(row, sib); else row.parentElement.insertBefore(sib, row); }
 
 document.addEventListener("click", async ev => {
+  if (DR.justDragged && Date.now() - DR.justDragged < 450) { ev.preventDefault(); ev.stopPropagation(); return; }
   const a = ev.target.closest("[data-act]"); if (!a) return; const act = a.dataset.act; const id = a.dataset.id; const dd = a.closest("details.more"); if (dd) dd.removeAttribute("open");
   if (act === "close-bg") { if (ev.target === a) sheet(""); return; }
   try {
@@ -2046,10 +2047,49 @@ document.addEventListener("click", async ev => {
   } catch (e) { toast(errMsg(e)); }
 });
 // Arrastrar tareas entre días en la planificación
-document.addEventListener("dragstart", ev => { const d = ev.target.closest && ev.target.closest("[data-drag]"); if (d) { ev.dataTransfer.setData("text/plain", d.dataset.drag); ev.dataTransfer.effectAllowed = "move"; } });
-document.addEventListener("dragover", ev => { const d = ev.target.closest && ev.target.closest(".pday[data-day]"); if (d) { ev.preventDefault(); d.classList.add("over"); } });
-document.addEventListener("dragleave", ev => { const d = ev.target.closest && ev.target.closest(".pday[data-day]"); if (d) d.classList.remove("over"); });
-document.addEventListener("drop", async ev => { const d = ev.target.closest && ev.target.closest(".pday[data-day]"); if (!d) return; ev.preventDefault(); const id = ev.dataTransfer.getData("text/plain"); if (!id) return; try { await q(sb.from("assignments").update({ fecha: d.dataset.day }).eq("id", id)); refreshClient(); } catch (e) { toast(errMsg(e)); } });
+/* Arrastrar tareas del calendario a otro día, con ratón o con el dedo (mantener pulsado) */
+const DR = { el: null, on: false };
+function dragStart(x, y) {
+  DR.on = true; const r = DR.el.getBoundingClientRect();
+  DR.gh = DR.el.cloneNode(true); DR.gh.classList.add("drag-ghost"); if (!DR.touch) DR.gh.style.width = r.width + "px"; document.body.appendChild(DR.gh);
+  DR.dx = DR.touch ? 24 : x - r.left; DR.dy = DR.touch ? 54 : y - r.top; DR.el.classList.add("dragging"); document.body.classList.add("dragmode");
+  try { if (navigator.vibrate) navigator.vibrate(12); } catch { }
+  dragMove(x, y);
+}
+function dragMove(x, y) {
+  DR.gh.style.transform = `translate(${x - DR.dx}px,${y - DR.dy}px)`;
+  const t = document.elementFromPoint(x, y); const d = t && t.closest(".pday[data-day]");
+  document.querySelectorAll(".pday.over").forEach(p => { if (p !== d) p.classList.remove("over"); }); if (d) d.classList.add("over"); DR.over = d;
+  // desplazamiento automático cerca de los bordes de la pantalla
+  const m = 60; if (y < m) window.scrollBy(0, -12); else if (y > window.innerHeight - m) window.scrollBy(0, 12);
+}
+function dragEnd() {
+  clearTimeout(DR.t); if (DR.gh) DR.gh.remove(); if (DR.el) DR.el.classList.remove("dragging", "press");
+  document.querySelectorAll(".pday.over").forEach(p => p.classList.remove("over")); document.body.classList.remove("dragmode");
+  DR.el = null; DR.gh = null; DR.on = false; DR.over = null;
+}
+document.addEventListener("pointerdown", ev => {
+  const chip = ev.target.closest && ev.target.closest(".pch[data-drag]"); if (!chip || ev.button > 0) return;
+  dragEnd(); DR.el = chip; DR.id = chip.dataset.drag; DR.from = chip.closest(".pday") && chip.closest(".pday").dataset.day; DR.x = ev.clientX; DR.y = ev.clientY; DR.touch = ev.pointerType !== "mouse";
+  if (DR.touch) { chip.classList.add("press"); DR.t = setTimeout(() => { if (DR.el === chip) { chip.classList.remove("press"); dragStart(DR.x, DR.y); } }, 320); }
+});
+document.addEventListener("pointermove", ev => {
+  if (!DR.el) return;
+  if (!DR.on) { const d = Math.hypot(ev.clientX - DR.x, ev.clientY - DR.y); if (DR.touch) { if (d > 10) dragEnd(); else { DR.x = ev.clientX; DR.y = ev.clientY; } return; } if (d < 6) return; dragStart(ev.clientX, ev.clientY); }
+  ev.preventDefault(); dragMove(ev.clientX, ev.clientY);
+}, { passive: false });
+document.addEventListener("touchmove", ev => { if (!DR.on) return; ev.preventDefault(); const t = ev.touches[0]; if (t) dragMove(t.clientX, t.clientY); }, { passive: false });
+document.addEventListener("touchend", () => { if (DR.on) dragDrop(); });
+document.addEventListener("contextmenu", ev => { if (DR.el || (ev.target.closest && ev.target.closest(".pch[data-drag]"))) ev.preventDefault(); });
+document.addEventListener("pointerup", () => dragDrop());
+async function dragDrop() {
+  if (!DR.el) return; const was = DR.on, over = DR.over, id = DR.id, from = DR.from, chip = DR.el; dragEnd();
+  if (!was) return; DR.justDragged = Date.now();
+  const to = over && over.dataset.day; if (!to || to === from) return;
+  over.appendChild(chip); // se ve movido al instante
+  try { await q(sb.from("assignments").update({ fecha: to }).eq("id", id)); toast(`Movido al ${fdate(to, { weekday: "long", day: "numeric" })}`); refreshClient(); } catch (e) { toast(errMsg(e)); refreshClient(); }
+}
+document.addEventListener("pointercancel", () => { if (!DR.on) dragEnd(); });
 let qT;
 document.addEventListener("input", ev => {
   const el = ev.target;
