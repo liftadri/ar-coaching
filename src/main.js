@@ -264,6 +264,7 @@ async function doNueva(f) {
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
 const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["mas", "Perfil", "mas"]];
 const isCoachHash = h => ["inicio", "c", "lib"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
+function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; t.style.height = Math.min(Math.max(t.scrollHeight + 2, 64), 460) + "px"; }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
   const v = S.view; document.body.classList.toggle("is-coach", coach);
@@ -283,6 +284,7 @@ function shell(title, body, opts = {}) {
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
   }
   if (!opts.keepScroll) window.scrollTo(0, 0);
+  requestAnimationFrame(() => { document.querySelectorAll("#app textarea").forEach(grow); document.querySelectorAll('#app [aria-current="true"],#app [aria-selected="true"],#app .tabs .on').forEach(r => { const p = r.parentElement; if (p && p.scrollWidth > p.clientWidth + 4) p.scrollLeft = r.offsetLeft - p.offsetLeft - 12; }); });
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
 async function route() {
@@ -1456,7 +1458,7 @@ async function tabEvo(c) {
     const as = await q(sb.from("assignments").select("*").eq("client_id", cid).lte("fecha", today()).gte("fecha", addDays(today(), -28)).order("fecha", { ascending: false }));
     const byW = {}; as.forEach(x => { const k = monday(x.fecha); (byW[k] = byW[k] || []).push(x); });
     body = `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
-    <div class="card"><h2>Últimas tareas</h2>${as.length ? `<table><tbody>${as.slice(0, 40).map(x => `<tr data-act="asig-edit" data-id="${esc(x.id)}" style="cursor:pointer"><td>${esc(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }))}</td><td>${tipoChip(x.tipo)} ${esc(x.titulo)}${x.respuesta ? `<div class="tiny muted">«${esc(x.respuesta)}»</div>` : ""}</td><td>${x.hecho ? `<span class="chip ok">Hecho</span>` : `<span class="chip bad">No hecho</span>`}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">—</div>`}</div>`;
+    <div class="card"><h2>Últimas tareas</h2>${as.length ? `<table><tbody>${as.slice(0, 40).map(x => `<tr data-act="asig-edit" data-id="${esc(x.id)}" style="cursor:pointer"><td style="white-space:nowrap" class="tiny muted">${esc(fdate(x.fecha, { day: "numeric", month: "short" }))}</td><td>${tipoChip(x.tipo)} ${esc(x.titulo)}${x.respuesta ? `<div class="tiny muted">«${esc(x.respuesta)}»</div>` : ""}</td><td>${x.hecho ? `<span class="chip ok">Hecho</span>` : `<span class="chip bad">No hecho</span>`}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">—</div>`}</div>`;
   } else if (sub === "entrenos") {
     const wo = await q(sb.from("workouts").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40));
     body = wo.length ? wo.map(w => { const st = sesStats(w); return `<div class="card ses"><div class="seshd"><div><h2>${esc(w.dia || "Entreno")}</h2><span class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</span></div>
@@ -1582,13 +1584,13 @@ async function viewLib() {
   else if (tab === "recetas") body = await libRecipesHTML();
   else if (tab === "ejercicios") {
     const ex = await exLib(true); const list = ex.filter(e => !qy || (e.nombre + " " + e.grupo + " " + e.material).toLowerCase().includes(qy));
-    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="card flat"><div class="tbl"><table class="htable"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.notas ? `<div class="tiny muted clamp">${esc(e.notas)}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? `<span class="tag tag-workout">▶ vídeo</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
+    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.notas ? `<div class="tiny muted clamp">${esc(e.notas)}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? `<span class="tag tag-workout">▶ vídeo</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
   } else if (tab === "workouts") {
     const ts = await tplLib(); const list = ts.filter(t => !qy || (t.nombre + " " + t.descripcion + " " + desc(t.contenido)).toLowerCase().includes(qy));
-    body = head("Workouts", ts.length, "go", "lib-w-new", "Añadir workout") + `<div class="card flat"><div class="tbl"><table class="htable"><thead><tr><th>Nombre</th><th>Tipo</th><th>Descripción</th><th>Actualizado</th></tr></thead><tbody>${list.map(t => `<tr data-act="go" data-h="lib-w-${esc(t.id)}"><td><span class="lnk">${esc(t.nombre)}</span></td><td><span class="tag tag-${esc(t.tipo)}">${esc(TIPOS[t.tipo])}</span></td><td><div class="tiny muted clamp">${esc(t.descripcion ? t.descripcion + ". " : "")}${esc(desc(t.contenido))}</div></td><td class="tiny muted">${esc(fdate((t.updated_at || "").slice(0, 10)))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin workouts.</td></tr>`}</tbody></table></div></div>`;
+    body = head("Workouts", ts.length, "go", "lib-w-new", "Añadir workout") + `<div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Tipo</th><th>Descripción</th><th>Actualizado</th></tr></thead><tbody>${list.map(t => `<tr data-act="go" data-h="lib-w-${esc(t.id)}"><td><span class="lnk">${esc(t.nombre)}</span></td><td><span class="tag tag-${esc(t.tipo)}">${esc(TIPOS[t.tipo])}</span></td><td><div class="tiny muted clamp">${esc(t.descripcion ? t.descripcion + ". " : "")}${esc(desc(t.contenido))}</div></td><td class="tiny muted">${esc(fdate((t.updated_at || "").slice(0, 10)))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin workouts.</td></tr>`}</tbody></table></div></div>`;
   } else {
     const ps = await q(sb.from("programs").select("id,nombre,descripcion,semanas,items").order("nombre")); const list = ps.filter(p => !qy || (p.nombre + " " + p.descripcion).toLowerCase().includes(qy));
-    body = head("Programas", ps.length, "go", "lib-p-new", "Añadir programa") + `<div class="card flat"><div class="tbl"><table class="htable"><thead><tr><th>Nombre</th><th>Duración</th><th>Descripción</th><th>Elementos</th></tr></thead><tbody>${list.map(p => `<tr data-act="go" data-h="lib-p-${esc(p.id)}"><td><span class="lnk">${esc(p.nombre)}</span></td><td>${p.semanas} semanas</td><td><div class="tiny muted clamp">${esc(p.descripcion || "")}</div></td><td class="n">${(p.items || []).length}</td></tr>`).join("") || `<tr><td colspan="4" class="tempty">Aún no hay programas. Crea uno o guarda semanas de un cliente desde su calendario («Más ▾»).</td></tr>`}</tbody></table></div></div>`;
+    body = head("Programas", ps.length, "go", "lib-p-new", "Añadir programa") + `<div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Duración</th><th>Descripción</th><th>Elementos</th></tr></thead><tbody>${list.map(p => `<tr data-act="go" data-h="lib-p-${esc(p.id)}"><td><span class="lnk">${esc(p.nombre)}</span></td><td>${p.semanas} semanas</td><td><div class="tiny muted clamp">${esc(p.descripcion || "")}</div></td><td class="n">${(p.items || []).length}</td></tr>`).join("") || `<tr><td colspan="4" class="tempty">Aún no hay programas. Crea uno o guarda semanas de un cliente desde su calendario («Más ▾»).</td></tr>`}</tbody></table></div></div>`;
   }
   shell("Librería", body, { crumb: [["lib", "Librería"]], right: `<div class="subtabs">${LT.map(([k, l]) => `<button data-act="lib-tab" data-t="${k}" aria-current="${tab === k}">${l}</button>`).join("")}</div>` });
   const i = $("#ex-q"); if (i && S.lib.focusQ) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); S.lib.focusQ = false; }
@@ -2246,6 +2248,7 @@ document.addEventListener("pointercancel", () => { if (!DR.on) dragEnd(); });
 let qT;
 document.addEventListener("input", ev => {
   const el = ev.target;
+  if (el.tagName === "TEXTAREA") grow(el);
   if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.top != null) topSync(el); }
   if (el.closest && el.closest("[data-pres]") && el.dataset.p) presSync(el.closest("[data-row]"));
   if (el.id === "ex-q") { clearTimeout(qT); qT = setTimeout(() => { S.lib.q = el.value; S.lib.focusQ = true; viewLib(); }, 250); }

@@ -716,3 +716,23 @@ input,textarea,select,[contenteditable]{-webkit-user-select:text;user-select:tex
 .prow .pf span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:var(--muted);text-align:center;white-space:nowrap}
 .prow .pf.s input{width:64px}.prow .pf.m input{width:120px;text-align:left}
 .prow .pn,.prow>.btn{margin-bottom:6px}
+/* ---- Ajustes móviles: ficha del cliente ---- */
+.grid2>*,.grid3>*,.f{min-width:0}
+input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;width:100%;max-width:100%;min-width:0;display:block;min-height:46px;box-sizing:border-box;text-align:left}
+input[type=date]::-webkit-date-and-time-value{text-align:left}
+textarea{overflow:hidden;resize:vertical}
+.calert span{border-radius:10px;line-height:1.35;text-align:left}
+body:has(.hnav) .savebar{bottom:calc(12px + var(--safe-b,0px))}
+@media (max-width:760px){
+  .rail{gap:4px;padding:5px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .rail::-webkit-scrollbar{display:none}
+  .rail button{flex:0 0 auto;min-width:88px;max-width:96px;padding:8px 6px;border:0!important;box-shadow:none;font-size:11px;line-height:1.2;justify-content:flex-start}
+  .rail button[aria-current="true"]{box-shadow:inset 0 -3px 0 var(--accent);background:var(--accent-soft)}
+  .chead{flex-wrap:wrap}
+}
+@media (hover:none){.rail button:hover{color:var(--muted)}.rail button[aria-current="true"]:hover{color:var(--accent)}}
+@media (max-width:640px){
+  .libtab th:nth-child(n+3),.libtab td:nth-child(n+3){display:none}
+  .libtab td,.libtab th{white-space:normal}
+  label.search{flex:1 1 100%}
+}
