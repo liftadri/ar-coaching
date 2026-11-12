@@ -1289,7 +1289,7 @@ function renderEmpezar(ok) {
   if (ok) { $("#app").innerHTML = `<div class="ctw"><header class="cth"><img src="./logo-blanco.png" alt="" class="ctlogo"><span class="ctbrand">Adrián Rodríguez Coaching</span></header>
     <section class="ctcard ctok"><div class="okmark" aria-hidden="true"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg></div>
     <h1>¡Solicitud enviada!</h1><p class="ctlead">Gracias por dar el paso. Lo más difícil ya está hecho.</p>
-    <ol class="ctsteps"><li><b>Reviso tu información</b><span>Leo con calma lo que me has contado.</span></li><li><b>Te escribo por WhatsApp</b><span>Normalmente en menos de 24 horas.</span></li><li><b>Hablamos y empezamos</b><span>Vemos si encajamos y preparo tu plan.</span></li></ol>
+    <ol class="ctsteps"><li><b>Reviso tu información</b><span>Leo con calma lo que me has contado.</span></li><li><b>Te escribo por WhatsApp</b><span>Para conocerte y resolver tus dudas.</span></li><li><b>Hablamos y empezamos</b><span>Vemos si encajamos y preparo tu plan.</span></li></ol>
     ${wa ? `<a class="btn pri block" href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener noreferrer">Escribirme ya por WhatsApp</a>` : ""}</section>
     <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`; return; }
   const ch = (name, v, label, ico = "", req = false) => `<label class="ctch"><input type="radio" name="${name}" value="${esc(v)}" ${req ? "required" : ""}><span>${ico ? `<i>${ico}</i>` : ""}${esc(label)}</span></label>`;
@@ -1314,8 +1314,7 @@ function renderEmpezar(ok) {
     <div class="f"><textarea id="ct-x" name="mensaje" required maxlength="2000" aria-label="Qué buscas" placeholder="Qué te gustaría conseguir, qué has probado antes, cuánto tiempo tienes para entrenar…"></textarea></div></div>
   <input name="web" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
   <label class="ctok2"><input type="checkbox" name="ok" required><span>Acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren cuando quiera.</span></label>
-  <button class="btn pri block ctsend">Quiero empezar <span aria-hidden="true">→</span></button>
-  <p class="ctnote">🔒 Tus datos solo los veo yo · Te respondo en menos de 24 h</p></form>
+  <button class="btn pri block ctsend">Quiero empezar <span aria-hidden="true">→</span></button></form>
   <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`;
 }
 async function enviarContacto(f) {
