@@ -276,13 +276,14 @@ function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "au
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
   const v = S.view; document.body.classList.toggle("is-coach", coach);
+  S.backTo = coach ? ((opts.crumb || []).filter(c => c[0]).slice(-1)[0] || [null])[0] : (opts.back || null);
   if (coach) {
     const cur = v.startsWith("c") ? "c" : v.startsWith("lib") ? "lib" : v;
     const crumb = opts.crumb || [[null, title]];
     $("#app").innerHTML = `<header class="hnav"><a class="hlogo" href="#inicio" aria-label="Inicio"><img src="./logo.jpg" alt=""></a>
     <nav class="hmenu" aria-label="Secciones">${COACH_TABS.filter(t => t[0] !== "mas").map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
     <span class="grow"></span><button class="hme" data-act="go" data-h="mas" aria-label="Tu perfil" aria-current="${cur === "mas"}">${avatar(S.me.nombre || "A", "dark")}</button></header>
-    <div class="crumb"><div class="crumbin">${crumb.map(([h, l, av], k) => `${k ? `<span class="sep">/</span>` : ""}${h ? `<a href="#${esc(h)}">${esc(l)}</a>` : `<b>${av ? avatar(l, "xs") : ""}${esc(l)}</b>`}`).join("")}${opts.sub ? `<span class="csub">${esc(opts.sub)}</span>` : ""}<span class="grow"></span>${opts.right || ""}</div></div>
+    <div class="crumb"><div class="crumbin">${S.backTo ? `<button class="cback" data-act="go-back" aria-label="Volver">‹</button>` : ""}${crumb.map(([h, l, av], k) => `${k ? `<span class="sep">/</span>` : ""}${h ? `<a href="#${esc(h)}">${esc(l)}</a>` : `<b>${av ? avatar(l, "xs") : ""}${esc(l)}</b>`}`).join("")}${opts.sub ? `<span class="csub">${esc(opts.sub)}</span>` : ""}<span class="grow"></span>${opts.right || ""}</div></div>
     <main class="wide" id="main">${body}</main>`;
   } else {
     const tabs = CLIENT_TABS; const cur = v.split("-")[0];
@@ -291,6 +292,7 @@ function shell(title, body, opts = {}) {
     <main id="main">${body}</main>
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
   }
+  if (S.lastView !== v) { const m = $("#main"); if (m) m.classList.add("pgin"); S.lastView = v; }
   if (!opts.keepScroll) window.scrollTo(0, 0);
   requestAnimationFrame(() => { document.querySelectorAll("#app textarea").forEach(grow); document.querySelectorAll('#app [aria-current="true"],#app [aria-selected="true"],#app .tabs .on').forEach(r => { const p = r.parentElement; if (p && p.scrollWidth > p.clientWidth + 4) p.scrollLeft = r.offsetLeft - p.offsetLeft - 12; }); });
 }
@@ -330,7 +332,70 @@ async function route() {
     return await viewHoy();
   } catch (e) { shell("Error", `<div class="banner">${esc(errMsg(e))}</div><button class="btn" data-act="reload">Reintentar</button>`); }
 }
-window.addEventListener("hashchange", route);
+/* ================= Navegación fluida: gestos ================= */
+// Cerrar hojas con animación
+function closeSheet() {
+  const sh = document.querySelector("#modal-root .sheet"); if (!sh) return;
+  const ov = sh.parentElement; sh.style.transition = "transform .2s cubic-bezier(.2,.8,.2,1)"; sh.style.transform = "translateY(105%)";
+  ov.style.transition = "opacity .2s"; ov.style.opacity = "0"; setTimeout(() => { if (document.querySelector("#modal-root .sheet") === sh) sheet(""); }, 190);
+}
+// Arrastrar hacia abajo para cerrar una hoja
+(() => {
+  let g = null;
+  document.addEventListener("touchstart", ev => {
+    const sh = ev.target.closest && ev.target.closest("#modal-root .sheet"); if (!sh || ev.touches.length !== 1) return;
+    if (ev.target.closest("input,textarea,select,[data-drag],.scale,.tpick,.prows,.tbl,.heat")) { const r = sh.getBoundingClientRect(); if (ev.touches[0].clientY - r.top > 64) return; }
+    const t = ev.touches[0]; g = { sh, y0: t.clientY, x0: t.clientX, t0: Date.now(), dy: 0, on: false, top: sh.scrollTop <= 0, head: t.clientY - sh.getBoundingClientRect().top < 64 };
+  }, { passive: true });
+  document.addEventListener("touchmove", ev => {
+    if (!g) return; const t = ev.touches[0]; const dy = t.clientY - g.y0, dx = t.clientX - g.x0;
+    if (!g.on) { if (dy > 6 && Math.abs(dy) > Math.abs(dx) * 1.2 && (g.head || (g.top && g.sh.scrollTop <= 0))) { g.on = true; g.sh.style.transition = "none"; } else if (Math.abs(dy) > 10 || Math.abs(dx) > 10) { g = null; return; } else return; }
+    g.dy = Math.max(0, dy); const k = g.dy < 0 ? 0 : g.dy; g.sh.style.transform = `translateY(${k}px)`; g.sh.parentElement.style.opacity = String(Math.max(.35, 1 - k / 600));
+    if (ev.cancelable) ev.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchend", () => {
+    if (!g) return; const s = g; g = null; if (!s.on) return;
+    const v = s.dy / Math.max(1, Date.now() - s.t0);
+    if (s.dy > 120 || (v > .55 && s.dy > 40)) closeSheet();
+    else { s.sh.style.transition = "transform .22s cubic-bezier(.2,.8,.2,1)"; s.sh.style.transform = ""; s.sh.parentElement.style.transition = "opacity .2s"; s.sh.parentElement.style.opacity = ""; }
+  });
+})();
+// Volver atrás deslizando desde el borde izquierdo (como en iPhone)
+function goBack() {
+  if (document.querySelector("#modal-root .sheet")) { closeSheet(); return; }
+  if (S.backTo) { location.hash = S.backTo; return; }
+}
+(() => {
+  let g = null; let tip = null;
+  document.addEventListener("touchstart", ev => {
+    if (ev.touches.length !== 1 || document.querySelector("#modal-root .sheet") || !S.backTo) return;
+    const t = ev.touches[0]; if (t.clientX > 24) return; g = { x0: t.clientX, y0: t.clientY, dx: 0, on: false };
+  }, { passive: true });
+  document.addEventListener("touchmove", ev => {
+    if (!g) return; const t = ev.touches[0]; const dx = t.clientX - g.x0, dy = t.clientY - g.y0;
+    if (!g.on) { if (dx > 8 && Math.abs(dx) > Math.abs(dy) * 1.5) { g.on = true; tip = document.createElement("div"); tip.className = "backtip"; tip.innerHTML = "‹"; document.body.appendChild(tip); } else if (Math.abs(dy) > 10) { g = null; return; } else return; }
+    g.dx = Math.max(0, dx); const p = Math.min(1, g.dx / 90); tip.style.transform = `translate(${Math.min(70, g.dx * .6) - 40}px,-50%) scale(${.7 + p * .3})`; tip.style.opacity = String(p); tip.classList.toggle("go", p >= 1);
+    const m = $("#main"); if (m) { m.style.transition = "none"; m.style.transform = `translateX(${Math.min(60, g.dx * .25)}px)`; }
+    if (ev.cancelable) ev.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchend", () => {
+    if (!g) return; const s = g; g = null; const m = $("#main");
+    if (tip) { tip.remove(); tip = null; }
+    if (m) { m.style.transition = "transform .2s"; m.style.transform = ""; }
+    if (s.on && s.dx >= 90) goBack();
+  });
+})();
+// Botón atrás de Android / gesto del navegador: si hay una hoja abierta, solo la cierra
+S.navIdx = 0; try { history.replaceState({ i: 0 }, ""); } catch { }
+window.addEventListener("hashchange", () => {
+  const st = history.state;
+  if (S.skipNext) { S.skipNext = false; S.skipRoute = true; return; }
+  if (st && typeof st.i === "number") { // viaje por el historial (atrás/adelante)
+    if (st.i < S.navIdx && document.querySelector("#modal-root .sheet")) { closeSheet(); S.skipNext = true; S.skipRoute = true; history.forward(); return; }
+    S.navIdx = st.i;
+  } else { S.navIdx++; try { history.replaceState({ i: S.navIdx }, ""); } catch { } }
+}, true);
+window.addEventListener("hashchange", () => { if (S.skipRoute) { S.skipRoute = false; return; } route(); });
 
 /* ================= Cliente: datos ================= */
 async function getPlan() {
@@ -2275,7 +2340,7 @@ document.addEventListener("click", async ev => {
   // en el móvil, tocar una tarea dentro del calendario abre el día en grande (las tareas ahí son muy pequeñas)
   if (a.matches(".cal .pday .pch") && window.matchMedia("(max-width:700px)").matches) a = a.closest(".pday");
   const act = a.dataset.act; const id = a.dataset.id; const dd = a.closest("details.more"); if (dd) dd.removeAttribute("open");
-  if (act === "close-bg") { if (ev.target === a) sheet(""); return; }
+  if (act === "close-bg") { if (ev.target === a) closeSheet(); return; }
   try {
     switch (act) {
       case "go": if (location.hash === "#" + a.dataset.h) route(); else location.hash = a.dataset.h; break;
@@ -2296,7 +2361,8 @@ document.addEventListener("click", async ev => {
       case "login-tab": renderLogin(a.dataset.t); break;
       case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; const v = i.type === "text"; a.innerHTML = v ? EYE_OFF : EYE; a.setAttribute("aria-label", v ? "Ocultar contraseña" : "Mostrar contraseña"); a.title = a.getAttribute("aria-label"); a.classList.toggle("on", v); i.focus(); break; }
       case "cambiar-pw": openCambiarPw(); break;
-      case "close": sheet(""); break;
+      case "close": closeSheet(); break;
+      case "go-back": goBack(); break;
       case "bk-now": backupNow(a); break;
       case "bk-restore": openRestore(); break;
       case "post-new": openPostForm(); break;
@@ -2494,7 +2560,7 @@ document.addEventListener("submit", ev => {
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
   if (map[f.id]) map[f.id](f);
 });
-document.addEventListener("keydown", ev => { if (ev.key === "Escape") sheet(""); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeSheet(); });
 
 // Pantalla de carga: se queda un mínimo para que no parpadee y sale con un fundido
 const SPLASH_T0 = performance.now();

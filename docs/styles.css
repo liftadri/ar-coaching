@@ -1040,3 +1040,17 @@ label:has(> input[type=checkbox]):not(.mchk):not(.pchk):not(.ptype):not(.chkrow)
 @media (max-width:640px){.mrow{grid-template-columns:repeat(3,minmax(0,1fr))}.mrow [name="m_e"]{grid-column:1/4}.mrow [name="m_f"]{grid-column:1/4}.mrow .mrn{grid-column:1/3}}
 @media (max-width:400px){.wrow input,.wrow select{padding-left:8px;padding-right:8px}}
 @media (max-width:400px){.wrow [name="r_sxr"]{grid-column:1/5}.wrow [name="r_rir"]{grid-column:1/3}.wrow [name="r_des"]{grid-column:3/5}}
+/* ===== Navegación fluida ===== */
+@media (prefers-reduced-motion:no-preference){
+  #main.pgin{animation:pgin .24s cubic-bezier(.2,.8,.2,1)}
+  @keyframes pgin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .ov{animation:ovin .2s ease-out}@keyframes ovin{from{opacity:0}}
+  .sheet{animation:shin .28s cubic-bezier(.2,.9,.25,1)}@keyframes shin{from{transform:translateY(40px);opacity:.4}}
+}
+.sheet{overscroll-behavior:contain;touch-action:pan-y}
+html,body{overscroll-behavior-y:none}
+.backtip{position:fixed;left:0;top:50%;z-index:60;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:28px;line-height:1;color:#fff;background:rgba(23,24,28,.55);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);pointer-events:none;transform:translate(-40px,-50%);opacity:0;transition:background .15s}
+.backtip.go{background:var(--accent)}
+.cback{all:unset;cursor:pointer;display:none;place-items:center;width:32px;height:32px;margin:-6px 4px -6px -8px;border-radius:50%;font-size:26px;line-height:1;color:var(--ink)}
+.cback:hover{background:var(--surface-2)}
+@media (max-width:900px){.cback{display:inline-grid}}
