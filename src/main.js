@@ -62,7 +62,7 @@ function lineChart(pts, o = {}) {
   let y0 = Math.min(...pts.map(p => p.y)), y1 = Math.max(...pts.map(p => p.y)); if (o.yMin != null) { y0 = o.yMin; y1 = o.yMax; } else { const pd = (y1 - y0) * .15 || 1; y0 -= pd; y1 += pd; }
   const tk = niceTicks(y0, y1, 4); if (o.yMin == null) { y0 = tk[0]; y1 = tk[tk.length - 1]; }
   const X = t => P.l + (t - x0) / ((x1 - x0) || 1) * (W - P.l - P.r), Y = v => P.t + (1 - (v - y0) / (y1 - y0)) * (H - P.t - P.b);
-  let g = tk.filter(v => v >= y0 && v <= y1).map(v => `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v, 1)}</text>`).join("");
+  let g = tk.filter(v => v >= y0 && v <= y1).map(v => `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v, y1 - y0 < 1 ? 2 : 1)}</text>`).join("");
   const c = pts.map(p => [X(parseD(p.x).getTime()), Y(p.y), p.y]);
   const d = c.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   g += `<path d="${d} L${c[c.length - 1][0]} ${H - P.b} L${c[0][0]} ${H - P.b} Z" fill="var(--accent)" opacity=".1"/><path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round"/>`;
@@ -535,7 +535,7 @@ async function viewProgreso() {
     <div class="card"><h2>Horas de sueño <small>media semanal</small></h2>${lineChart(wk.map(([x, v]) => ({ x, y: avg(v.map(z => num(z.sueno_h)).filter(z => z != null)) })), { label: "Horas de sueño", empty: "Apunta las horas que duermes en el cuestionario" })}</div>`;
   } else if (tab === "tests") {
     const ts = await q(sb.from("tests").select("*").order("fecha", { ascending: false, nullsFirst: false }).limit(100));
-    body = `<div class="card"><h2>Tests y evaluaciones</h2>${ts.length ? `<div class="tbl"><table><thead><tr><th>Test</th><th>Fecha</th><th class="n">Resultado</th></tr></thead><tbody>${ts.map(x => `<tr><td>${esc(x.nombre)}${x.notas ? `<div class="tiny muted">${esc(x.notas)}</div>` : ""}</td><td>${x.fecha ? esc(fdate(x.fecha)) : "—"}</td><td class="n">${x.valor != null ? fmt(x.valor, 2) + " " + esc(x.unidad) : ""}${x.izq != null || x.der != null ? `I ${fmt(x.izq, 2)} · D ${fmt(x.der, 2)} ${esc(x.unidad)}` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Aquí verás tus tests cuando los hagas.</div>`}</div>`;
+    body = testsHTML(ts, false);
   } else if (tab === "peso") {
     const ws = await q(sb.from("weights").select("fecha,kg").order("fecha", { ascending: true }).limit(400));
     const byW = {}; ws.forEach(w => { const d = parseD(w.fecha); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd); const k = iso(d); (byW[k] = byW[k] || []).push(+w.kg); });
@@ -969,6 +969,34 @@ async function comFicha(cid) {
   try { await q(sb.from("clients").update({ ficha: f }).eq("id", cid)); toast("Ficha actualizada"); S.coach.keep = true; viewCoachClient(cid); } catch (e) { toast(errMsg(e)); }
 }
 
+/* ---- Tests: agrupados por nombre y comparados en el tiempo ---- */
+const tKey = n => String(n || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const tMain = x => x.valor != null ? +x.valor : (x.izq != null && x.der != null ? (+x.izq + +x.der) / 2 : x.izq != null ? +x.izq : x.der != null ? +x.der : null);
+const tLsi = x => x.izq && x.der ? Math.round(100 * Math.min(+x.izq, +x.der) / Math.max(+x.izq, +x.der)) : null;
+function tDelta(a, b, menos, u) {
+  if (a == null || b == null) return "";
+  const d = a - b, pc = b ? 100 * d / Math.abs(b) : null; const good = d === 0 ? null : (d > 0) !== !!menos;
+  return `<span class="tdelta ${good == null ? "" : good ? "up" : "down"}">${d > 0 ? "▲" : d < 0 ? "▼" : "="} ${d > 0 ? "+" : ""}${fmt(d, 2)}${u ? " " + esc(u) : ""}${pc != null && d !== 0 ? ` <em>(${d > 0 ? "+" : ""}${fmt(pc, 1)} %)</em>` : ""}</span>`;
+}
+function testsHTML(ts, coach) {
+  const g = {}; ts.forEach(x => { const k = tKey(x.nombre); (g[k] = g[k] || []).push(x); });
+  const grupos = Object.values(g).map(xs => xs.slice().sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.created_at || "").localeCompare(String(b.created_at || ""))))
+    .sort((a, b) => String(b[b.length - 1].fecha || "").localeCompare(String(a[a.length - 1].fecha || "")));
+  if (!grupos.length) return `<div class="card"><div class="empty">${coach ? "Sin tests todavía. Añade el primero abajo; si repites un test con el mismo nombre, se compara solo." : "Aquí verás tus tests y cómo mejoran cada vez que los repitas."}</div></div>`;
+  return `<div class="tgrid">${grupos.map(xs => {
+    const last = xs[xs.length - 1], prev = xs[xs.length - 2], first = xs[0], u = last.unidad || "", menos = !!last.mejor_es_menos;
+    const lv = tMain(last), bil = xs.some(x => x.izq != null || x.der != null);
+    const best = xs.map(tMain).filter(v => v != null).reduce((m, v) => m == null ? v : menos ? Math.min(m, v) : Math.max(m, v), null);
+    const pts = xs.filter(x => x.fecha && tMain(x) != null).map(x => ({ x: x.fecha, y: tMain(x) }));
+    return `<div class="card tcard"><div class="thead"><div><h2>${esc(last.nombre)}</h2><span class="tiny muted">${esc(cap(last.categoria || ""))}${xs.length > 1 ? ` · ${xs.length} mediciones` : ""}${menos ? " · mejor cuanto menos" : ""}</span></div>${best != null && lv === best && xs.length > 1 ? `<span class="chip ok">Mejor marca</span>` : ""}</div>
+      <div class="tkpis"><div><span>Último${last.fecha ? " · " + esc(fdate(last.fecha, { day: "numeric", month: "short" })) : ""}</span><b>${lv != null ? fmt(lv, 2) : "—"}<small>${esc(u)}</small></b>${bil ? `<em>I ${fmt(last.izq, 2)} · D ${fmt(last.der, 2)}${tLsi(last) != null ? ` · LSI ${tLsi(last)} %` : ""}</em>` : ""}</div>
+      ${prev ? `<div><span>Vs. anterior${prev.fecha ? " · " + esc(fdate(prev.fecha, { day: "numeric", month: "short" })) : ""}</span>${tDelta(lv, tMain(prev), menos, u)}<em>antes ${fmt(tMain(prev), 2)} ${esc(u)}${bil && tLsi(prev) != null ? ` · LSI ${tLsi(prev)} %` : ""}</em></div>` : `<div class="tsolo"><span>Progreso</span><em>Repite este test para compararlo</em></div>`}
+      ${xs.length > 2 ? `<div><span>Desde el inicio${first.fecha ? " · " + esc(fdate(first.fecha, { day: "numeric", month: "short", year: "2-digit" })) : ""}</span>${tDelta(lv, tMain(first), menos, u)}<em>al empezar ${fmt(tMain(first), 2)} ${esc(u)}</em></div>` : ""}</div>
+      ${pts.length >= 2 ? lineChart(pts, { label: last.nombre, unit: u, dec: Math.max(...pts.map(p => p.y)) - Math.min(...pts.map(p => p.y)) < 2 ? 2 : 1 }) : ""}
+      <details class="thist"><summary>Historial (${xs.length})</summary><table><tbody>${xs.slice().reverse().map((x, i, arr) => { const p = arr[i + 1]; return `<tr><td>${x.fecha ? esc(fdate(x.fecha)) : "—"}</td><td class="n"><b>${tMain(x) != null ? fmt(tMain(x), 2) : "—"}</b> ${esc(x.unidad || "")}${x.izq != null || x.der != null ? `<div class="tiny muted">I ${fmt(x.izq, 2)} · D ${fmt(x.der, 2)}${tLsi(x) != null ? ` · LSI ${tLsi(x)} %` : ""}</div>` : ""}</td><td class="n">${p ? tDelta(tMain(x), tMain(p), x.mejor_es_menos, "") : ""}</td><td class="tiny muted">${esc(x.notas || "")}</td>${coach ? `<td class="n"><button class="btn ghost sm" data-act="test-del" data-id="${esc(x.id)}">Borrar</button></td>` : ""}</tr>`; }).join("")}</tbody></table></details></div>`;
+  }).join("")}</div>`;
+}
+
 /* ================= Entrenador: Clientes ================= */
 async function viewCoachList() {
   loading("Clientes"); const since = addDays(today(), -7);
@@ -1341,9 +1369,8 @@ async function tabEvo(c) {
     if (ph.length) { const { data } = await sb.storage.from("fotos").createSignedUrls(ph.map(p => p.path), 600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); }
     body = `<div class="card">${ph.length ? `<div class="photos">${ph.map(p => urls[p.path] ? `<figure style="margin:0"><img src="${esc(urls[p.path])}" alt="${esc(p.vista)} ${esc(fdate(p.fecha))}" loading="lazy"><figcaption class="tiny muted">${esc(fdate(p.fecha))} · ${esc(p.vista)}</figcaption></figure>` : "").join("")}</div>` : `<div class="empty">Sin fotos.</div>`}</div>`;
   } else {
-    const ts = await q(sb.from("tests").select("*").eq("client_id", cid).order("fecha", { ascending: false, nullsFirst: false }));
-    body = `<div class="card"><h2>Tests</h2>${ts.length ? `<table><thead><tr><th>Test</th><th>Fecha</th><th class="n">Resultado</th><th></th></tr></thead><tbody>${ts.map(x => `<tr><td>${esc(x.nombre)}<div class="tiny muted">${esc(x.categoria)}${x.notas ? " · " + esc(x.notas) : ""}</div></td><td>${x.fecha ? esc(fdate(x.fecha)) : "—"}</td><td class="n">${x.valor != null ? fmt(x.valor, 2) + " " + esc(x.unidad) : ""}${x.izq != null || x.der != null ? `I ${fmt(x.izq, 2)} · D ${fmt(x.der, 2)} ${esc(x.unidad)}${x.izq && x.der ? ` · LSI ${Math.round(100 * Math.min(x.izq, x.der) / Math.max(x.izq, x.der))} %` : ""}` : ""}</td><td><button class="btn ghost sm" data-act="test-del" data-id="${esc(x.id)}">Borrar</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty">Sin tests.</div>`}</div>
-    <form id="f-test" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Añadir test</h2><div class="grid2"><div class="f"><label>Test</label><input name="nombre" required placeholder="CMJ, 1RM sentadilla, triple hop…"></div><div class="f"><label>Categoría</label><select name="categoria">${[["fuerza", "Fuerza"], ["salto", "Salto"], ["velocidad", "Velocidad"], ["resistencia", "Resistencia"], ["movilidad", "Movilidad"], ["composicion", "Composición corporal"], ["otro", "Otro"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div></div>
+    const ts = await q(sb.from("tests").select("*").eq("client_id", cid).order("fecha", { ascending: false, nullsFirst: false })); S.coach.tests = ts.slice().reverse();
+    body = testsHTML(ts, true) + `<form id="f-test" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Añadir test</h2><p class="tiny muted" style="margin:-4px 0 0">Usa el mismo nombre para repetir un test y se comparará solo con los anteriores.</p><div class="grid2"><div class="f"><label>Test</label><input name="nombre" required placeholder="CMJ, 1RM sentadilla, triple hop…" list="tests-dl" data-act-change="test-name"><datalist id="tests-dl">${[...new Map(ts.map(x => [tKey(x.nombre), x])).values()].map(x => `<option value="${esc(x.nombre)}">`).join("")}</datalist></div><div class="f"><label>Categoría</label><select name="categoria">${[["fuerza", "Fuerza"], ["salto", "Salto"], ["velocidad", "Velocidad"], ["resistencia", "Resistencia"], ["movilidad", "Movilidad"], ["composicion", "Composición corporal"], ["otro", "Otro"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div></div>
     <div class="grid3"><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${today()}"></div><div class="f"><label>Valor</label><input name="valor" inputmode="decimal"></div><div class="f"><label>Unidad</label><input name="unidad" placeholder="kg, cm, s"></div></div>
     <div class="grid3"><div class="f"><label>Izquierda</label><input name="izq" inputmode="decimal"></div><div class="f"><label>Derecha</label><input name="der" inputmode="decimal"></div><label class="small" style="align-self:end"><input type="checkbox" name="menos"> Mejor cuanto menos</label></div>
     <div class="f"><label>Notas</label><input name="notas"></div><button class="btn pri">Añadir</button></form>`;
@@ -2034,6 +2061,7 @@ document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
+  if (el.dataset && el.dataset.actChange === "test-name") { const t = (S.coach.tests || []).filter(x => tKey(x.nombre) === tKey(el.value)).pop(); if (t) { const f = el.form; f.categoria.value = t.categoria || f.categoria.value; f.unidad.value = t.unidad || ""; f.menos.checked = !!t.mejor_es_menos; f.nombre.value = t.nombre; } }
   if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
     el.form.querySelectorAll(".cq").forEach(w => { const qq = COM_Q.find(x => x.k === w.dataset.k); if (qq && qq.if) w.hidden = d[qq.if[0]] !== qq.if[1]; }); }
   if (el.form && el.form.id === "f-contacto" && el.name === "objetivo") { const o = el.form.objetivo_otro; o.hidden = el.value !== "__otro"; if (!o.hidden) o.focus(); }
