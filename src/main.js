@@ -142,7 +142,7 @@ window.addEventListener("hashchange", () => { dirty = false; if (updPending) saf
 function safeReload() {
   const busy = dirty || $("#modal-root")?.innerHTML || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
   if (!busy) { location.reload(); return; }
-  if (!$("#upd-bar")) document.body.insertAdjacentHTML("beforeend", `<div id="upd-bar" class="upd" role="status">Hay una versión nueva de la app <button type="button" class="btn sm pri" onclick="location.reload()">Actualizar</button></div>`);
+  if (!$("#upd-bar")) document.body.insertAdjacentHTML("beforeend", `<div id="upd-bar" class="upd" role="status">Hay una versión nueva de la app <button type="button" class="btn sm pri" data-act="reload">Actualizar</button></div>`);
 }
 async function checkUpdate() {
   if (!MY_V || updPending || location.protocol !== "https:") return;
