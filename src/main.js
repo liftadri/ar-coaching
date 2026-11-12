@@ -755,12 +755,66 @@ async function habitosCoach(cid, pl) {
     return `<tr><td>${esc(h)}</td>${D.map(d => `<td class="n"><i class="hd${ds.includes(d) ? " on" : ""}"></i></td>`).join("")}<td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td><td class="n">${habStreak(ds, t) ? "🔥 " + habStreak(ds, t) : "—"}</td></tr>`; }).join("")}</tbody></table></div></div>`;
 }
 
+/* ================= Avisos (notificaciones push) ================= */
+const VAPID_PUB = "BEzch7JN7Vexv3QYdcwwkXmBn1BYTwDYqvvCUP4k039BnsbVjtQt-eEZP4_7bXTBFh05EADrcZ4rIe39d1OGEWU";
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushOK = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64u = s => { const p = "=".repeat((4 - s.length % 4) % 4); const r = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(r, c => c.charCodeAt(0)); };
+const swReg = () => Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 2500))]);
+async function pushSub() { try { const r = await navigator.serviceWorker.getRegistration(); return r ? await r.pushManager.getSubscription() : null; } catch { return null; } }
+async function pushEstado() { // "on" | "off" | "denegado" | "ios" (falta instalar) | "no"
+  if (isIOS() && !isStandalone()) return "ios";
+  if (!pushOK()) return "no";
+  if (Notification.permission === "denied") return "denegado";
+  return (await pushSub()) && Notification.permission === "granted" ? "on" : "off";
+}
+async function pushActivar() {
+  if (!pushOK()) { toast("Este móvil no permite avisos"); return false; }
+  const perm = await Notification.requestPermission(); if (perm !== "granted") { toast("Sin permiso no podemos enviarte avisos"); return false; }
+  try { const r = await swReg(); if (!r) throw new Error("la app aún se está instalando, prueba en unos segundos"); let s = await r.pushManager.getSubscription();
+    if (!s) s = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUB) });
+    const j = s.toJSON(); const { error } = await sb.rpc("push_registrar", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_ua: navigator.userAgent }); if (error) throw error;
+    toast("¡Avisos activados!"); return true;
+  } catch (e) { toast("No se pudieron activar: " + (e.message || e)); return false; }
+}
+async function pushDesactivar() { const s = await pushSub(); if (s) { try { await q(sb.from("push_subs").delete().eq("endpoint", s.endpoint)); } catch { } await s.unsubscribe().catch(() => { }); } toast("Avisos desactivados en este móvil"); }
+async function pushCardHoy() {
+  if (S.me.role === "coach") return ""; let dism = false; try { dism = !!localStorage.getItem("arc-push-no"); } catch { }
+  const e = await pushEstado(); if (e === "on" || e === "no" || dism) return "";
+  if (e === "denegado") return "";
+  if (e === "ios") return `<div class="card pushc"><span class="ricon">${ICON.bell}</span><span class="grow"><b>Recibe avisos de Adrián</b><span class="tiny muted">En iPhone, primero añade la app a tu pantalla de inicio: botón Compartir → «Añadir a pantalla de inicio». Luego ábrela desde ahí.</span></span><button class="btn ghost sm" data-act="push-no" aria-label="Cerrar">✕</button></div>`;
+  return `<div class="card pushc"><span class="ricon">${ICON.bell}</span><span class="grow"><b>Activa los avisos</b><span class="tiny muted">Te aviso cuando tengas tareas nuevas, tu revisión o un mensaje.</span></span><span class="pushb"><button class="btn pri sm" data-act="push-on">Activar</button><button class="btn ghost sm" data-act="push-no">Ahora no</button></span></div>`;
+}
+async function pushCardPerfil() {
+  const e = await pushEstado();
+  const txt = { on: "Activados en este móvil", off: "Desactivados", denegado: "Bloqueados en los ajustes del móvil", ios: "Añade la app a la pantalla de inicio para activarlos", no: "Este navegador no los permite" }[e];
+  return `<div class="card"><h2 class="hh">${ICON.bell}Avisos</h2><div class="row" style="justify-content:space-between;flex-wrap:nowrap;gap:12px"><span class="small">${esc(txt)}</span>${e === "on" ? `<button class="btn sm" data-act="push-off">Desactivar</button>` : e === "off" ? `<button class="btn pri sm" data-act="push-on">Activar</button>` : ""}</div>${e === "denegado" ? `<p class="tiny muted" style="margin:8px 0 0">Para activarlos: Ajustes del móvil → Notificaciones → esta app.</p>` : ""}</div>`;
+}
+async function pushCoachCard() {
+  let v = {}; try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "push").limit(1)); v = (r[0] || {}).valor || {}; } catch { }
+  const on = k => v[k] !== false; const subs = await q(sb.from("push_subs").select("client_id")).catch(() => []); const n = new Set(subs.map(x => x.client_id).filter(Boolean)).size;
+  const it = (k, l, d) => `<label class="chkrow"><input type="checkbox" name="${k}" ${on(k) ? "checked" : ""}><span><b>${l}</b><small>${d}</small></span></label>`;
+  return `<form class="card" id="f-pushcfg" style="display:flex;flex-direction:column;gap:10px"><h2 class="hh">${ICON.bell}Avisos a clientes <span class="cnt">${n} con avisos</span></h2>
+  ${it("nuevas", "Tareas nuevas", "Cuando les programas algo (agrupado en un solo aviso).")}
+  <div class="pushdia"><label class="chkrow"><input type="checkbox" name="dia" ${on("dia") ? "checked" : ""}><span><b>Aviso del día</b><small>Lo que les toca hoy.</small></span></label><label class="pushh"><span class="tiny muted">Hora</span><input name="hora_dia" type="time" value="${esc(v.hora_dia || "08:00")}"></label></div>
+  ${it("mensajes", "Mensajes programados", "A la hora que pusiste en el mensaje.")}${it("revision", "Revisión publicada", "Cuando publicas su revisión semanal.")}${it("comunidad", "Comunidad", "Cuando publicas algo en el tablón.")}
+  <div class="row"><span class="tiny muted grow">Se revisa cada 10 minutos.</span><button class="btn pri">Guardar</button></div></form>`;
+}
+async function savePushCfg(f) {
+  const valor = { nuevas: f.nuevas.checked, dia: f.dia.checked, mensajes: f.mensajes.checked, revision: f.revision.checked, comunidad: f.comunidad.checked, hora_dia: f.hora_dia.value || "08:00" };
+  try { await q(sb.from("ajustes").upsert({ clave: "push", valor, updated_at: new Date().toISOString() }, { onConflict: "clave" })); toast("Avisos guardados"); } catch (e) { toast(errMsg(e)); }
+}
+async function pushTest(cid, b) {
+  b.disabled = true; try { const { data, error } = await sb.functions.invoke("push", { method: "POST", body: { test: cid } }); if (error) throw error; toast(data && data.ok ? "Aviso de prueba enviado" : (data && data.motivo) || "No se pudo enviar"); } catch (e) { toast("No se pudo enviar: " + (e.message || e)); } b.disabled = false;
+}
+
 /* ================= Cliente: Hoy ================= */
 async function viewHoy() {
   loading("Hoy");
   const t = today();
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana,leido_en").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
-  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy(); const habs = await habitosHoy(plan);
+  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy(); const habs = await habitosHoy(plan); const pushc = await pushCardHoy();
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
@@ -768,7 +822,7 @@ async function viewHoy() {
   <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(w.nombre)}</span>${esc(w.bloque)}${w.tipo && w.tipo !== "carga" ? " · " + esc(cap(w.tipo)) : ""}</div>${w.foco ? `<p class="hfoco">${esc(w.foco)}</p>` : ""}` : ""}</section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${rp[0] && !rp[0].leido_en ? `<button class="card revnew" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="pnew">Nueva</span> <span class="tiny">Revisión del ${esc(fdate(rp[0].fecha, { day: "numeric", month: "long" }))}</span><br><b>${esc(rp[0].titular || "Tu revisión semanal")}</b><br><span class="tiny muted">Toca para leerla</span></span><span class="chev">›</span></button>` : ""}
-  ${tbh}
+  ${pushc}${tbh}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>${prox[0] || atras.length ? "Día de descanso" : "Nada programado para hoy"}</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : atras.length ? "Recupera bien" : "Cuando Adrián te programe algo, aparecerá aquí"}</span></span></div>`}
   </div></div>
@@ -1209,7 +1263,7 @@ async function viewInforme(id) {
 /* ================= Perfil ================= */
 async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
-  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await backupCard() + await legalCard() : "";
+  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await pushCoachCard() + await backupCard() + await legalCard() : await pushCardPerfil();
   shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
   <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
@@ -2252,7 +2306,9 @@ async function consentInfo(cid) {
   const r = await q(sb.from("consentimientos").select("tipo,version,aceptado_en").eq("client_id", cid).order("aceptado_en", { ascending: false })).catch(() => []);
   const last = t => r.find(x => x.tipo === t);
   const row = (t, l) => { const x = last(t); return `<div class="it" style="cursor:default"><span><b>${l}</b><br><span class="tiny muted">${x ? `Aceptado ${esc(new Date(x.aceptado_en).toLocaleString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }))} · versión ${esc(x.version)}` : "Aún no lo ha aceptado (se le pedirá al entrar en la app)"}</span></span>${x ? `<span class="done">✓</span>` : `<span class="chip warn">Pendiente</span>`}</div>`; };
-  return `<div class="card"><h2>Consentimientos</h2><div class="list">${row("privacidad", "Aviso legal y privacidad")}${row("salud", "Datos de salud")}</div></div>`;
+  const ps = await q(sb.from("push_subs").select("id,created_at,last_ok").eq("client_id", cid)).catch(() => []);
+  const pushHtml = `<div class="card"><h2>Avisos en su móvil</h2><div class="row" style="justify-content:space-between;flex-wrap:nowrap;gap:12px"><span class="small">${ps.length ? `Activados en ${ps.length} dispositivo${ps.length > 1 ? "s" : ""}` : "No los ha activado todavía"}</span>${ps.length ? `<button class="btn sm" data-act="push-test" data-cid="${esc(cid)}">Enviar aviso de prueba</button>` : ""}</div></div>`;
+  return pushHtml + `<div class="card"><h2>Consentimientos</h2><div class="list">${row("privacidad", "Aviso legal y privacidad")}${row("salud", "Datos de salud")}</div></div>`;
 }
 function tabCuenta(c, pl) {
   return `<form id="f-cuenta" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Cuenta</h2><div class="f"><label for="cu-e">Email de acceso</label><input id="cu-e" name="email" type="email" value="${esc(c.email)}"></div><div class="f"><label for="cu-s">Estado</label><select id="cu-s" name="estado">${[["activo", "Activo"], ["pausa", "En pausa"], ["baja", "Baja"]].map(([v, l]) => `<option value="${v}" ${c.estado === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">«Baja» le quita el acceso a la app al momento.</p>
@@ -2788,6 +2844,10 @@ document.addEventListener("click", async ev => {
       case "pay-cfg": payCfg(a.dataset.cid); break;
       case "pay-del": if (confirmar(a)) { await q(sb.from("payments").delete().eq("id", id)); toast("Pago borrado"); viewCobros(); } break;
       case "hab": habToggle(a); break;
+      case "push-on": if (await pushActivar()) route(); break;
+      case "push-off": await pushDesactivar(); route(); break;
+      case "push-no": try { localStorage.setItem("arc-push-no", "1"); } catch { } a.closest(".pushc").remove(); break;
+      case "push-test": pushTest(a.dataset.cid, a); break;
       case "rest-add": RT.end += (+a.dataset.s) * 1000; RT.dur = Math.max(RT.dur, Math.round((RT.end - Date.now()) / 1000)); RT.done = false; restTick(); break;
       case "rest-stop": restStop(); break;
       case "rest-go": { const ex = a.closest("[data-rest]"); restStart(+ex.dataset.rest || 90, ex.dataset.exn || "Descanso"); break; }
@@ -2987,7 +3047,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");

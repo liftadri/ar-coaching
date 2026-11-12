@@ -1233,3 +1233,13 @@ a.rowcard{text-decoration:none;color:inherit}
 .copl{display:flex;flex-direction:column;gap:5px}.copl span{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.copl small{color:var(--muted);font-weight:600;min-width:28px}
 .copcl{display:flex;flex-direction:column;gap:6px}
 .copcl .mchk,.post-para .mchk{display:flex;align-items:center;gap:10px;padding:10px 12px}.copcl .mchk input,.post-para .mchk input{width:20px;height:20px;min-height:0;margin:0;flex:none}
+/* Avisos */
+.pushc{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pushc .grow{display:flex;flex-direction:column;gap:2px;min-width:180px;flex:1}
+.pushc .pushb{display:flex;gap:6px}
+.pushc .ricon svg{width:20px;height:20px}
+.inl{display:inline-block;width:auto;min-height:0;padding:2px 6px;font-size:13px;margin-left:4px}
+.pushdia{display:flex;gap:10px;align-items:stretch}
+.pushdia .chkrow{flex:1;min-width:0}
+.pushh{display:flex;flex-direction:column;justify-content:center;gap:4px;width:150px;flex:none}
+.pushh input{width:100%}
