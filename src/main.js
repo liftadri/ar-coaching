@@ -50,7 +50,85 @@ function errMsg(e) {
   if (/Demasiados registros/i.test(m)) return "Has llegado al límite de registros de hoy.";
   return "No se pudo completar: " + (m || "error desconocido");
 }
-async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+/* ================= Modo sin conexión ================= */
+// Lectura: guarda en el móvil solo la planificación (tareas, plan, entrenos registrados, eventos) y la identidad.
+// Escritura: si no hay red, los registros se guardan en cola y se envían solos al volver la conexión.
+const OFF_K = "arc-off", OFFQ_K = "arc-offq";
+const OFF_RE = /\/rest\/v1\/(assignments|plans|workouts|events)$/;
+const isNet = e => !navigator.onLine || /failed to fetch|networkerror|network request|load failed|fetch failed|the internet connection/i.test(String((e && (e.message || e.details)) || e || ""));
+function offKey(p) {
+  try { if (!p || !p.url) return null; const u = p.url; const path = u.pathname || "";
+    if (/\/rpc\/my_profile$/.test(path)) return "rpc:my_profile";
+    if (p.method !== "GET" || !OFF_RE.test(path)) return null;
+    if (!S.me || S.me.role === "coach") return null;
+    return path.replace(/^.*\/rest\/v1\//, "") + u.search;
+  } catch { return null; }
+}
+function offLoad() { try { return JSON.parse(localStorage.getItem(OFF_K) || "{}"); } catch { return {}; } }
+function offSave(m) { try { const ks = Object.keys(m).sort((a, b) => m[b].t - m[a].t); const keep = {}; ks.slice(0, 120).forEach(k => keep[k] = m[k]); let s = JSON.stringify(keep); if (s.length > 2.5e6) return; localStorage.setItem(OFF_K, s); } catch { } }
+function offPut(k, d) { const m = offLoad(); m[k] = { t: Date.now(), d }; offSave(m); }
+function offGet(k) { const m = offLoad(); return m[k] ? m[k].d : undefined; }
+async function q(p) {
+  const k = offKey(p); let res;
+  try { res = await p; } catch (e) { res = { error: e }; }
+  if (res.error) {
+    if (k && isNet(res.error)) { const c = offGet(k); if (c !== undefined) { setOffline(true); return c; } }
+    // sin red y sin copia: el cliente ve la pantalla vacía en vez de un error (lo indica la barra «Sin conexión»)
+    if (isNet(res.error) && S.me && S.me.role !== "coach" && p && p.method === "GET") { setOffline(true); return []; }
+    throw res.error;
+  }
+  if (k) { offPut(k, res.data); }
+  if (S.offline && k) setOffline(false);
+  return res.data;
+}
+function setOffline(v) { if (S.offline === v) return; S.offline = v; offBanner(); }
+// ---- cola de envíos
+const offQ = () => { try { return JSON.parse(localStorage.getItem(OFFQ_K) || "[]"); } catch { return []; } };
+const offQset = a => { try { localStorage.setItem(OFFQ_K, JSON.stringify(a)); } catch { } offBanner(); };
+function opBuild(o) {
+  if (o.t === "rpc") return sb.rpc(o.fn, o.args);
+  const t = sb.from(o.table);
+  if (o.t === "insert") return t.insert(o.row);
+  if (o.t === "upsert") return t.upsert(o.row, { onConflict: o.oc });
+}
+// Ejecuta una operación; sin red la deja en cola (manteniendo el orden) y devuelve {queued:true}
+async function op(o) {
+  if (offQ().length) { offQset([...offQ(), o]); offMark(o); S.queued = true; return { queued: true }; }
+  try { const { data, error } = await opBuild(o); if (error) throw error; return data; }
+  catch (e) { if (!isNet(e)) throw e; offQset([...offQ(), o]); offMark(o); S.queued = true; setOffline(true); return { queued: true }; }
+}
+function offMark(o) { // refleja en lo guardado en el móvil que la tarea ya está hecha
+  if (o.t !== "rpc" || o.fn !== "completar_asignacion" || !o.args.p_hecho) return;
+  const m = offLoad(); Object.values(m).forEach(v => { if (Array.isArray(v.d)) v.d.forEach(x => { if (x && x.id === o.args.p_id) { x.hecho = true; x.hecho_en = new Date().toISOString(); } }); }); offSave(m);
+}
+let flushing = false;
+async function offFlush() {
+  if (flushing || !navigator.onLine) return; const a = offQ(); if (!a.length) return; flushing = true; let n = 0;
+  try {
+    while (offQ().length) { const o = offQ()[0];
+      try { const { error } = await opBuild(o); if (error) { if (isNet(error)) break; console.warn("Descartado de la cola", error); } } catch (e) { if (isNet(e)) break; }
+      offQset(offQ().slice(1)); n++; }
+  } finally { flushing = false; }
+  if (n && !offQ().length) { toast(n > 1 ? `Conexión recuperada: ${n} registros enviados` : "Conexión recuperada: registro enviado"); setOffline(false); if (S.me && S.me.role !== "coach") route(); }
+}
+const savedMsg = m => { const qd = S.queued; S.queued = false; return qd ? "Guardado en el móvil · se enviará al conectarte" : m; };
+function offBanner() {
+  let b = document.getElementById("offbar"); const pend = offQ().length; const show = S.me && S.me.role !== "coach" && (S.offline || !navigator.onLine || pend);
+  if (!show) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement("div"); b.id = "offbar"; document.body.appendChild(b); }
+  b.innerHTML = `<span class="odot"></span><span>${!navigator.onLine || S.offline ? "Sin conexión · ves lo último guardado" : "Enviando registros…"}${pend ? ` · <b>${pend} pendiente${pend > 1 ? "s" : ""}</b>` : ""}</span>`;
+}
+window.addEventListener("online", () => { setOffline(false); offFlush(); offBanner(); });
+window.addEventListener("offline", () => offBanner());
+// Precarga en segundo plano los entrenos de los próximos días para poder abrirlos sin cobertura
+async function offPrefetch(asig) {
+  if (!navigator.onLine) return;
+  try { const ws = asig.filter(x => x.tipo === "workout" && !x.hecho && x.fecha >= addDays(today(), -2) && x.fecha <= addDays(today(), 7)).slice(0, 10);
+    if (!ws.length) return;
+    await q(sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(150));
+    for (const w of ws) await q(sb.from("assignments").select("*").eq("id", w.id).limit(1));
+  } catch { }
+}
 
 /* ================= Gráfica sencilla ================= */
 function niceTicks(a, b, n) { const span = b - a || 1; const s0 = span / n; const mag = 10 ** Math.floor(Math.log10(s0)); const st = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= s0) || 10 * mag; const t = []; for (let v = Math.floor(a / st) * st; v <= b + st * 0.999; v += st) t.push(+v.toFixed(6)); return t; }
@@ -128,7 +206,7 @@ const yaVisible = x => x.tipo !== "nota" || x.fecha < today() || (x.fecha === to
 // Al registrar peso, fotos, medidas o cuestionario se completan solas las tareas pendientes de ese tipo (hoy o atrasadas)
 async function completarAccion(tipo) {
   try { const xs = await q(sb.from("assignments").select("id,hecho,fecha").eq("tipo", tipo).eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
-    for (const x of xs) await q(sb.rpc("completar_asignacion", { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null }));
+    for (const x of xs) await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null } });
   } catch { }
 }
 const EV_TIPOS = { competicion: "Competición", test: "Test", control: "Control", recordatorio: "Recordatorio", otro: "Otro" };
@@ -298,6 +376,7 @@ function shell(title, body, opts = {}) {
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
 async function route() {
+  offBanner(); if (navigator.onLine && offQ().length) offFlush();
   if (!S.me) { const h0 = location.hash.slice(1); if (h0 === "empezar") renderEmpezar(); else if (document.body.classList.contains("pub")) { document.body.classList.remove("pub"); renderLogin(); } return; }
   if (location.hash === "#empezar") { renderEmpezar(); return; }
   document.body.classList.remove("pub");
@@ -538,6 +617,7 @@ async function viewHoy() {
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
   ${rp[0] && rp[0].leido_en ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="tiny muted">Tu última revisión · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Revisión semanal")}</b></span><span class="chev">›</span></button>` : ""}
   <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button><button class="btn sm" data-act="wellness">Cómo estoy hoy${wl[0] ? " ✓" : ""}</button></div>`);
+  offPrefetch(asig);
 }
 async function openItem(id) {
   const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
@@ -567,7 +647,7 @@ async function saveItem(f) {
   if (pre.length) { const rs = pre.map((qq, i) => ({ p: qq.texto, r: ((f[`q${i}`] || {}).value || "").trim() })); if (rs.some(r => !r.r)) { toast("Te falta alguna respuesta"); return; } resultado.respuestas = rs; }
   if ((c.checklist || []).length) resultado.check = c.checklist.map((_, i) => !!f.querySelector(`input[name=ck][value="${i}"]:checked`));
   if (x.tipo === "cardio") ["min", "km", "pasos", "fc", "rpe"].forEach(k => { const e = f[`r_${k}`]; if (e && num(e.value) != null) resultado[k] = num(e.value); });
-  try { await q(sb.rpc("completar_asignacion", { p_id: f.dataset.id, p_hecho: true, p_respuesta: f.respuesta ? f.respuesta.value.trim() : "", p_resultado: Object.keys(resultado).length ? resultado : null })); sheet(""); toast(x.tipo === "nota" ? (c.responder ? "Enviado" : "Leído") : "¡Hecho!"); route(); } catch (e) { toast(errMsg(e)); }
+  try { await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: f.dataset.id, p_hecho: true, p_respuesta: f.respuesta ? f.respuesta.value.trim() : "", p_resultado: Object.keys(resultado).length ? resultado : null } }); sheet(""); toast(savedMsg(x.tipo === "nota" ? (c.responder ? "Enviado" : "Leído") : "¡Hecho!")); route(); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Cliente: Calendario ================= */
@@ -704,9 +784,9 @@ async function saveWorkout(f) {
   if (!sets.length && a.tipo === "workout" && ((a.contenido || {}).ejercicios || []).length) { toast("Apunta al menos una serie"); return; }
   const b = f.querySelector("button.pri"); b.disabled = true;
   try {
-    await q(sb.from("workouts").insert({ client_id: S.me.cid, fecha: today(), dia: a.titulo, sets, rpe_sesion: num(f.rpe.value), duracion_min: num(f.dur.value), comentario: f.com.value.trim(), assignment_id: id }));
-    await q(sb.rpc("completar_asignacion", { p_id: id, p_hecho: true, p_respuesta: f.com.value.trim() }));
-    try { localStorage.removeItem(draftKey(id)); } catch { } toast("¡Entreno guardado!"); location.hash = "hoy";
+    await op({ t: "insert", table: "workouts", row: { client_id: S.me.cid, fecha: today(), dia: a.titulo, sets, rpe_sesion: num(f.rpe.value), duracion_min: num(f.dur.value), comentario: f.com.value.trim(), assignment_id: id } });
+    await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: id, p_hecho: true, p_respuesta: f.com.value.trim() } });
+    try { localStorage.removeItem(draftKey(id)); } catch { } toast(savedMsg("¡Entreno guardado!")); location.hash = "hoy";
   } catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 
@@ -730,12 +810,12 @@ async function saveWellness(f) {
   ["sueno_h", "fc", "hrv", "apetito", "molestia_0a10"].forEach(k => { row[k] = f[k] ? num(val(k)) : (prev[k] ?? null); });
   WK.forEach(([k]) => row[k] = num(v[k]));
   const kg = f.kg ? num(f.kg.value) : null; if (kg != null && (kg < 25 || kg > 350)) { toast("Revisa el peso"); return; }
-  try { await q(sb.from("wellness").upsert(row, { onConflict: "client_id,fecha" }));
-    if (kg != null) { await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })); await completarAccion("peso"); }
+  try { await op({ t: "upsert", table: "wellness", row, oc: "client_id,fecha" });
+    if (kg != null) { await op({ t: "upsert", table: "weights", row: { client_id: S.me.cid, fecha: today(), kg }, oc: "client_id,fecha" }); await completarAccion("peso"); }
     // completa los formularios de wellness pendientes (hoy o atrasados)
     try { const xs = await q(sb.from("assignments").select("id,contenido").eq("tipo", "formulario").eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
-      for (const x of xs.filter(x => (x.contenido || {}).wellness)) await q(sb.rpc("completar_asignacion", { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null })); } catch { }
-    sheet(""); toast("Guardado. ¡Gracias!"); route(); } catch (e) { toast(errMsg(e)); }
+      for (const x of xs.filter(x => (x.contenido || {}).wellness)) await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null } }); } catch { }
+    sheet(""); toast(savedMsg("Guardado. ¡Gracias!")); route(); } catch (e) { toast(errMsg(e)); }
 }
 function openPeso(c = {}) {
   const mom = { ayunas: "Por la mañana, en ayunas y después de ir al baño.", libre: "Cuando puedas, pero intenta que sea siempre a la misma hora.", noche: "Por la noche, antes de dormir." }[c.momento || "ayunas"];
@@ -743,7 +823,7 @@ function openPeso(c = {}) {
   <form id="f-peso" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="kg">Kilos</label><input id="kg" name="kg" inputmode="decimal" placeholder="80,5" required></div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
   $("#kg").focus();
 }
-async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })); await completarAccion("peso"); sheet(""); toast("Peso guardado"); route(); } catch (e) { toast(errMsg(e)); } }
+async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await op({ t: "upsert", table: "weights", row: { client_id: S.me.cid, fecha: today(), kg }, oc: "client_id,fecha" }); await completarAccion("peso"); sheet(""); toast(savedMsg("Peso guardado")); route(); } catch (e) { toast(errMsg(e)); } }
 
 /* ================= Cliente: Progreso ================= */
 async function viewProgreso() {
@@ -796,7 +876,7 @@ async function openMedidas(sel, c = {}) {
   sheet(`<h2>Medidas</h2><p class="small muted" style="margin:0">Por la mañana, en ayunas, con cinta métrica pegada a la piel y sin apretar. Brazo, muslo y gemelo del lado <b>${esc(c.lado || "derecho")}</b>.</p>${c.detalle ? `<p class="small" style="margin:0">${esc(c.detalle)}</p>` : ""}
   <form id="f-med" data-ks="${esc(ks.join(","))}" style="display:flex;flex-direction:column;gap:10px"><div class="grid2">${ks.map(k => { const m = MEDIDAS.find(x => x[0] === k); return `<div class="f"><label for="m-${k}">${esc(m[1])}<br><span class="tiny muted" style="font-weight:400">${esc(m[2])}</span></label><input id="m-${k}" name="${k}" inputmode="decimal" placeholder="cm"></div>`; }).join("")}</div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
-async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; f.dataset.ks.split(",").filter(Boolean).forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await q(sb.from("measurements").insert(row)); await completarAccion("medidas"); sheet(""); toast("Medidas guardadas"); route(); } catch (e) { toast(errMsg(e)); } }
+async function saveMedidas(f) { const row = { client_id: S.me.cid, fecha: today() }; let any = false; f.dataset.ks.split(",").filter(Boolean).forEach(k => { const v = num(f[k].value); row[k] = v; if (v != null) any = true; }); if (!any) { toast("Escribe al menos una medida"); return; } try { await op({ t: "insert", table: "measurements", row }); await completarAccion("medidas"); sheet(""); toast(savedMsg("Medidas guardadas")); route(); } catch (e) { toast(errMsg(e)); } }
 function openFotos(c) {
   const vs = c && (c.vistas || []).length ? c.vistas : null;
   const conds = c ? (c.condiciones || []) : [];
@@ -820,6 +900,7 @@ async function shrink(file, max = 1600, calidad = 0.8) {
   } catch { return file; }
 }
 async function saveFotos(f) {
+  if (!navigator.onLine) { toast("Las fotos necesitan conexión. Súbelas cuando tengas cobertura."); return; }
   const ins = [...f.querySelectorAll("input[type=file]")].filter(i => i.files[0]); if (!ins.length) return;
   const b = f.querySelector("button.pri"); b.disabled = true;
   try {

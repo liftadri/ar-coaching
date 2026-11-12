@@ -1,6 +1,6 @@
 // Service worker mínimo: guarda solo la «carcasa» de la app (código, estilos, iconos) para que abra rápido.
 // Nunca guarda datos de clientes: todas las peticiones a Supabase van siempre a la red.
-const CACHE = "arc-v4";
+const CACHE = "arc-v5";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./logo.jpg", "./logo-blanco.png", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
