@@ -866,3 +866,15 @@ input[type=checkbox],input[type=radio]{accent-color:var(--ink)}
 .hweek{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12)}.hweek span{background:var(--accent);color:#fff}
 .hero .chip{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.14);color:#fff}
 .rail button,.rail button[aria-current="true"]{border-left-color:transparent!important}
+/* Marcas anteriores en el entreno */
+.marks{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.mk{display:flex;flex-direction:column;gap:1px;padding:9px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);min-width:0}
+.mk span{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.mk b{font-size:17px;font-weight:750;letter-spacing:-.01em;color:var(--ink)}
+.mk b small{font-size:12px;font-weight:600;color:var(--muted)}
+.mk em{font-style:normal;font-size:12px;line-height:1.35;color:var(--muted)}
+.mk.best{background:linear-gradient(160deg,#26282f,#15161a);border-color:#15161a}
+.mk.best span,.mk.best em,.mk.best b small{color:rgba(255,255,255,.68)}.mk.best b{color:#fff}
+.mk.pr{grid-column:1/-1;background:var(--ok-soft);border-color:#cfe6d9}
+.mk.pr span{color:var(--ok)}.mk.pr b{color:var(--ok);font-size:15px}
+.mk[hidden]{display:none}

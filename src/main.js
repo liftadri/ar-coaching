@@ -426,9 +426,25 @@ async function viewEntreno() {
   <div class="card"><h2>Últimos entrenos</h2>${wo.length ? `<div class="list">${wo.slice(0, 10).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${esc(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }))} · ${(x.sets || []).length} series</span></span></div>`).join("")}</div>` : `<div class="empty">Aún no has registrado ningún entreno.</div>`}</div>`);
 }
 const draftKey = id => `arc-draft-${S.me.cid}-${id}`;
+// Marcas anteriores del ejercicio: última sesión y mejor serie (1RM estimado)
+function exMarks(nombre, wo, prev) {
+  const all = wo.flatMap(w => (w.sets || []).filter(x => x.ejercicio === nombre && !x.hecho && num(x.kg) != null && num(x.reps) != null).map(x => ({ ...x, fecha: w.fecha, e: e1rm(x.kg, x.reps, x.rir) || num(x.kg) })));
+  if (!all.length && !prev) return { html: "", best: 0 };
+  const best = all.sort((a, b) => b.e - a.e)[0];
+  const ls = prev ? prev.s.filter(x => num(x.kg) != null).sort((a, b) => num(b.kg) - num(a.kg) || num(b.reps) - num(a.reps))[0] : null;
+  const st = x => `<b>${esc(fmt(x.kg, 2))} kg × ${esc(x.reps ?? "?")}</b>`;
+  const ef = x => x.rpe != null ? `RPE ${x.rpe}` : x.rir != null ? `RIR ${x.rir}` : "";
+  return { best: best ? best.e : 0, html: `<div class="marks">${ls ? `<div class="mk"><span>La última vez · ${esc(fdate(prev.fecha, { day: "numeric", month: "short" }))}</span>${st(ls)}<em>${esc([ef(ls), prev.s.length > 1 ? prev.s.map(x => `${x.kg ?? "?"}×${x.reps ?? "?"}`).join(" · ") : ""].filter(Boolean).join(" · "))}</em></div>` : ""}${best ? `<div class="mk best"><span>🏆 Tu mejor marca</span>${st(best)}<em>${esc([ef(best), fdate(best.fecha, { day: "numeric", month: "short" }), "1RM est. " + fmt(best.e) + " kg"].filter(Boolean).join(" · "))}</em></div>` : ""}<div class="mk pr" hidden><span>¡Nuevo récord!</span><b>Superas tu mejor marca</b><em></em></div></div>` };
+}
+function prCheck(el) { // aviso en directo si una serie supera su mejor marca
+  const ex = el.closest(".ex"); if (!ex || !ex.dataset.best) return; const best = +ex.dataset.best; let top = 0;
+  const ks = [...new Set([...ex.querySelectorAll("[data-k][data-f=kg]")].map(i => i.dataset.k))];
+  ks.forEach(k => { const g = f => { const i = ex.querySelector(`[data-k="${k}"][data-f="${f}"]`); return i ? num(i.value) : null; }; const kg = g("kg"), reps = g("reps"); let rir = g("rir"); const rpe = g("rpe"); if (rir == null && rpe != null) rir = Math.max(0, 10 - rpe); const e = kg != null && reps != null ? (e1rm(kg, reps, rir) || kg) : 0; if (e > top) top = e; });
+  const pr = ex.querySelector(".mk.pr"); if (!pr) return; const on = best > 0 && top > best; pr.hidden = !on; if (on) pr.querySelector("em").textContent = `1RM estimado ${fmt(top)} kg (antes ${fmt(best)} kg)`;
+}
 async function viewWorkout(id) {
   loading("Entreno");
-  const [ar, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("id", id).limit(1)), q(sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(40))]);
+  const [ar, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("id", id).limit(1)), q(sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(150))]);
   const a = ar[0]; if (!a) { location.hash = "entreno"; return; }
   const c = a.contenido || {}; let draft = {}; try { draft = JSON.parse(localStorage.getItem(draftKey(id)) || "{}"); } catch { }
   const lastSets = name => { for (const w of wo) { const s = (w.sets || []).filter(x => x.ejercicio === name); if (s.length) return { fecha: w.fecha, s }; } return null; };
@@ -442,9 +458,9 @@ async function viewWorkout(id) {
   <form id="f-workout" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px">
   ${exs.map((e, ei) => { const n = seriesOf(e.sxr); const prev = lastSets(e.nombre); if (e.series && e.series.length) return presClient(e, ei, prev, draft, wo);
     const prevKg = prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
-    const pg = progTxt(e.prog, pk);
-    return `<div class="ex"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
-    ${n ? `<div class="seth"><span>#</span><span>Kg</span><span>Reps</span><span>Te quedaban</span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "kg")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "reps")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "RIR")}"></div>`; }).join("")}</div>${prev ? `<div class="prev">La última vez (${esc(fdate(prev.fecha))}): ${prev.s.map(x => `${x.kg ?? "?"}×${x.reps ?? "?"}`).join(" · ")}</div>` : ""}`
+    const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev);
+    return `<div class="ex" data-best="${mk.best ? Math.round(mk.best * 10) / 10 : ""}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>${n ? mk.html : ""}
+    ${n ? `<div class="seth"><span>#</span><span>Kg</span><span>Reps</span><span>Te quedaban</span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "kg")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "reps")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "RIR")}"></div>`; }).join("")}</div>`
       : `<label class="small" style="display:flex;gap:10px;align-items:center"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""} style="width:22px;height:22px"> Hecho</label>`}</div>`; }).join("")}
   <div class="card"><h2>Al terminar</h2>
     <div class="grid2"><div class="f"><label for="rpe">Dureza (1–10)</label><select id="rpe" name="rpe"><option value="">—</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<option ${draft.rpe == n ? "selected" : ""}>${n}</option>`).join("")}</select></div><div class="f"><label for="dur">Minutos</label><input id="dur" name="dur" inputmode="numeric" value="${esc(draft.dur || "")}"></div></div>
@@ -496,8 +512,10 @@ function presClient(e, ei, prev, draft, wo) {
     return `<div class="pset t-${esc(x.tipo)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
       <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}</div></div>`;
   }).join("");
-  return `<div class="ex"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
-  <div class="psets">${rows}</div>${prev ? `<div class="prev">La última vez (${esc(fdate(prev.fecha))}): ${prev.s.map(x => `${x.kg ?? "?"}×${x.reps ?? "?"}`).join(" · ")}</div>` : ""}
+  const mk = exMarks(e.nombre, wo, prev);
+  return `<div class="ex" data-best="${mk.best ? Math.round(mk.best * 10) / 10 : ""}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
+${mk.html}
+  <div class="psets">${rows}</div>
   ${eff[0] === "rpe" ? `<p class="tiny muted" style="margin:6px 0 0">RPE: 10 = no podías hacer ni una más · 9 = te quedaba 1 · 8 = te quedaban 2.</p>` : eff[0] === "esf" ? `<p class="tiny muted" style="margin:6px 0 0">Esfuerzo: cómo de dura te ha parecido la serie, de 0 a 10.</p>` : ""}</div>`;
 }
 function topSync(el) { // back-off: se calcula con lo que levantas en el top set
@@ -2249,7 +2267,7 @@ let qT;
 document.addEventListener("input", ev => {
   const el = ev.target;
   if (el.tagName === "TEXTAREA") grow(el);
-  if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.top != null) topSync(el); }
+  if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.top != null) topSync(el); if (el.dataset.k) prCheck(el); }
   if (el.closest && el.closest("[data-pres]") && el.dataset.p) presSync(el.closest("[data-row]"));
   if (el.id === "ex-q") { clearTimeout(qT); qT = setTimeout(() => { S.lib.q = el.value; S.lib.focusQ = true; viewLib(); }, 250); }
   if (el.dataset && el.dataset.prog && S.sub.prog) S.sub.prog[el.dataset.prog] = el.dataset.prog === "semanas" ? Math.min(16, Math.max(1, +el.value || 1)) : el.value;
