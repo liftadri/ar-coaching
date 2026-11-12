@@ -676,22 +676,73 @@ async function newExercisesFrom(c) { // añade a la librería los ejercicios esc
 
 /* ================= Entrenador: Inicio ================= */
 async function viewInicio() {
-  loading("Inicio"); const t = today(); const since = addDays(t, -7); const sinceTs = new Date(Date.now() - 7 * 864e5).toISOString();
-  const [[cl, wo, wl, ws, as, asAll, ev], leads, onb] = await Promise.all([Promise.all([loadClients(), q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)), q(sb.from("wellness").select("client_id,created_at").gte("created_at", sinceTs)), q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)), q(sb.from("assignments").select("client_id,titulo,tipo,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)), q(sb.from("assignments").select("client_id,fecha,hecho,visible").gte("fecha", t.slice(0, 7) + "-01").lte("fecha", addDays(t, 120))), q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha"))]), q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []), q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => [])]);
-  const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] }))].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 30);
-  const activos = cl.filter(c => c.estado === "activo");
-  const agenda = activos.map(c => { const f = asAll.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop(); const d = f ? daysBetween(t, f) : null; return { c, d }; }).sort((a, b) => (a.d ?? -999) - (b.d ?? -999));
-  const mon = monday(t), m1 = t.slice(0, 7) + "-01";
+  loading("Inicio"); const t = today(); const sinceTs = new Date(Date.now() - 7 * 864e5).toISOString();
+  const WKC = WK.map(([k]) => k).join(",");
+  const [cl, wo, wl, ws, as, asAll, ev, leads, onb, drafts] = await Promise.all([loadClients(),
+    q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)),
+    q(sb.from("wellness").select(`client_id,fecha,created_at,molestia_zona,molestia_0a10,${WKC}`).gte("created_at", sinceTs)),
+    q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)),
+    q(sb.from("assignments").select("client_id,titulo,tipo,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)),
+    q(sb.from("assignments").select("client_id,fecha,hecho,visible").gte("fecha", addDays(monday(t), -28)).lte("fecha", addDays(t, 120))),
+    q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha")),
+    q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []),
+    q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
+    q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => [])]);
+  const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
-  shell("Inicio", `<div class="quick"><button class="qa" data-act="new-client">${ICON.clientes}<span>Añade un cliente</span></button><button class="qa" data-act="go" data-h="lib-w-new">${ICON.entreno}<span>Crea un workout</span></button><button class="qa" data-act="go" data-h="lib-p-new">${ICON.plan}<span>Crea un programa</span></button><button class="qa" data-act="go" data-h="lib">${ICON.lib}<span>Librería</span></button></div>
-  ${inicioEmbudo(leads, onb)}
-  <div class="cols">
-  <div class="card"><h2 class="hh">${ICON.evo}Actividad reciente <span class="cnt">${act.length}</span></h2>${act.length ? `<div class="list">${act.map(a => `<button class="it feed" data-act="go" data-h="c-${esc(encodeURIComponent(a.c))}">${avatar(clientName(a.c))}<span class="grow"><span class="lnk">${esc(clientName(a.c).toUpperCase())}</span> completó <span class="lnk">${esc(a.t)}</span><br><span class="tag tag-${esc(slug(a.k))}">${esc(a.k)}</span> <span class="tiny muted">${esc(relTime(a.ts))}</span></span></button>`).join("")}</div>` : `<div class="empty">Sin actividad esta semana.</div>`}</div>
-  <div style="display:flex;flex-direction:column;gap:12px">
-  <div class="card"><h2 class="hh">${ICON.plan}Agendar tareas <span class="cnt">${agenda.length}</span></h2>${agenda.length ? `<div class="list">${agenda.map(({ c, d }) => `<button class="it feed" data-act="go-plan" data-cid="${esc(c.id)}">${avatar(c.nombre)}<span class="grow"><span class="lnk">${esc(c.nombre)}</span><br><span class="tiny ${d == null || d < 3 ? "" : "muted"}" style="${d == null || d < 3 ? "color:var(--bad)" : ""}">${d == null ? "No tiene nada programado" : d < 0 ? `Lleva sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`}</span></span><span class="chip acc">Planificar</span></button>`).join("")}</div>` : `<div class="empty">Sin clientes activos.</div>`}</div>
-  <div class="card"><h2 class="hh">${ICON.progreso}Revisar cumplimiento <span class="cnt">${activos.length}</span></h2><table><tbody>${activos.map(c => { const s = pct(c.id, mon), mm = pct(c.id, m1); const cl2 = v => v == null ? "" : v >= 80 ? "ok" : v >= 50 ? "warn" : "bad"; return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre, "sm")}<span class="lnk">${esc(c.nombre)}</span></span></td><td class="n"><span class="chip ${cl2(s)}">S. ${s == null ? "—" : s + " %"}</span></td><td class="n"><span class="chip ${cl2(mm)}">M. ${mm == null ? "—" : mm + " %"}</span></td></tr>`; }).join("")}</tbody></table><p class="tiny muted" style="margin:8px 0 0">Tareas completadas de las programadas hasta hoy.</p></div>
-  <div class="card"><h2 class="hh">${ICON.cal}Próximos eventos <span class="cnt">${ev.length}</span></h2>${ev.length ? ev.map(e => `<p class="small" style="margin:6px 0"><b>${esc(fdate(e.fecha, { day: "numeric", month: "short" }))}</b> · ${esc(clientName(e.client_id))} · ${esc(e.titulo)}</p>`).join("") : `<p class="small muted" style="margin:0">Nada en las próximas semanas.</p>`}</div>
-  </div></div>`);
+  const hasta = cid => asAll.filter(x => x.client_id === cid).map(x => x.fecha).sort().pop();
+  const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] || "Tarea" }))].filter(a => a.ts).sort((a, b) => b.ts.localeCompare(a.ts));
+  const ultimo = cid => (act.find(a => a.c === cid) || {}).ts;
+  const well7 = cid => { const v = wl.filter(w => w.client_id === cid).map(wellIdx).filter(x => x != null); return v.length ? avg(v) : null; };
+  // ---- Lo que requiere atención, por prioridad
+  const at = [];
+  const go = (cid, tab) => `data-act="go-tab" data-cid="${esc(cid)}" data-t="${tab}"`;
+  wl.filter(w => w.molestia_zona && num(w.molestia_0a10) >= 4 && w.fecha >= addDays(t, -3)).forEach(w => at.push({ p: 0, k: "bad", c: w.client_id, t: `Molestia: ${w.molestia_zona} (${w.molestia_0a10}/10)`, s: `${clientName(w.client_id)} · ${fdate(w.fecha, { weekday: "short", day: "numeric" })}`, a: go(w.client_id, "evo"), b: "Ver" }));
+  activos.forEach(c => { const v = wl.filter(w => w.client_id === c.id && w.fecha >= addDays(t, -3)).map(wellIdx).filter(x => x != null); if (v.length && avg(v) < 2.5) at.push({ p: 1, k: "bad", c: c.id, t: "Bienestar bajo los últimos días", s: `${c.nombre} · ${fmt(avg(v), 1)} de 5`, a: go(c.id, "evo"), b: "Ver" }); });
+  leads.filter(l => l.estado === "nuevo").forEach(l => at.push({ p: 2, k: "acc", c: null, n: l.nombre, t: "Nueva solicitud de contacto", s: `${l.nombre} · ${l.objetivo || "sin objetivo"} · ${relTime(l.created_at)}`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Responder" }));
+  onb.forEach(o => at.push({ p: 3, k: "acc", c: o.client_id, t: "Cuestionario inicial sin revisar", s: `${clientName(o.client_id)} · ${relTime(o.enviado_en)}`, a: `data-act="go-inicial" data-cid="${esc(o.client_id)}"`, b: "Revisar" }));
+  activos.forEach(c => { const f = hasta(c.id); const d = f ? daysBetween(t, f) : null; if (d == null || d <= 3) at.push({ p: 4, k: "warn", c: c.id, t: d == null ? "No tiene nada programado" : d < 0 ? `Sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`, s: c.nombre, a: `data-act="go-plan" data-cid="${esc(c.id)}"`, b: "Planificar" }); });
+  activos.filter(c => c.user_id && !ultimo(c.id)).forEach(c => at.push({ p: 5, k: "warn", c: c.id, t: "Sin registrar nada en 7 días", s: c.nombre, a: go(c.id, "plan"), b: "Ver" }));
+  drafts.forEach(r => at.push({ p: 6, k: "info", c: r.client_id, t: "Informe en borrador", s: `${clientName(r.client_id)} · ${fdate(r.fecha, { day: "numeric", month: "short" })}`, a: go(r.client_id, "informes"), b: "Publicar" }));
+  at.sort((a, b) => a.p - b.p);
+  // ---- KPIs
+  const sem = activos.map(c => pct(c.id, mon)).filter(x => x != null); const semAvg = sem.length ? Math.round(avg(sem)) : null;
+  const usanApp = activos.filter(c => c.user_id).length;
+  const kc = v => v == null ? "" : v >= 80 ? "ok" : v >= 50 ? "warn" : "bad";
+  const h = new Date().getHours(); const saludo = h < 13 ? "Buenos días" : h < 20 ? "Buenas tardes" : "Buenas noches";
+  // ---- Actividad agrupada por día
+  const grupo = ts => { const d = daysBetween(iso(new Date(ts)), t); return d <= 0 ? "Hoy" : d === 1 ? "Ayer" : "Esta semana"; };
+  const feed = act.slice(0, 14); let lastG = "";
+  const feedHTML = feed.map(a => { const g = grupo(a.ts); const hd = g !== lastG ? `<div class="fg">${g}</div>` : ""; lastG = g; return `${hd}<button class="fi" data-act="go" data-h="c-${esc(encodeURIComponent(a.c))}">${avatar(clientName(a.c), "sm")}<span class="grow"><b>${esc(clientName(a.c))}</b> · ${esc(a.t)}<br><span class="tag tag-${esc(slug(a.k))}">${esc(a.k)}</span> <span class="tiny muted">${esc(new Date(a.ts).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }))}</span></span></button>`; }).join("");
+  const link = location.origin + location.pathname.replace(/[^/]*$/, "") + "empezar";
+  const leadsAbiertos = leads.filter(l => l.estado === "nuevo" || l.estado === "contactado");
+  shell("Inicio", `<div class="home">
+  <section class="hhead"><div><h1>${saludo}, Adrián</h1><p>${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p></div>
+    <div class="hq"><button class="btn sm dark" data-act="new-client"><span class="plus">+</span>Cliente</button><button class="btn sm" data-act="go" data-h="lib-w-new">+ Workout</button><button class="btn sm" data-act="go" data-h="lib-p-new">+ Programa</button><button class="btn sm" data-act="go" data-h="lib">${ICON.lib}Librería</button></div></section>
+  <div class="kgrid">
+    <button class="ktile" data-act="go" data-h="c"><span>Clientes activos</span><b>${activos.length}</b><em>${usanApp} usan la app</em></button>
+    <div class="ktile"><span>Cumplimiento semanal</span><b class="${kc(semAvg)}">${semAvg == null ? "—" : semAvg + " %"}</b><div class="kbar"><i class="${kc(semAvg)}" style="width:${semAvg || 0}%"></i></div></div>
+    <div class="ktile"><span>Entrenos registrados</span><b>${wo.length}</b><em>últimos 7 días · ${wl.length} cuestionarios</em></div>
+    <div class="ktile ${at.length ? "hot" : ""}"><span>Pendiente de ti</span><b>${at.length}</b><em>${at.length ? "mira la lista de abajo" : "todo al día"}</em></div>
+  </div>
+  <div class="hgrid"><div class="hmain">
+    <section class="card"><h2 class="hh">${ICON.progreso}Requiere tu atención <span class="cnt">${at.length}</span></h2>
+      ${at.length ? `<div class="att">${at.map(x => `<button class="ai ${x.k}" ${x.a}><i class="ab"></i>${avatar(x.c ? clientName(x.c) : x.n || "?", "sm")}<span class="grow"><b>${esc(x.t)}</b><br><span class="tiny muted">${esc(x.s)}</span></span><span class="chip ${x.k === "bad" ? "bad" : x.k === "acc" ? "acc" : x.k === "warn" ? "warn" : ""}">${esc(x.b)}</span></button>`).join("")}</div>` : `<div class="allok">✓ Todo al día. Nada pendiente.</div>`}</section>
+    <section class="card"><h2 class="hh">${ICON.clientes}Mis clientes <span class="cnt">${activos.length}</span></h2>
+      ${activos.length ? `<div class="tbl"><table class="ctab"><thead><tr><th>Cliente</th><th>Esta semana</th><th class="n c-b">Bienestar</th><th class="c-u">Último registro</th><th>Plan hasta</th></tr></thead><tbody>${activos.map(c => { const s = pct(c.id, mon), w = well7(c.id), u = ultimo(c.id), f = hasta(c.id), d = f ? daysBetween(t, f) : null;
+        return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}"><td><span class="feedn">${avatar(c.nombre, "sm")}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td>
+        <td><div class="mbar2"><div class="kbar"><i class="${kc(s)}" style="width:${s || 0}%"></i></div><span class="tiny">${s == null ? "—" : s + " %"}</span></div></td>
+        <td class="n c-b">${w == null ? `<span class="tiny muted">—</span>` : `<span class="chip ${w >= 3.5 ? "ok" : w >= 2.5 ? "warn" : "bad"}">${fmt(w, 1)}</span>`}</td>
+        <td class="tiny c-u ${u ? "" : "muted"}">${u ? esc(relTime(u)) : "Nada en 7 días"}</td>
+        <td>${d == null ? `<span class="chip bad">Sin plan</span>` : `<span class="chip ${d <= 3 ? "warn" : "ok"}">${esc(fdate(f, { day: "numeric", month: "short" }))}</span>`}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Aún no tienes clientes activos.</div>`}</section>
+  </div><div class="hside">
+    <section class="card embudo"><h2 class="hh">${ICON.clientes}Embudo <span class="cnt">${leadsAbiertos.length + onb.length}</span></h2>
+      <div class="emb"><div><b>${leads.filter(l => l.estado === "nuevo").length}</b><span>nuevas</span></div><div><b>${leads.filter(l => l.estado === "contactado").length}</b><span>contactados</span></div><div><b>${leads.filter(l => l.estado === "alta").length}</b><span>altas</span></div></div>
+      ${leadsAbiertos.length ? `<div class="list">${leadsAbiertos.slice(0, 4).map(l => `<button class="fi" data-act="lead" data-id="${esc(l.id)}">${avatar(l.nombre, "sm")}<span class="grow"><b>${esc(l.nombre)}</b><br><span class="tiny muted">${esc(l.objetivo || "Solicitud")} · ${esc(LEAD_EST[l.estado])}</span></span></button>`).join("")}</div>` : ""}
+      <div class="elink"><span class="tiny muted">Tu enlace para Instagram</span><div class="row"><code class="sel grow">${esc(link.replace(/^https:\/\//, ""))}</code><button class="btn ghost sm" data-act="copy-txt" data-t="${esc(link)}">Copiar</button></div></div></section>
+    <section class="card"><h2 class="hh">${ICON.cal}Próximos eventos <span class="cnt">${ev.length}</span></h2>${ev.length ? `<div class="evl">${ev.slice(0, 6).map(e => `<button class="evi" data-act="go" data-h="c-${esc(encodeURIComponent(e.client_id))}"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(clientName(e.client_id))} · ${esc(EV_TIPOS[e.tipo] || "")}${daysBetween(t, e.fecha) >= 0 ? " · en " + daysBetween(t, e.fecha) + " días" : ""}</span></span></button>`).join("")}</div>` : `<p class="small muted" style="margin:0">Nada en las próximas semanas.</p>`}</section>
+    <section class="card"><h2 class="hh">${ICON.evo}Actividad reciente <span class="cnt">${act.length}</span></h2>${feed.length ? `<div class="feedl">${feedHTML}</div>` : `<div class="empty">Sin actividad esta semana.</div>`}</section>
+  </div></div></div>`);
 }
 
 /* ================= Embudo: Contacto (público) y Cuestionario inicial ================= */
@@ -1882,6 +1933,7 @@ document.addEventListener("click", async ev => {
       case "lead": openLead(id); break;
       case "lead-alta": await leadAlta(id); break;
       case "lead-del": if (confirm("¿Borrar esta solicitud y sus datos?")) { await q(sb.from("leads").delete().eq("id", id)); sheet(""); toast("Borrada"); route(); } break;
+      case "go-tab": S.coach.tab = a.dataset.t; S.coach.cid = null; if (location.hash === "#c-" + a.dataset.cid) route(); else location.hash = "c-" + a.dataset.cid; break;
       case "go-inicial": S.coach.tab = "inicial"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
       case "copy": { const t = $("#" + a.dataset.src); try { await navigator.clipboard.writeText(t.value); toast("Copiado"); } catch { t.select(); document.execCommand("copy"); toast("Copiado"); } break; }
       case "copy-txt": try { await navigator.clipboard.writeText(a.dataset.t); toast("Copiado"); } catch { toast(a.dataset.t); } break;

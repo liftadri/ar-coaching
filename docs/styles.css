@@ -442,3 +442,42 @@ body.pub #app{min-height:100%;background:linear-gradient(180deg,#e4570f 0,#e4570
 .qa-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px 18px}.qa-i{display:flex;flex-direction:column;gap:2px}
 .sel{user-select:all}
 .embudo{border-top:3px solid var(--accent)}
+
+/* Inicio del entrenador */
+.home{display:flex;flex-direction:column;gap:16px}
+.hhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.hhead h1{font-size:26px;margin:0;letter-spacing:-.01em}.hhead p{margin:2px 0 0;color:var(--muted)}
+.hq{display:flex;gap:8px;flex-wrap:wrap}.hq .btn svg{width:16px;height:16px;margin-right:4px;vertical-align:-3px}
+.kgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.ktile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;text-align:left;font:inherit;color:inherit}
+button.ktile{cursor:pointer}button.ktile:hover{border-color:var(--accent)}
+.ktile span{font-size:12.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.ktile b{font-size:28px;line-height:1.1;font-weight:800}.ktile b.ok{color:var(--ok)}.ktile b.warn{color:#b7791f}.ktile b.bad{color:var(--bad)}
+.ktile em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.ktile.hot{background:var(--accent);border-color:var(--accent);color:#fff}.ktile.hot span,.ktile.hot em{color:rgba(255,255,255,.85)}
+.kbar{height:6px;border-radius:6px;background:var(--line);overflow:hidden;flex:1}.kbar i{display:block;height:100%;border-radius:6px;background:var(--muted)}
+.kbar i.ok{background:var(--ok)}.kbar i.warn{background:#e0a33a}.kbar i.bad{background:var(--bad)}
+.hgrid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:16px;align-items:start}
+.hmain,.hside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.att{display:flex;flex-direction:column;gap:8px}
+.ai{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:left;font:inherit;color:inherit;cursor:pointer;position:relative;overflow:hidden}
+.ai:hover{border-color:var(--accent)}
+.ai .ab{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--muted)}
+.ai.bad .ab{background:var(--bad)}.ai.acc .ab{background:var(--accent)}.ai.warn .ab{background:#e0a33a}.ai.info .ab{background:#2a6fdb}
+.ai b{font-size:14px}
+.allok{padding:14px;border-radius:12px;background:var(--ok-soft,#e8f6ee);color:var(--ok);font-weight:600;text-align:center}
+.ctab tbody tr{cursor:pointer}.ctab tbody tr:hover{background:rgba(0,0,0,.02)}
+.mbar2{display:flex;align-items:center;gap:8px;min-width:120px}.mbar2 .tiny{width:38px;text-align:right}
+.emb{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.emb div{background:var(--bg);border-radius:10px;padding:8px;text-align:center;display:flex;flex-direction:column}
+.emb b{font-size:20px}.emb span{font-size:12px;color:var(--muted)}
+.elink{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:4px}
+.elink code{font-size:12.5px;background:var(--bg);padding:6px 8px;border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi,.evi{display:flex;align-items:center;gap:10px;width:100%;padding:8px 4px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;font-size:13.5px}
+.fi:last-child,.evi:last-child{border-bottom:0}.fi:hover,.evi:hover{background:rgba(0,0,0,.02)}
+.fg{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 2px}.fg:first-child{margin-top:0}
+.evd{width:44px;flex:none;border-radius:10px;background:var(--accent-soft);color:#8a3305;display:flex;flex-direction:column;align-items:center;padding:4px 0}
+.evd b{font-size:17px;line-height:1.1}.evd span{font-size:11px;text-transform:uppercase}
+@media (max-width:1000px){.hgrid{grid-template-columns:1fr}.kgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ctab td{vertical-align:middle}.ctab .feedn{white-space:nowrap}
+@media (max-width:640px){.ctab .c-b,.ctab .c-u{display:none}.mbar2{min-width:80px}.ctab .feedn .tiny{display:none}}
