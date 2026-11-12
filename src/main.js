@@ -493,7 +493,7 @@ async function route() {
     if (h !== "tablon") await tablonUnread();
     if (h === "tablon") return await viewTablon();
     if (h === "comienzo") return await viewComienzo();
-    if (h === "cal") return await (localStorage.getItem("arc-cal2") ? viewCal2() : viewCal());
+    if (h === "cal") return await (viewCal2());
     if (h === "entreno") return await viewEntreno();
     if (h.startsWith("a-")) return await viewWorkout(h.slice(2));
     if (h === "nutri") return await viewNutri();
@@ -911,7 +911,14 @@ async function viewCal() {
   <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}${w ? ` <small>${esc(w.bloque)} · ${esc(w.nombre)}</small>` : ""}</h2>${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
 }
 
-// Propuesta de calendario del cliente con el estilo del calendario del entrenador (activar con localStorage arc-cal2=1)
+/* Leyenda discreta del calendario: solo lo que aparece este mes + estados */
+const LEY_T = { workout: "Entreno", cardio: "Cardio", formulario: "Formulario", tarea: "Tarea", nota: "Mensaje", peso: "Peso", fotos: "Fotos", medidas: "Medidas", evento: "Evento" };
+function calLegend(tipos, est) {
+  const ts = Object.keys(LEY_T).filter(k => tipos.has(k)); if (!ts.length) return "";
+  const st = { hecho: `<span class="lgs"><i class="lg-ok"></i>Hecho</span>`, late: `<span class="lgs"><i class="lg-late"></i>Sin hacer</span>`, hid: `<span class="lgs"><i class="lg-hid"></i>Oculto</span>` };
+  return `<div class="cleg" aria-label="Leyenda"><div class="cleg-t">${ts.map(k => `<span><i class="lg-sw tp-${k}"></i>${LEY_T[k]}</span>`).join("")}</div>${est.length ? `<div class="cleg-s">${est.map(k => st[k]).join("")}</div>` : ""}</div>`;
+}
+// Calendario del cliente con el estilo del calendario del entrenador (activar con localStorage arc-cal2=1)
 async function viewCal2() {
   loading("Calendario");
   const t = today(); const m = S.sub.calM || t.slice(0, 7); const sel = S.sub.calD && S.sub.calD.startsWith(m) ? S.sub.calD : (t.startsWith(m) ? t : m + "-01");
@@ -935,10 +942,11 @@ async function viewCal2() {
   const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">Entreno registrado</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
   const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long" })), yr = first.slice(0, 4);
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
-  const ley = [["workout", "Entreno"], ["cardio", "Cardio"], ["formulario", "Formulario"], ["tarea", "Tarea"], ["evento", "Evento"]];
+  const inM = asig.filter(x => x.fecha >= g0 && x.fecha <= g1); const tps = new Set(inM.map(x => x.tipo)); if (ev.some(e => (e.fin || e.fecha) >= g0 && e.fecha <= g1)) tps.add("evento"); if (libres.length) tps.add("workout");
+  const est = [inM.some(x => x.hecho) || libres.length ? "hecho" : "", inM.some(x => !x.hecho && x.fecha < t) ? "late" : ""].filter(Boolean);
   shell("Calendario", `<div class="card c2"><div class="c2head"><button class="cnav" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(mName)} <span>${yr}</span></h2><button class="cnav" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn sm" data-act="cal-m" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
   <div class="c2dh">${["L", "M", "X", "J", "V", "S", "D"].map(x => `<span>${x}</span>`).join("")}</div>${rows}
-  <div class="c2ley">${ley.map(([k, l]) => `<span><i class="tp-${k}"></i>${l}</span>`).join("")}<span><i class="tp-workout ok"></i>Hecho</span></div></div>
+  ${calLegend(tps, est)}</div>
   <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}</h2>${w ? `<p class="tiny muted" style="margin:-4px 0 6px">${esc(w.bloque)} · ${esc(w.nombre)}${w.foco ? " · " + esc(w.foco) : ""}</p>` : ""}${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
 }
 
@@ -1901,7 +1909,7 @@ async function tabPlan(c, pl) {
   return `<div class="card cal"><div class="calhead"><div class="calnav"><button class="cnav" data-act="pm" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(cap(mN))} <span>${esc(yN)}</span></h2><button class="cnav" data-act="pm" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn ghost sm" data-act="pm" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
     <div class="calact"><button class="btn sm pri" data-act="asig-new" data-d="${t}">+ Añadir</button>
     <details class="more"><summary class="btn sm" aria-label="Más opciones">Más ▾</summary><div class="menu"><button data-act="prog-asignar">Programar un programa</button><button data-act="prog-desde-cal">Guardar semanas como programa</button><hr><button data-act="copiar-semana">Copiar semana</button><button data-act="borrar-semana">Vaciar semana</button><hr><button data-act="meso-edit">Mesociclos</button></div></details></div></div>
-  <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}</div>`;
+  <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}${calLegend(new Set([...as.map(x => x.tipo), ...(ev.length ? ["evento"] : []), ...(wo.some(w => !w.assignment_id) ? ["workout"] : [])]), ["hecho", "late", ...(as.some(x => !x.visible) ? ["hid"] : [])])}</div>`;
 }
 async function openAsig(id, fecha) {
   await exLib(); const tpls = await tplLib();
@@ -2891,8 +2899,8 @@ document.addEventListener("click", async ev => {
       case "med-all": a.closest("fieldset").querySelectorAll("input[name=med]").forEach(i => { i.checked = a.dataset.v === "1"; }); break;
       case "fotos": openFotos(); break;
       case "prog": S.sub.prog = a.dataset.t; viewProgreso(); break;
-      case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; localStorage.getItem("arc-cal2") ? viewCal2() : viewCal(); break;
-      case "cal-d": S.sub.calD = a.dataset.d; S.sub.calM = a.dataset.d.slice(0, 7); localStorage.getItem("arc-cal2") ? viewCal2() : viewCal(); break;
+      case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; viewCal2(); break;
+      case "cal-d": S.sub.calD = a.dataset.d; S.sub.calM = a.dataset.d.slice(0, 7); viewCal2(); break;
       case "item": openItem(id); break;
       case "item-undo": await q(sb.rpc("completar_asignacion", { p_id: id, p_hecho: false, p_respuesta: ($("#it-r") || {}).value || "" })); sheet(""); route(); break;
       // entrenador: navegación

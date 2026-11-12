@@ -1243,3 +1243,35 @@ a.rowcard{text-decoration:none;color:inherit}
 .pushdia .chkrow{flex:1;min-width:0}
 .pushh{display:flex;flex-direction:column;justify-content:center;gap:4px;width:150px;flex:none}
 .pushh input{width:100%}
+/* Leyenda del calendario — discreta y premium */
+.cleg{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 18px;margin-top:16px;padding:12px 2px 0;border-top:1px solid transparent;border-image:linear-gradient(90deg,transparent,var(--line) 12%,var(--line) 88%,transparent) 1;font-size:11.5px;letter-spacing:.01em;color:var(--muted);font-weight:500}
+.cleg-t,.cleg-s{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.cleg span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.cleg-s{padding-left:14px;border-left:1px solid var(--line)}
+.lg-sw{width:8px;height:8px;border-radius:2.5px;background:var(--k);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--k) 16%,transparent);flex:none}
+.cleg i[class^="lg-"]:not(.lg-sw){flex:none;display:inline-grid;place-items:center}
+.lg-ok,.lg-late{width:13px;height:13px;border-radius:50%;font-style:normal;font-size:8.5px;font-weight:800;color:#fff;line-height:1}
+.lg-ok{background:var(--ok)}.lg-ok::before{content:"✓"}
+.lg-late{background:var(--bad)}.lg-late::before{content:"!"}
+.lg-hid{width:14px;height:10px;border-radius:3px;border:1px dashed color-mix(in srgb,var(--muted) 70%,transparent)}
+/* en vista de barras (cliente y móvil del entrenador) los estados se ven como barras */
+.c2 .lg-ok,.c2 .lg-late{width:16px;height:6px;border-radius:3px;font-size:0}
+.c2 .lg-ok::before,.c2 .lg-late::before{content:none}
+.c2 .lg-ok{background:color-mix(in srgb,var(--muted) 45%,transparent)}
+.c2 .lg-late{background:repeating-linear-gradient(135deg,var(--muted) 0 3px,color-mix(in srgb,var(--muted) 35%,transparent) 3px 6px)}
+.c2 .cleg{justify-content:center;margin-top:14px}
+.c2 .cleg-s{border-left:0;padding-left:0}
+.c2 .cleg-t + .cleg-s::before{content:"";width:3px;height:3px;border-radius:50%;background:var(--line);margin-right:2px}
+@media (max-width:700px){
+  .cal .cleg{justify-content:center;font-size:11px;gap:8px 12px}
+  .cal .cleg-s{border-left:0;padding-left:0}
+  .cal .lg-ok,.cal .lg-late{width:16px;height:6px;border-radius:3px;font-size:0}
+  .cal .lg-ok::before,.cal .lg-late::before{content:none}
+  .cal .lg-ok{background:color-mix(in srgb,var(--muted) 45%,transparent)}
+  .cal .lg-late{background:repeating-linear-gradient(135deg,var(--muted) 0 3px,color-mix(in srgb,var(--muted) 35%,transparent) 3px 6px)}
+  .c2 .cleg-s{width:auto}
+}
+.c2 .cleg-t,.c2 .cleg-s{display:contents}
+.c2 .cleg{gap:8px 14px}
+.c2 .cleg-t + .cleg-s::before{margin:0}
+@media (max-width:700px){.cal .cleg-t,.cal .cleg-s{display:contents}}
