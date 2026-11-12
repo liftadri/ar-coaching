@@ -1,6 +1,6 @@
 // Service worker mínimo: guarda solo la «carcasa» de la app (código, estilos, iconos) para que abra rápido.
 // Nunca guarda datos de clientes: todas las peticiones a Supabase van siempre a la red.
-const CACHE = "arc-v6";
+const CACHE = "arc-v7";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./logo.jpg", "./logo-blanco.png", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -12,7 +12,7 @@ self.addEventListener("fetch", e => {
 // Notificaciones push
 self.addEventListener("push", e => {
   let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { title: "Adrián Rodríguez Coaching", body: e.data ? e.data.text() : "" }; }
-  e.waitUntil(self.registration.showNotification(d.title || "Adrián Rodríguez Coaching", { body: d.body || "", icon: "./icon-192.png", badge: "./icon-192.png", tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || "./" } }));
+  e.waitUntil(self.registration.showNotification(d.title || "Adrián Rodríguez Coaching", { body: d.body || "", icon: "./icon-192.png", badge: "./badge-96.png", tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || "./" } }));
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close(); const url = (e.notification.data && e.notification.data.url) || "./";
