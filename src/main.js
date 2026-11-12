@@ -770,12 +770,84 @@ async function viewInforme(id) {
 /* ================= Perfil ================= */
 async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
-  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan();
+  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await backupCard() : "";
   shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
   ${plan && plan.objetivo ? `<div class="card"><h2>Tu objetivo</h2><p class="small" style="margin:0">${esc(plan.objetivo)}</p></div>` : ""}
   <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis informes</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
+  ${bkc}
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
 }
+/* ================= Copias de seguridad ================= */
+const BK_ORDEN = ["clients", "plans", "exercises", "foods", "recipes", "workout_templates", "programs", "assignments", "workouts", "wellness", "weights", "measurements", "photos", "meal_logs", "tests", "events", "reports", "reviews", "payments", "leads", "onboarding", "posts", "post_reads", "post_reactions"];
+const BK_PK = { plans: "client_id", onboarding: "client_id", post_reads: "post_id,client_id", post_reactions: "post_id,client_id,emoji", exercises: "nombre" };
+const kb = n => n > 1048576 ? fmt(n / 1048576, 1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+async function backupCard() {
+  const log = await q(sb.from("backup_log").select("*").order("creado", { ascending: false }).limit(8)).catch(() => []);
+  const ok = log.find(x => x.ok); const dias = ok ? Math.floor((Date.now() - new Date(ok.creado)) / 864e5) : null;
+  return `<div class="card bk"><h2 class="hh">${ICON.key || ""}Copias de seguridad</h2>
+  <div class="bkst ${ok && dias <= 2 ? "ok" : "warn"}"><b>${ok ? `Última copia: ${esc(relTime(ok.creado))}` : "Aún no hay ninguna copia"}</b><span>${ok ? `${esc(ok.origen === "auto" ? "Automática" : "Desde la app")} · ${ok.filas} registros · ${ok.archivos} fotos · ${esc(kb(ok.bytes))}` : "Haz la primera ahora."}</span></div>
+  <p class="small muted" style="margin:0">La copia incluye todos los datos (clientes, planificación, entrenos, bienestar, peso, medidas, fotos, nutrición, comunidad…) y la estructura de la base de datos. Va <b>cifrada</b> con tu contraseña de copias: sin ella nadie puede abrirla.</p>
+  <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn pri" data-act="bk-now">Hacer copia y descargar</button><button class="btn" data-act="bk-restore">Restaurar desde una copia</button></div>
+  ${log.length ? `<details class="bklog"><summary class="tiny muted">Historial</summary>${log.map(x => `<div class="tiny"><span class="${x.ok ? "" : "bad"}">${x.ok ? "✓" : "✕"}</span> ${esc(new Date(x.creado).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))} · ${esc(x.origen)}${x.ok ? " · " + esc(kb(x.bytes)) : " · " + esc((x.nota || "").slice(0, 120))}</div>`).join("")}</details>` : ""}</div>`;
+}
+async function backupNow(b) {
+  b.disabled = true; const t0 = b.textContent; b.textContent = "Creando copia…";
+  try {
+    const { data, error } = await sb.functions.invoke("backup", { method: "POST", body: {} });
+    if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch { } throw new Error(m); }
+    const blob = new Blob([typeof data === "string" ? data : JSON.stringify(data)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `arc-backup-${today()}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    toast("Copia creada y descargada"); route();
+  } catch (e) { toast("No se pudo crear la copia: " + (e.message || e)); b.disabled = false; b.textContent = t0; }
+}
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function descifrar(env, pass) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: unb64(env.salt), iterations: env.iter, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const gz = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(env.iv) }, key, unb64(env.datos));
+  const txt = await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  return JSON.parse(txt);
+}
+function openRestore() {
+  sheet(`<h2>Restaurar desde una copia</h2>
+  <p class="small muted" style="margin:0">Elige el archivo <b>arc-backup-….json</b> y escribe tu contraseña de copias. Antes de tocar nada verás lo que contiene.</p>
+  <form id="f-restore" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="bk-f">Archivo de copia</label><input id="bk-f" name="archivo" type="file" accept=".json,application/json" required></div>
+  ${pwField("pass", "Contraseña de copias", "off")}
+  <div id="bk-prev"></div><button class="btn pri block">Abrir copia</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function restoreOpen(f) {
+  const b = f.querySelector("button.pri"); const box = $("#bk-prev");
+  if (S.bk && f.dataset.ready) return restoreRun(b);
+  const file = f.archivo.files[0]; if (!file) return;
+  b.disabled = true; b.textContent = "Descifrando…";
+  try { const env = JSON.parse(await file.text()); if (env.formato !== "arc-backup-v1") throw new Error("No es una copia de esta app");
+    S.bk = await descifrar(env, f.pass.value);
+    const otro = S.bk.proyecto && CFG.supabaseUrl && S.bk.proyecto !== CFG.supabaseUrl;
+    const tot = Object.values(S.bk.tablas).reduce((a, r) => a + r.length, 0);
+    box.innerHTML = `<div class="bkst ok"><b>Copia del ${esc(new Date(S.bk.creado).toLocaleString("es-ES", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }))}</b><span>${tot} registros · ${Object.keys(S.bk.archivos || {}).length} fotos${otro ? " · de otro proyecto: las cuentas de los clientes se volverán a vincular con su código de alta" : ""}</span></div>
+    <div class="bktab">${BK_ORDEN.filter(t => (S.bk.tablas[t] || []).length).map(t => `<span>${esc(t)} <b>${S.bk.tablas[t].length}</b></span>`).join("")}</div>
+    <p class="small" style="margin:0">Al restaurar se <b>recuperan y sobrescriben</b> los registros de la copia. No se borra nada que se haya creado después.</p>`;
+    f.dataset.ready = "1"; f.pass.closest(".f").hidden = true; f.archivo.closest(".f").hidden = true; b.textContent = "Restaurar ahora"; b.disabled = false;
+  } catch (e) { b.disabled = false; b.textContent = "Abrir copia"; box.innerHTML = `<div class="banner">${esc(/decrypt|operation/i.test(String(e)) ? "Contraseña incorrecta o archivo dañado." : (e.message || String(e)))}</div>`; }
+}
+async function restoreRun(b) {
+  const bk = S.bk; const otro = bk.proyecto && CFG.supabaseUrl && bk.proyecto !== CFG.supabaseUrl; b.disabled = true; const box = $("#bk-prev"); let hechos = 0, fallos = [];
+  for (const t of BK_ORDEN) {
+    let rows = (bk.tablas[t] || []).map(r => ({ ...r })); if (!rows.length) continue;
+    if (t === "clients" && otro) rows = rows.map(r => ({ ...r, user_id: null }));
+    for (let i = 0; i < rows.length; i += 400) {
+      b.textContent = `Restaurando ${t}… (${Math.min(i + 400, rows.length)}/${rows.length})`;
+      try { await q(sb.from(t).upsert(rows.slice(i, i + 400), { onConflict: BK_PK[t] || "id" })); hechos += Math.min(400, rows.length - i); } catch (e) { fallos.push(`${t}: ${errMsg(e)}`); break; }
+    }
+  }
+  const fs = Object.entries(bk.archivos || {}); let nf = 0;
+  for (const [p, d] of fs) { const i = p.indexOf("/"); b.textContent = `Restaurando fotos… (${++nf}/${fs.length})`;
+    try { const { error } = await sb.storage.from(p.slice(0, i)).upload(p.slice(i + 1), new Blob([unb64(d)]), { upsert: true, contentType: /\.png$/i.test(p) ? "image/png" : "image/jpeg" }); if (error) throw error; } catch (e) { fallos.push(`${p}: ${e.message || e}`); } }
+  S.bk = null;
+  box.innerHTML = fallos.length ? `<div class="banner">Restaurado con avisos (${hechos} registros). Revisa:<br>${fallos.slice(0, 8).map(esc).join("<br>")}</div>` : `<div class="bkst ok"><b>¡Restauración completa!</b><span>${hechos} registros y ${fs.length} fotos recuperados.</span></div>`;
+  b.textContent = "Hecho"; b.dataset.act = "close"; b.type = "button"; b.disabled = false; toast("Restauración terminada");
+}
+
 function openCambiarPw() {
   sheet(`<h2>Cambiar contraseña</h2><form id="f-nueva" style="display:flex;flex-direction:column;gap:10px">${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
@@ -2207,6 +2279,8 @@ document.addEventListener("click", async ev => {
       case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; const v = i.type === "text"; a.innerHTML = v ? EYE_OFF : EYE; a.setAttribute("aria-label", v ? "Ocultar contraseña" : "Mostrar contraseña"); a.title = a.getAttribute("aria-label"); a.classList.toggle("on", v); i.focus(); break; }
       case "cambiar-pw": openCambiarPw(); break;
       case "close": sheet(""); break;
+      case "bk-now": backupNow(a); break;
+      case "bk-restore": openRestore(); break;
       case "post-new": openPostForm(); break;
       case "post-edit": a.closest("details") && a.closest("details").removeAttribute("open"); openPostForm(id); break;
       case "post-pin": { const p = (await q(sb.from("posts").select("fijado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ fijado: !p.fijado }).eq("id", id)); toast(p.fijado ? "Quitado de fijados" : "Fijado arriba"); route(); break; }
@@ -2396,7 +2470,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
