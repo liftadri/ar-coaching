@@ -93,6 +93,8 @@ document.addEventListener("pointerout", ev => { if (ev.target.closest && ev.targ
 const S = { me: null, email: "", view: "hoy", plan: null, sub: {}, coach: { list: [], cid: null, tab: "plan", evo: "actividad" }, lib: { tab: "workouts", ex: null } };
 const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const ICON = {
+  comunidad: svg('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a3 3 0 0 1 0 6M18 6a7 7 0 0 1 0 12"/>'),
+  bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>'),
   hoy: svg('<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>'),
   cal: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
   entreno: svg('<path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>'),
@@ -262,8 +264,8 @@ async function doNueva(f) {
 
 /* ================= Navegación ================= */
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
-const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["mas", "Perfil", "mas"]];
-const isCoachHash = h => ["inicio", "c", "lib"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
+const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["mas", "Perfil", "mas"]];
+const isCoachHash = h => ["inicio", "c", "lib", "tablon"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
 function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; t.style.height = Math.min(Math.max(t.scrollHeight + 2, 64), 460) + "px"; }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
@@ -278,7 +280,7 @@ function shell(title, body, opts = {}) {
     <main class="wide" id="main">${body}</main>`;
   } else {
     const tabs = CLIENT_TABS; const cur = v.split("-")[0];
-    const right = !opts.back ? `<button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre)}</button>` : (opts.right || "");
+    const nb = (S.tab && S.tab.n) || 0; const right = !opts.back ? `<span class="tright"><button class="bell" data-act="go" data-h="tablon" aria-label="Comunidad${nb ? ", " + nb + " publicaciones nuevas" : ""}">${ICON.bell}${nb ? `<i>${nb > 9 ? "9+" : nb}</i>` : ""}</button><button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre)}</button></span>` : (opts.right || "");
     $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
     <main id="main">${body}</main>
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
@@ -293,7 +295,7 @@ async function route() {
   document.body.classList.remove("pub");
   const coach = S.me.role === "coach";
   let h = location.hash.slice(1) || (coach ? "inicio" : "hoy");
-  if (!coach && isCoachHash(h)) h = "hoy"; // la vista de entrenador no existe para clientes
+  if (!coach && isCoachHash(h) && h !== "tablon") h = "hoy"; // la vista de entrenador no existe para clientes
   if (coach && !isCoachHash(h) && h !== "mas") h = "inicio";
   S.view = h;
   try {
@@ -305,8 +307,11 @@ async function route() {
       if (h.startsWith("lib-p-")) return await viewLibProgram(h.slice(6));
       if (h.startsWith("lib-r-")) return await viewLibRecipe(h.slice(6));
       if (h === "mas") return await viewMas();
+      if (h === "tablon") return await viewTablonCoach();
       return await viewInicio();
     }
+    if (h !== "tablon") await tablonUnread();
+    if (h === "tablon") return await viewTablon();
     if (h === "comienzo") return await viewComienzo();
     if (h === "cal") return await viewCal();
     if (h === "entreno") return await viewEntreno();
@@ -339,18 +344,106 @@ function asigRow(x) {
   return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
 }
 
+/* ================= Comunidad: tablón de Adrián ================= */
+const POST_T = { pildora: ["Píldora educativa", "💡"], enlace: ["Enlace recomendado", "🔗"], motivacion: ["Motivación", "🔥"], aviso: ["Aviso", "📣"] };
+const linkify = t => esc(t).replace(/https:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u.length > 48 ? u.slice(0, 45) + "…" : u}</a>`);
+function postCard(p, o = {}) {
+  const [tl, ic] = POST_T[p.tipo] || POST_T.pildora; const u = safeUrl(p.url);
+  return `<article class="post t-${esc(p.tipo)}${p.fijado ? " pin" : ""}${o.nuevo ? " nuevo" : ""}">
+    <header class="ph"><span class="pic">${ic}</span><span class="grow"><span class="ptl">${esc(tl)}${p.fijado ? ` · <b>Fijado</b>` : ""}</span><span class="pdt">${esc(o.fecha || relTime(p.publicar_en))}</span></span>${o.nuevo ? `<span class="pnew">Nuevo</span>` : ""}${o.right || ""}</header>
+    <h3>${esc(p.titulo)}</h3>${p.cuerpo ? `<div class="pbody">${linkify(p.cuerpo)}</div>` : ""}
+    ${u ? `<a class="plink" href="${esc(u)}" target="_blank" rel="noopener noreferrer"><span>${esc(u.replace(/^https:\/\/(www\.)?/, "").split("/")[0])}</span><b>Abrir enlace ↗</b></a>` : ""}
+    ${o.foot || ""}</article>`;
+}
+// ---- Cliente
+async function tablonUnread(force) {
+  if (!S.me || S.me.role === "coach" || !S.me.cid) return 0;
+  if (!force && S.tab && Date.now() - S.tab.t < 60000) return S.tab.n;
+  try { const [ps, rs] = await Promise.all([q(sb.from("posts").select("id").lte("publicar_en", new Date().toISOString()).order("publicar_en", { ascending: false }).limit(60)), q(sb.from("post_reads").select("post_id"))]);
+    const leidos = new Set(rs.map(r => r.post_id)); S.tab = { t: Date.now(), n: ps.filter(p => !leidos.has(p.id)).length }; } catch { S.tab = { t: Date.now(), n: 0 }; }
+  return S.tab.n;
+}
+async function viewTablon() {
+  loading("Comunidad");
+  const [ps, rs] = await Promise.all([q(sb.from("posts").select("*").lte("publicar_en", new Date().toISOString()).order("publicar_en", { ascending: false }).limit(60)), q(sb.from("post_reads").select("post_id,gusta"))]);
+  const R = new Map(rs.map(r => [r.post_id, r])); const orden = [...ps.filter(p => p.fijado), ...ps.filter(p => !p.fijado)];
+  shell("Comunidad", `<p class="small muted" style="margin:0">Píldoras, recursos y avisos de Adrián para todo el equipo.</p>
+  ${orden.length ? orden.map(p => postCard(p, { nuevo: !R.has(p.id), foot: `<footer class="pf2"><button class="plike" data-act="post-like" data-id="${esc(p.id)}" aria-pressed="${!!(R.get(p.id) || {}).gusta}">${(R.get(p.id) || {}).gusta ? "❤️" : "🤍"} <span>Me gusta</span></button></footer>` })).join("") : `<div class="card empty">Aún no hay publicaciones. Cuando Adrián comparta algo aparecerá aquí.</div>`}`, { back: "hoy", noTabs: true });
+  const nuevos = ps.filter(p => !R.has(p.id)).map(p => ({ post_id: p.id, client_id: S.me.cid }));
+  if (nuevos.length) { try { await q(sb.from("post_reads").upsert(nuevos, { onConflict: "post_id,client_id", ignoreDuplicates: true })); } catch { } }
+  S.tab = { t: Date.now(), n: 0 };
+}
+async function postLike(b) {
+  const on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); b.firstChild.textContent = on ? "❤️ " : "🤍 ";
+  try { await q(sb.from("post_reads").upsert({ post_id: b.dataset.id, client_id: S.me.cid, gusta: on }, { onConflict: "post_id,client_id" })); } catch (e) { toast(errMsg(e)); }
+}
+async function tablonHoy() { // bloque para «Hoy»: fijados + lo no leído
+  try { const [ps, rs] = await Promise.all([q(sb.from("posts").select("*").lte("publicar_en", new Date().toISOString()).order("publicar_en", { ascending: false }).limit(20)), q(sb.from("post_reads").select("post_id"))]);
+    const L = new Set(rs.map(r => r.post_id)); const nuevos = ps.filter(p => !L.has(p.id)); const fij = ps.filter(p => p.fijado && L.has(p.id));
+    const show = [...nuevos.slice(0, 2), ...fij.slice(0, Math.max(0, 1 - nuevos.length))];
+    if (!ps.length) return "";
+    return `<section class="card tbh"><h2 class="hh">${ICON.comunidad}Comunidad ${nuevos.length ? `<span class="pnew">${nuevos.length} nuevo${nuevos.length > 1 ? "s" : ""}</span>` : ""}<span class="grow"></span><a href="#tablon" class="tiny">Ver todo</a></h2>
+    ${show.length ? show.map(p => `<button class="tbi" data-act="go" data-h="tablon"><span class="pic">${(POST_T[p.tipo] || POST_T.pildora)[1]}</span><span class="grow"><b>${esc(p.titulo)}</b><span class="tiny muted">${esc((POST_T[p.tipo] || POST_T.pildora)[0])} · ${esc(relTime(p.publicar_en))}</span></span>${L.has(p.id) ? "" : `<i class="ndot"></i>`}</button>`).join("") : `<button class="tbi" data-act="go" data-h="tablon"><span class="grow tiny muted">Estás al día. Toca para ver todas las publicaciones.</span></button>`}</section>`;
+  } catch { return ""; }
+}
+// ---- Entrenador
+async function viewTablonCoach() {
+  loading("Comunidad");
+  const [ps, rs, cl] = await Promise.all([q(sb.from("posts").select("*").order("publicar_en", { ascending: false }).limit(200)), q(sb.from("post_reads").select("post_id,client_id,gusta")), loadClients()]);
+  const act = cl.filter(c => c.estado === "activo" && c.user_id); const ahora = new Date().toISOString();
+  const st = p => { const r = rs.filter(x => x.post_id === p.id); const dest = p.para && p.para.length ? act.filter(c => p.para.includes(c.id)) : act; return { vistos: r.length, total: dest.length, gusta: r.filter(x => x.gusta).length }; };
+  const prog = ps.filter(p => p.publicar_en > ahora), pub = ps.filter(p => p.publicar_en <= ahora);
+  const orden = [...pub.filter(p => p.fijado), ...pub.filter(p => !p.fijado)];
+  const card = p => { const s = st(p); const prx = p.publicar_en > ahora;
+    return postCard(p, { fecha: prx ? "Programado · " + new Date(p.publicar_en).toLocaleString("es-ES", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : relTime(p.publicar_en) + (p.publicado ? "" : " · oculto"),
+      right: `<details class="more"><summary class="btn ghost sm" aria-label="Opciones">•••</summary><div class="menu"><button data-act="post-edit" data-id="${esc(p.id)}">Editar</button><button data-act="post-pin" data-id="${esc(p.id)}">${p.fijado ? "Quitar de fijados" : "Fijar arriba"}</button><button data-act="post-hide" data-id="${esc(p.id)}">${p.publicado ? "Ocultar" : "Volver a mostrar"}</button><button data-act="post-del" data-id="${esc(p.id)}" style="color:var(--bad)">Borrar</button></div></details>`,
+      foot: `<footer class="pf2 muted tiny"><span>${p.para && p.para.length ? "Para " + esc(p.para.map(clientName).join(", ")) : "Para todos"}</span><span class="grow"></span>${prx ? "" : `<span title="Clientes que lo han visto">👁 ${s.vistos}/${s.total}</span><span>❤️ ${s.gusta}</span>`}</footer>` }); };
+  shell("Comunidad", `<div class="pghead"><h1 class="ptitle">Comunidad <span class="cnt">${pub.length}</span></h1><button class="btn pri" data-act="post-new">+ Publicar</button></div>
+  <p class="small muted" style="margin:-6px 0 4px">Tu tablón para todos los clientes: píldoras educativas, enlaces, mensajes motivadores y avisos. Les aparece en «Hoy» con aviso de novedad.</p>
+  <div class="tbgrid"><div class="tbcol">${orden.length ? orden.map(card).join("") : `<div class="card empty">Todavía no has publicado nada. Empieza con una píldora educativa o un mensaje para el equipo.</div>`}</div>
+  <aside class="tbcol">${prog.length ? `<h2 class="tbh2">${ICON.cal}Programados <span class="cnt">${prog.length}</span></h2>${prog.sort((a, b) => a.publicar_en.localeCompare(b.publicar_en)).map(card).join("")}` : `<div class="card"><h2 class="hh">${ICON.cal}Programados</h2><p class="small muted" style="margin:0">Puedes dejar publicaciones programadas para que salgan en la fecha y hora que elijas.</p></div>`}</aside></div>`, { crumb: [[null, "Comunidad"]] });
+}
+async function openPostForm(id) {
+  const p = id ? (await q(sb.from("posts").select("*").eq("id", id).limit(1)))[0] || {} : { tipo: "pildora" };
+  const cl = (S.coach.list || await loadClients()).filter(c => c.estado === "activo");
+  const loc = p.publicar_en ? new Date(new Date(p.publicar_en).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+  const todos = !(p.para && p.para.length);
+  sheet(`<h2>${id ? "Editar publicación" : "Nueva publicación"}</h2>
+  <form id="f-post" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:12px">
+    <div class="choice-row" role="radiogroup" aria-label="Tipo">${Object.entries(POST_T).map(([k, [l, ic]]) => `<label class="ptype"><input type="radio" name="tipo" value="${k}" ${(p.tipo || "pildora") === k ? "checked" : ""}><span>${ic} ${l}</span></label>`).join("")}</div>
+    <div class="f"><label for="po-t">Título</label><input id="po-t" name="titulo" required maxlength="160" value="${esc(p.titulo || "")}" placeholder="Por qué dormir bien te hace progresar más"></div>
+    <div class="f"><label for="po-c">Texto</label><textarea id="po-c" name="cuerpo" maxlength="6000" placeholder="Explícalo en pocas líneas. Los enlaces https se convierten en clicables.">${esc(p.cuerpo || "")}</textarea></div>
+    <div class="f"><label for="po-u">Enlace <span class="opt-l">opcional</span></label><input id="po-u" name="url" type="url" inputmode="url" value="${esc(p.url || "")}" placeholder="https://…"></div>
+    <div class="grid2"><div class="f"><label for="po-w">Publicar</label><input id="po-w" name="cuando" type="datetime-local" value="${esc(loc)}"><span class="tiny muted">Vacío = ahora mismo</span></div>
+    <div class="f"><label>Opciones</label><label class="mchk"><input type="checkbox" name="fijado" ${p.fijado ? "checked" : ""}><span>Fijar arriba del tablón</span></label></div></div>
+    <fieldset class="opts"><legend>¿Quién lo ve?</legend><label class="mchk"><input type="checkbox" name="todos" data-act-change="post-todos" ${todos ? "checked" : ""}><span>Todos los clientes</span></label>
+    <div class="post-para" ${todos ? "hidden" : ""}>${cl.map(c => `<label class="mchk"><input type="checkbox" name="para" value="${esc(c.id)}" ${(p.para || []).includes(c.id) ? "checked" : ""}><span>${esc(c.nombre)}</span></label>`).join("")}</div></fieldset>
+    <button class="btn pri block">${id ? "Guardar cambios" : "Publicar"}</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function savePost(f) {
+  const url = f.url.value.trim(); if (url && !safeUrl(url)) { toast("El enlace debe empezar por https://"); return; }
+  const para = f.todos.checked ? null : [...f.querySelectorAll('[name="para"]:checked')].map(i => i.value);
+  if (para && !para.length) { toast("Elige al menos un cliente o marca «Todos»"); return; }
+  const row = { tipo: f.tipo.value, titulo: f.titulo.value.trim(), cuerpo: f.cuerpo.value.trim(), url: url || null, fijado: f.fijado.checked, para, publicar_en: f.cuando.value ? new Date(f.cuando.value).toISOString() : new Date().toISOString() };
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { if (f.dataset.id) await q(sb.from("posts").update(row).eq("id", f.dataset.id)); else await q(sb.from("posts").insert({ ...row, publicado: true }));
+    sheet(""); toast(f.dataset.id ? "Publicación guardada" : row.publicar_en > new Date(Date.now() + 60000).toISOString() ? "Publicación programada" : "¡Publicado en la comunidad!"); route();
+  } catch (e) { toast(errMsg(e)); b.disabled = false; }
+}
+
 /* ================= Cliente: Hoy ================= */
 async function viewHoy() {
   loading("Hoy");
   const t = today();
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
-  const w = weekNow(plan); const lastW = wt[0];
+  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy();
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
   ${S.needCom ? `<button class="card com-cta" data-act="go" data-h="comienzo"><b>Antes de empezar: tu cuestionario inicial</b><span class="small">10 minutos para que Adrián prepare tu plan. Pulsa aquí →</span></button>` : ""}
   <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(w.nombre)}</span>${esc(w.bloque)}${w.tipo && w.tipo !== "carga" ? " · " + esc(cap(w.tipo)) : ""}</div>${w.foco ? `<p class="hfoco">${esc(w.foco)}</p>` : ""}` : ""}</section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
+  ${tbh}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>Día de descanso</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : "Recupera bien"}</span></span></div>`}
     ${hoy.some(x => x.tipo === "formulario" && (x.contenido || {}).wellness) ? "" : `<button class="it" data-act="wellness"><span class="itl"><i class="dot dot-formulario"></i><span><b>Cuestionario diario</b><br><span class="tiny muted">1 minuto · sueño y cómo te sientes</span></span></span>${wl[0] ? `<span class="done">Hecho ✓</span>` : `<span class="chip acc">Rellenar</span>`}</button>`}
@@ -2101,6 +2194,12 @@ document.addEventListener("click", async ev => {
       case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; const v = i.type === "text"; a.innerHTML = v ? EYE_OFF : EYE; a.setAttribute("aria-label", v ? "Ocultar contraseña" : "Mostrar contraseña"); a.title = a.getAttribute("aria-label"); a.classList.toggle("on", v); i.focus(); break; }
       case "cambiar-pw": openCambiarPw(); break;
       case "close": sheet(""); break;
+      case "post-new": openPostForm(); break;
+      case "post-edit": a.closest("details") && a.closest("details").removeAttribute("open"); openPostForm(id); break;
+      case "post-pin": { const p = (await q(sb.from("posts").select("fijado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ fijado: !p.fijado }).eq("id", id)); toast(p.fijado ? "Quitado de fijados" : "Fijado arriba"); route(); break; }
+      case "post-hide": { const p = (await q(sb.from("posts").select("publicado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ publicado: !p.publicado }).eq("id", id)); toast(p.publicado ? "Oculto para los clientes" : "Visible otra vez"); route(); break; }
+      case "post-del": if (confirmar(a)) { await q(sb.from("posts").delete().eq("id", id)); toast("Publicación borrada"); route(); } break;
+      case "post-like": postLike(a); break;
       // cliente
       case "wellness": { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); openWellness(r[0]); break; }
       case "qscale": { const h = $("#q" + a.dataset.q); if (h) h.value = a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
@@ -2267,6 +2366,7 @@ document.addEventListener("change", ev => {
   if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
   if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
+  if (el.dataset && el.dataset.actChange === "post-todos") { const b = el.form.querySelector(".post-para"); if (b) b.hidden = el.checked; }
   if (el.dataset && el.dataset.actChange === "test-name") { const t = (S.coach.tests || []).filter(x => tKey(x.nombre) === tKey(el.value)).pop(); if (t) { const f = el.form; f.categoria.value = t.categoria || f.categoria.value; f.unidad.value = t.unidad || ""; f.menos.checked = !!t.mejor_es_menos; f.nombre.value = t.nombre; } }
   if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
     el.form.querySelectorAll(".cq").forEach(w => { const qq = COM_Q.find(x => x.k === w.dataset.k); if (qq && qq.if) w.hidden = d[qq.if[0]] !== qq.if[1]; }); }
@@ -2283,7 +2383,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");

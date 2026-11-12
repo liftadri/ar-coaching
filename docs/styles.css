@@ -873,3 +873,49 @@ input[type=checkbox],input[type=radio]{accent-color:var(--ink)}
 .mk-prev .mks{display:flex;flex-wrap:wrap;gap:5px}
 .mk-prev i{font-style:normal;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px 9px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .mk-prev i b{color:var(--ink);font-weight:650}
+/* ===== Comunidad (tablón) ===== */
+.post{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:14px 16px;display:flex;flex-direction:column;gap:8px;position:relative;--pk:var(--c-formulario)}
+.post.t-pildora{--pk:#3f5d8c}.post.t-enlace{--pk:#3b7d6c}.post.t-motivacion{--pk:var(--accent)}.post.t-aviso{--pk:#a2701a}
+.post.pin{border-color:var(--line-2);box-shadow:inset 3px 0 0 var(--ink),var(--shadow)}
+.post .ph{display:flex;align-items:center;gap:10px}
+.post .pic{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;font-size:17px;background:color-mix(in srgb,var(--pk) 11%,var(--surface));border:1px solid color-mix(in srgb,var(--pk) 18%,var(--surface))}
+.post .ph .grow{display:flex;flex-direction:column;min-width:0}
+.post .ptl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--pk)}
+.post .ptl b{color:var(--ink)}
+.post .pdt{font-size:12px;color:var(--muted)}
+.post h3{font-size:17px;line-height:1.3;margin:2px 0 0}
+.post .pbody{font-size:14.5px;line-height:1.55;white-space:pre-wrap;color:#34352f}
+.post .pbody a{color:var(--link);word-break:break-all}
+.plink{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);text-decoration:none;color:inherit}
+.plink span{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plink b{font-size:13px;color:var(--ink);white-space:nowrap}
+.pf2{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+.plike{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted);padding:4px 10px 4px 8px;border-radius:999px}
+.plike[aria-pressed="true"]{color:var(--bad);background:var(--bad-soft)}
+.pnew{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:var(--accent);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.post.nuevo{border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+.tbgrid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.tbcol{display:flex;flex-direction:column;gap:12px;min-width:0}
+@media (max-width:900px){.tbgrid{grid-template-columns:1fr}}
+.pghead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.choice-row{display:flex;flex-wrap:wrap;gap:6px}
+.ptype{cursor:pointer}.ptype input{position:absolute;opacity:0;pointer-events:none}
+.ptype span{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--line-2);font-size:13.5px;font-weight:600;background:var(--surface)}
+.ptype input:checked+span{background:var(--ink);border-color:var(--ink);color:#fff}
+.ptype input:focus-visible+span{box-shadow:var(--ring)}
+.post-para{display:flex;flex-direction:column;gap:4px;margin-top:6px;padding-left:4px}
+/* «Hoy» */
+.tbh{padding-bottom:8px}
+.tbh .hh .pnew{margin-left:2px}.tbh .hh a{font-weight:600}
+.tbi{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.tbi:last-child{border-bottom:0}
+.tbi .pic{width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--surface-2);font-size:16px}
+.tbi .grow{display:flex;flex-direction:column;min-width:0}.tbi b{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ndot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+/* campana del cliente */
+.tright{display:flex;align-items:center;gap:6px;margin-left:auto}
+.bell{all:unset;cursor:pointer;position:relative;width:38px;height:38px;display:grid;place-items:center;border-radius:50%;color:var(--ink)}
+.bell:hover{background:var(--surface-2)}
+.bell svg{width:22px;height:22px}
+.bell i{position:absolute;top:3px;right:2px;min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;border-radius:999px;background:var(--accent);color:#fff;font:700 10.5px/17px var(--body);font-style:normal;text-align:center;box-shadow:0 0 0 2px var(--surface)}
+.tbh2{display:flex;align-items:center;gap:8px;font-size:15px;margin:4px 2px 0}.tbh2 svg{width:17px;height:17px;color:var(--muted)}
