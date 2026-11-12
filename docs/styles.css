@@ -1016,3 +1016,27 @@ textarea{line-height:1.5}
 label:has(> input[type=checkbox]):not(.mchk):not(.pchk):not(.ptype):not(.chkrow):not(.pf){display:flex;align-items:flex-start;gap:10px;line-height:1.4;color:var(--ink)}
 label:has(> input[type=checkbox]):not(.mchk):not(.pchk):not(.ptype):not(.chkrow):not(.pf)>input{width:20px;height:20px;min-height:0;flex:none;margin:1px 0 0}
 .wed{gap:14px}
+/* ===== Textos siempre completos: nada de frases cortadas ===== */
+.top h1{white-space:normal;overflow:visible;text-overflow:clip;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.2;font-size:16px}
+.top h1 .sub{white-space:normal}
+.wfoco,.plink span,.tbi b,.elink code{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.tbi b{line-height:1.3}
+.elink code{display:block;line-height:1.4}
+.sel{overflow-wrap:anywhere;white-space:normal}
+.chip{white-space:normal;text-align:left;line-height:1.3}
+.it b,.it .tiny,.feed b,.lnk{overflow-wrap:break-word}
+/* Calendario del entrenador: en escritorio el título se lee entero */
+.cal .pch{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.25;overflow-wrap:break-word;hyphens:auto}
+/* En el móvil la celda es demasiado estrecha: barras de color y el detalle al tocar el día */
+@media (max-width:700px){
+  .cal .pch{font-size:0!important;line-height:0;height:7px;min-height:0;padding:0!important;border:0!important;border-radius:4px!important;background:var(--k)!important;margin-top:3px;box-shadow:none}
+  .cal .pch .pi{display:none}
+  .cal .pch.ok{opacity:.45}
+  .cal .pch.late{background:repeating-linear-gradient(135deg,var(--k) 0 4px,color-mix(in srgb,var(--k) 55%,#fff) 4px 8px)!important;outline:0}
+  .cal .pch.hid{opacity:.3}
+  .cal::after{content:"Toca un día para ver lo programado";display:block;text-align:center;font-size:12px;color:var(--muted);padding:10px 0 2px}
+}
+/* Marcas de la ficha en móvil */
+@media (max-width:640px){.mrow{grid-template-columns:repeat(3,minmax(0,1fr))}.mrow [name="m_e"]{grid-column:1/4}.mrow [name="m_f"]{grid-column:1/4}.mrow .mrn{grid-column:1/3}}
+@media (max-width:400px){.wrow input,.wrow select{padding-left:8px;padding-right:8px}}
+@media (max-width:400px){.wrow [name="r_sxr"]{grid-column:1/5}.wrow [name="r_rir"]{grid-column:1/3}.wrow [name="r_des"]{grid-column:3/5}}
