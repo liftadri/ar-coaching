@@ -660,3 +660,20 @@ input,textarea,select,[contenteditable]{-webkit-user-select:text;user-select:tex
 .ddet{margin:6px 0 0;font-size:13px;color:var(--text,#1f2130);white-space:pre-wrap}
 .dayft{margin-top:4px}
 @media (max-width:700px){.dayft .btn.pri{flex:1}}
+
+/* Evolución: sesiones y cargas */
+.ses{display:flex;flex-direction:column;gap:12px}
+.seshd{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.seshd h2{margin:0 0 2px}
+.sesk{display:flex;gap:6px;flex-wrap:wrap}
+.sesk span{background:var(--bg);border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;min-width:64px;font-size:12px;color:var(--muted)}
+.sesk b{font-size:17px;color:var(--text,#1f2130);line-height:1.1}.sesk em{font-style:normal;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+.stab td,.stab th{padding:7px 10px}.stab tr.first td{border-top:1px solid var(--line)}.stab tbody tr:not(.first) td{border-top:0}
+.stab .exn{vertical-align:top;font-weight:600;min-width:180px}.stab .exn .linkbtn{all:unset;cursor:pointer;color:var(--accent);font-weight:600}
+.sescom{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13.5px}
+.sp{display:inline-flex;align-items:baseline;gap:3px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:13px;white-space:nowrap}
+.sp b{font-size:14px}.sp small{color:var(--muted);font-size:11px}.sp em{font-style:normal;color:var(--muted);font-size:11.5px;margin-left:5px}
+.sp.ok{background:#e8f6ee;border-color:#bfe5cf;color:var(--ok);font-weight:600}
+.spw{display:flex;flex-wrap:wrap;gap:4px}
+.ptab tbody tr{cursor:pointer}
+.chart svg{display:block;width:100%;height:auto;max-height:300px;margin:0 auto}
+.sesk b small{font-size:11px;font-weight:600;color:var(--muted)}
