@@ -355,6 +355,15 @@ function postCard(p, o = {}) {
     ${u ? `<a class="plink" href="${esc(u)}" target="_blank" rel="noopener noreferrer"><span>${esc(u.replace(/^https:\/\/(www\.)?/, "").split("/")[0])}</span><b>Abrir enlace ↗</b></a>` : ""}
     ${o.foot || ""}</article>`;
 }
+const REACTS = ["👍", "❤️", "🔥", "💪", "👏", "😂"];
+const reactCount = rows => { const m = {}; (rows || []).forEach(r => { (m[r.post_id] = m[r.post_id] || {})[r.emoji] = (m[r.post_id] || {})[r.emoji] ? m[r.post_id][r.emoji] + r.n : r.n; }); return m; };
+function reactBar(pid, cnt = {}, mine = new Set(), interactive = true, names = {}) {
+  const list = interactive ? REACTS : REACTS.filter(e => cnt[e]);
+  if (!list.length) return `<span class="tiny muted">Sin reacciones todavía</span>`;
+  return `<div class="reacts">${list.map(e => { const n = cnt[e] || 0; const on = mine.has(e);
+    return interactive ? `<button type="button" class="rx${on ? " on" : ""}${n ? " has" : ""}" data-act="post-react" data-id="${esc(pid)}" data-e="${e}" aria-pressed="${on}" aria-label="Reaccionar ${e}${n ? ", " + n : ""}"><span>${e}</span><b>${n || ""}</b></button>`
+      : `<span class="rx has" title="${esc((names[e] || []).join(", "))}"><span>${e}</span><b>${n}</b></span>`; }).join("")}</div>`;
+}
 // ---- Cliente
 async function tablonUnread(force) {
   if (!S.me || S.me.role === "coach" || !S.me.cid) return 0;
@@ -365,17 +374,22 @@ async function tablonUnread(force) {
 }
 async function viewTablon() {
   loading("Comunidad");
-  const [ps, rs] = await Promise.all([q(sb.from("posts").select("*").lte("publicar_en", new Date().toISOString()).order("publicar_en", { ascending: false }).limit(60)), q(sb.from("post_reads").select("post_id,gusta"))]);
-  const R = new Map(rs.map(r => [r.post_id, r])); const orden = [...ps.filter(p => p.fijado), ...ps.filter(p => !p.fijado)];
-  shell("Comunidad", `<p class="small muted" style="margin:0">Píldoras, recursos y avisos de Adrián para todo el equipo.</p>
-  ${orden.length ? orden.map(p => postCard(p, { nuevo: !R.has(p.id), foot: `<footer class="pf2"><button class="plike" data-act="post-like" data-id="${esc(p.id)}" aria-pressed="${!!(R.get(p.id) || {}).gusta}">${(R.get(p.id) || {}).gusta ? "❤️" : "🤍"} <span>Me gusta</span></button></footer>` })).join("") : `<div class="card empty">Aún no hay publicaciones. Cuando Adrián comparta algo aparecerá aquí.</div>`}`, { back: "hoy", noTabs: true });
+  const [ps, rs, mine] = await Promise.all([q(sb.from("posts").select("*").lte("publicar_en", new Date().toISOString()).order("publicar_en", { ascending: false }).limit(60)), q(sb.from("post_reads").select("post_id")), q(sb.from("post_reactions").select("post_id,emoji")).catch(() => [])]);
+  const cnt = reactCount(ps.length ? await q(sb.rpc("reacciones_posts", { p_ids: ps.map(p => p.id) })).catch(() => []) : []);
+  const M = {}; mine.forEach(r => (M[r.post_id] = M[r.post_id] || new Set()).add(r.emoji));
+  const R = new Set(rs.map(r => r.post_id)); const orden = [...ps.filter(p => p.fijado), ...ps.filter(p => !p.fijado)];
+  shell("Comunidad", `<p class="small muted" style="margin:0">Píldoras, recursos y avisos de Adrián para todo el equipo. Las reacciones son anónimas: solo se ve cuántas hay.</p>
+  ${orden.length ? orden.map(p => postCard(p, { nuevo: !R.has(p.id), foot: `<footer class="pf2">${reactBar(p.id, cnt[p.id], M[p.id])}</footer>` })).join("") : `<div class="card empty">Aún no hay publicaciones. Cuando Adrián comparta algo aparecerá aquí.</div>`}`, { back: "hoy", noTabs: true });
   const nuevos = ps.filter(p => !R.has(p.id)).map(p => ({ post_id: p.id, client_id: S.me.cid }));
   if (nuevos.length) { try { await q(sb.from("post_reads").upsert(nuevos, { onConflict: "post_id,client_id", ignoreDuplicates: true })); } catch { } }
   S.tab = { t: Date.now(), n: 0 };
 }
-async function postLike(b) {
-  const on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); b.firstChild.textContent = on ? "❤️ " : "🤍 ";
-  try { await q(sb.from("post_reads").upsert({ post_id: b.dataset.id, client_id: S.me.cid, gusta: on }, { onConflict: "post_id,client_id" })); } catch (e) { toast(errMsg(e)); }
+async function postReact(b) {
+  const on = b.getAttribute("aria-pressed") !== "true"; const n0 = +(b.querySelector("b").textContent || 0); const n = Math.max(0, n0 + (on ? 1 : -1));
+  b.setAttribute("aria-pressed", on); b.classList.toggle("on", on); b.classList.toggle("has", n > 0); b.querySelector("b").textContent = n || "";
+  try { if (on) await q(sb.from("post_reactions").insert({ post_id: b.dataset.id, client_id: S.me.cid, emoji: b.dataset.e }));
+    else await q(sb.from("post_reactions").delete().eq("post_id", b.dataset.id).eq("client_id", S.me.cid).eq("emoji", b.dataset.e));
+  } catch (e) { toast(errMsg(e)); b.setAttribute("aria-pressed", !on); b.classList.toggle("on", !on); b.querySelector("b").textContent = n0 || ""; }
 }
 async function tablonHoy() { // bloque para «Hoy»: fijados + lo no leído
   try { const [ps, rs] = await Promise.all([q(sb.from("posts").select("*").lte("publicar_en", new Date().toISOString()).order("publicar_en", { ascending: false }).limit(20)), q(sb.from("post_reads").select("post_id"))]);
@@ -389,15 +403,15 @@ async function tablonHoy() { // bloque para «Hoy»: fijados + lo no leído
 // ---- Entrenador
 async function viewTablonCoach() {
   loading("Comunidad");
-  const [ps, rs, cl] = await Promise.all([q(sb.from("posts").select("*").order("publicar_en", { ascending: false }).limit(200)), q(sb.from("post_reads").select("post_id,client_id,gusta")), loadClients()]);
+  const [ps, rs, cl, rx] = await Promise.all([q(sb.from("posts").select("*").order("publicar_en", { ascending: false }).limit(200)), q(sb.from("post_reads").select("post_id,client_id")), loadClients(), q(sb.from("post_reactions").select("post_id,client_id,emoji")).catch(() => [])]);
   const act = cl.filter(c => c.estado === "activo" && c.user_id); const ahora = new Date().toISOString();
-  const st = p => { const r = rs.filter(x => x.post_id === p.id); const dest = p.para && p.para.length ? act.filter(c => p.para.includes(c.id)) : act; return { vistos: r.length, total: dest.length, gusta: r.filter(x => x.gusta).length }; };
+  const st = p => { const r = rs.filter(x => x.post_id === p.id); const dest = p.para && p.para.length ? act.filter(c => p.para.includes(c.id)) : act; const cnt = {}, names = {}; rx.filter(x => x.post_id === p.id).forEach(x => { cnt[x.emoji] = (cnt[x.emoji] || 0) + 1; (names[x.emoji] = names[x.emoji] || []).push(clientName(x.client_id)); }); return { vistos: r.length, total: dest.length, cnt, names }; };
   const prog = ps.filter(p => p.publicar_en > ahora), pub = ps.filter(p => p.publicar_en <= ahora);
   const orden = [...pub.filter(p => p.fijado), ...pub.filter(p => !p.fijado)];
   const card = p => { const s = st(p); const prx = p.publicar_en > ahora;
     return postCard(p, { fecha: prx ? "Programado · " + new Date(p.publicar_en).toLocaleString("es-ES", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : relTime(p.publicar_en) + (p.publicado ? "" : " · oculto"),
       right: `<details class="more"><summary class="btn ghost sm" aria-label="Opciones">•••</summary><div class="menu"><button data-act="post-edit" data-id="${esc(p.id)}">Editar</button><button data-act="post-pin" data-id="${esc(p.id)}">${p.fijado ? "Quitar de fijados" : "Fijar arriba"}</button><button data-act="post-hide" data-id="${esc(p.id)}">${p.publicado ? "Ocultar" : "Volver a mostrar"}</button><button data-act="post-del" data-id="${esc(p.id)}" style="color:var(--bad)">Borrar</button></div></details>`,
-      foot: `<footer class="pf2 muted tiny"><span>${p.para && p.para.length ? "Para " + esc(p.para.map(clientName).join(", ")) : "Para todos"}</span><span class="grow"></span>${prx ? "" : `<span title="Clientes que lo han visto">👁 ${s.vistos}/${s.total}</span><span>❤️ ${s.gusta}</span>`}</footer>` }); };
+      foot: `<footer class="pf2 muted tiny"><span>${p.para && p.para.length ? "Para " + esc(p.para.map(clientName).join(", ")) : "Para todos"}</span><span class="grow"></span>${prx ? "" : `${reactBar(p.id, s.cnt, new Set(), false, s.names)}<span title="Clientes que lo han visto">👁 ${s.vistos}/${s.total}</span>`}</footer>` }); };
   shell("Comunidad", `<div class="pghead"><h1 class="ptitle">Comunidad <span class="cnt">${pub.length}</span></h1><button class="btn pri" data-act="post-new">+ Publicar</button></div>
   <p class="small muted" style="margin:-6px 0 4px">Tu tablón para todos los clientes: píldoras educativas, enlaces, mensajes motivadores y avisos. Les aparece en «Hoy» con aviso de novedad.</p>
   <div class="tbgrid"><div class="tbcol">${orden.length ? orden.map(card).join("") : `<div class="card empty">Todavía no has publicado nada. Empieza con una píldora educativa o un mensaje para el equipo.</div>`}</div>
@@ -445,14 +459,13 @@ async function viewHoy() {
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${tbh}
   <div class="card"><h2>Para hoy</h2><div class="list">
-    ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>Día de descanso</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : "Recupera bien"}</span></span></div>`}
-    ${hoy.some(x => x.tipo === "formulario" && (x.contenido || {}).wellness) ? "" : `<button class="it" data-act="wellness"><span class="itl"><i class="dot dot-formulario"></i><span><b>Cuestionario diario</b><br><span class="tiny muted">1 minuto · sueño y cómo te sientes</span></span></span>${wl[0] ? `<span class="done">Hecho ✓</span>` : `<span class="chip acc">Rellenar</span>`}</button>`}
-    <button class="it" data-act="peso"><span class="itl"><i class="dot dot-nota"></i><span><b>Peso</b><br><span class="tiny muted">${lastW ? `Último: ${fmt(lastW.kg)} kg (${esc(fdate(lastW.fecha))})` : "En ayunas, después de ir al baño"}</span></span></span>${lastW && lastW.fecha === t ? `<span class="done">Hecho ✓</span>` : `<span class="chip">Apuntar</span>`}</button>
+    ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>${prox[0] || atras.length ? "Día de descanso" : "Nada programado para hoy"}</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : atras.length ? "Recupera bien" : "Cuando Adrián te programe algo, aparecerá aquí"}</span></span></div>`}
   </div></div>
   ${atras.length ? `<div class="card"><h2>Pendiente de días anteriores</h2><div class="list">${atras.map(asigRow).join("")}</div></div>` : ""}
   ${prox.length ? `<div class="card"><h2>Próximos días <small><a href="#cal">Ver calendario</a></small></h2><div class="list">${prox.map(asigRow).join("")}</div></div>` : ""}
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
-  ${rp[0] ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.info || "📄"}</span><span class="grow"><span class="tiny muted">Tu último informe · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Informe semanal")}</b></span><span class="chev">›</span></button>` : ""}`);
+  ${rp[0] ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.info || "📄"}</span><span class="grow"><span class="tiny muted">Tu último informe · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Informe semanal")}</b></span><span class="chev">›</span></button>` : ""}
+  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button><button class="btn sm" data-act="wellness">Cómo estoy hoy${wl[0] ? " ✓" : ""}</button></div>`);
 }
 async function openItem(id) {
   const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
@@ -2199,7 +2212,7 @@ document.addEventListener("click", async ev => {
       case "post-pin": { const p = (await q(sb.from("posts").select("fijado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ fijado: !p.fijado }).eq("id", id)); toast(p.fijado ? "Quitado de fijados" : "Fijado arriba"); route(); break; }
       case "post-hide": { const p = (await q(sb.from("posts").select("publicado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ publicado: !p.publicado }).eq("id", id)); toast(p.publicado ? "Oculto para los clientes" : "Visible otra vez"); route(); break; }
       case "post-del": if (confirmar(a)) { await q(sb.from("posts").delete().eq("id", id)); toast("Publicación borrada"); route(); } break;
-      case "post-like": postLike(a); break;
+      case "post-react": postReact(a); break;
       // cliente
       case "wellness": { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); openWellness(r[0]); break; }
       case "qscale": { const h = $("#q" + a.dataset.q); if (h) h.value = a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
