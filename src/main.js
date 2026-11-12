@@ -520,7 +520,7 @@ async function savePost(f) {
 async function viewHoy() {
   loading("Hoy");
   const t = today();
-  const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
+  const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana,leido_en").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
   const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy();
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
@@ -528,6 +528,7 @@ async function viewHoy() {
   ${S.needCom ? `<button class="card com-cta" data-act="go" data-h="comienzo"><b>Antes de empezar: tu cuestionario inicial</b><span class="small">10 minutos para que Adrián prepare tu plan. Pulsa aquí →</span></button>` : ""}
   <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(w.nombre)}</span>${esc(w.bloque)}${w.tipo && w.tipo !== "carga" ? " · " + esc(cap(w.tipo)) : ""}</div>${w.foco ? `<p class="hfoco">${esc(w.foco)}</p>` : ""}` : ""}</section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
+  ${rp[0] && !rp[0].leido_en ? `<button class="card revnew" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="pnew">Nueva</span> <span class="tiny">Revisión del ${esc(fdate(rp[0].fecha, { day: "numeric", month: "long" }))}</span><br><b>${esc(rp[0].titular || "Tu revisión semanal")}</b><br><span class="tiny muted">Toca para leerla</span></span><span class="chev">›</span></button>` : ""}
   ${tbh}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>${prox[0] || atras.length ? "Día de descanso" : "Nada programado para hoy"}</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : atras.length ? "Recupera bien" : "Cuando Adrián te programe algo, aparecerá aquí"}</span></span></div>`}
@@ -535,7 +536,7 @@ async function viewHoy() {
   ${atras.length ? `<div class="card"><h2>Pendiente de días anteriores</h2><div class="list">${atras.map(asigRow).join("")}</div></div>` : ""}
   ${prox.length ? `<div class="card"><h2>Próximos días <small><a href="#cal">Ver calendario</a></small></h2><div class="list">${prox.map(asigRow).join("")}</div></div>` : ""}
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
-  ${rp[0] ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.info || "📄"}</span><span class="grow"><span class="tiny muted">Tu último informe · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Informe semanal")}</b></span><span class="chev">›</span></button>` : ""}
+  ${rp[0] && rp[0].leido_en ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="tiny muted">Tu última revisión · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Revisión semanal")}</b></span><span class="chev">›</span></button>` : ""}
   <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button><button class="btn sm" data-act="wellness">Cómo estoy hoy${wl[0] ? " ✓" : ""}</button></div>`);
 }
 async function openItem(id) {
@@ -831,8 +832,8 @@ async function saveFotos(f) {
 
 /* ================= Cliente: Informes ================= */
 async function viewInformes() {
-  loading("Informes"); const rp = await q(sb.from("reports").select("id,fecha,semana,titular").order("fecha", { ascending: false }).limit(52));
-  shell("Tus informes", rp.length ? `<div class="card"><div class="list">${rp.map(r => `<button class="it" data-act="go" data-h="informe-${esc(encodeURIComponent(r.id))}"><span><b>${esc(r.titular || "Informe semanal")}</b><br><span class="tiny muted">${esc(fdate(r.fecha, { day: "numeric", month: "long" }))}${r.semana ? " · " + esc(r.semana) : ""}</span></span><span aria-hidden="true">›</span></button>`).join("")}</div></div>` : `<div class="empty">Aquí aparecerán los informes semanales que te envíe Adrián.</div>`);
+  loading("Revisiones"); const rp = await q(sb.from("reports").select("id,fecha,semana,titular,leido_en,adjuntos,video_url,respuesta").order("fecha", { ascending: false }).limit(52));
+  shell("Tus revisiones", `<p class="small muted" style="margin:0">Cada domingo Adrián revisa tu semana y te deja aquí su análisis, tu foco para la semana siguiente y, a veces, un vídeo o un archivo.</p>${rp.length ? `<div class="card"><div class="list">${rp.map(r => `<button class="it" data-act="go" data-h="informe-${esc(encodeURIComponent(r.id))}"><span class="grow"><b>${esc(r.titular || "Revisión semanal")}</b><br><span class="tiny muted">${esc(fdate(r.fecha, { day: "numeric", month: "long" }))}${r.semana ? " · " + esc(r.semana) : ""}${(r.adjuntos || []).length || r.video_url ? " · 📎 " + ((r.adjuntos || []).length + (r.video_url ? 1 : 0)) : ""}${r.respuesta ? " · Respondida" : ""}</span></span>${r.leido_en ? `<span aria-hidden="true" class="chev">›</span>` : `<span class="pnew">Nueva</span>`}</button>`).join("")}</div></div>` : `<div class="card empty">Aquí aparecerán las revisiones que te haga Adrián cada domingo.</div>`}`, { back: "hoy" });
 }
 function reportHTML(r) {
   const box = (cls, title, items) => { const it = (items || []).map(splitItem).filter(i => i.t); return it.length ? `<div class="box ${cls}"><h3>${title}</h3><ul>${it.map(i => `<li><b>${esc(i.t)}</b>${i.p ? `<span>${esc(i.p)}</span>` : ""}</li>`).join("")}</ul></div>` : ""; };
@@ -842,12 +843,18 @@ function reportHTML(r) {
   ${box("ok", "Lo que has hecho bien", r.logros)}${box("acc", "A mejorar", r.mejorar)}${box("dark", "A tener en cuenta", r.tener_en_cuenta)}
   ${foco.length ? `<div class="card"><h2>Tu foco para la semana que viene</h2><ol class="steps">${foco.map(i => `<li><div><b>${esc(i.t)}</b>${i.p ? `<span>${esc(i.p)}</span>` : ""}</div></li>`).join("")}</ol></div>` : ""}
   ${r.mensaje ? `<div class="card"><h2>Mensaje de Adrián</h2><p class="small" style="margin:0;white-space:pre-wrap">${esc(r.mensaje)}</p></div>` : ""}
-  <p class="tiny muted" style="text-align:center">¿Quieres saber más sobre algún punto? Pregúntale a Adrián.</p>`;
+  `;
 }
 async function viewInforme(id) {
   loading("Informe"); const rows = await q(sb.from("reports").select("*").eq("id", id).limit(1)); const r = rows[0];
   if (!r) { shell("Informe", `<div class="empty">Este informe no está disponible.</div>`, { back: "informes" }); return; }
-  shell("Tu semana", reportHTML(r), { back: "informes", sub: `${fdate(r.fecha, { day: "numeric", month: "long" })}${r.semana ? " · " + r.semana : ""}` });
+  const adj = r.adjuntos || []; let urls = {};
+  if (adj.length) { try { const { data } = await sb.storage.from("revisiones").createSignedUrls(adj.map(a => a.path), 3600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); } catch { } }
+  const vid = safeUrl(r.video_url);
+  const media = (vid || adj.length) ? `<div class="card"><h2>Material de la revisión</h2><div class="adjv">${vid ? `<a class="plink" href="${esc(vid)}" target="_blank" rel="noopener noreferrer"><span>🎬 Vídeo de Adrián</span><b>Ver vídeo ↗</b></a>` : ""}${adj.map(a => { const u = urls[a.path]; if (!u) return ""; if (/^image/.test(a.tipo)) return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" class="adjimg"><img src="${esc(u)}" alt="${esc(a.nombre)}" loading="lazy"></a>`; if (/^video/.test(a.tipo)) return `<video controls playsinline preload="metadata" src="${esc(u)}"></video>`; if (/^audio/.test(a.tipo)) return `<div class="adja"><span>🎙️ ${esc(a.nombre)}</span><audio controls preload="none" src="${esc(u)}"></audio></div>`; return `<a class="plink" href="${esc(u)}" target="_blank" rel="noopener noreferrer"><span>${adjIco(a.tipo)} ${esc(a.nombre)}</span><b>Abrir ↗</b></a>`; }).join("")}</div></div>` : "";
+  const resp = `<div class="card"><h2>¿Algo que comentar?</h2><p class="tiny muted" style="margin:0 0 8px">Tu respuesta le llega a Adrián junto a esta revisión.</p>${r.respuesta ? `<div class="rresp mine"><b>Tu respuesta</b> <span class="tiny muted">${esc(relTime(r.respondido_en))}</span><p>${esc(r.respuesta)}</p></div>` : ""}<textarea id="rev-r" maxlength="3000" placeholder="Dudas, cómo te has sentido, algo que quieras cambiar…">${esc(r.respuesta || "")}</textarea><button class="btn pri block" style="margin-top:10px" data-act="rev-resp" data-id="${esc(r.id)}">${r.respuesta ? "Actualizar respuesta" : "Enviar a Adrián"}</button></div>`;
+  shell("Tu revisión", reportHTML(r) + media + resp, { back: "informes", sub: `${fdate(r.fecha, { day: "numeric", month: "long" })}${r.semana ? " · " + r.semana : ""}` });
+  if (!r.leido_en) { try { await q(sb.rpc("revision_leida", { p_id: r.id })); } catch { } }
 }
 
 /* ================= Perfil ================= */
@@ -855,7 +862,7 @@ async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
   const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await backupCard() : "";
   shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
-  <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis informes</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
+  <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
 }
@@ -1051,7 +1058,7 @@ async function newExercisesFrom(c) { // añade a la librería los ejercicios esc
 async function viewInicio() {
   loading("Inicio"); const t = today(); const sinceTs = new Date(Date.now() - 7 * 864e5).toISOString();
   const WKC = WK.map(([k]) => k).join(",");
-  const [cl, wo, wl, ws, as, asAll, ev, leads, onb, drafts] = await Promise.all([loadClients(),
+  const [cl, wo, wl, ws, as, asAll, ev, leads, onb, drafts, resp] = await Promise.all([loadClients(),
     q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)),
     q(sb.from("wellness").select(`client_id,fecha,created_at,molestia_zona,molestia_0a10,${WKC}`).gte("created_at", sinceTs)),
     q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)),
@@ -1060,11 +1067,11 @@ async function viewInicio() {
     q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha")),
     q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []),
     q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
-    q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => [])]);
+    q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => [])]);
   const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
   const hasta = cid => asAll.filter(x => x.client_id === cid).map(x => x.fecha).sort().pop();
-  const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] || "Tarea" }))].filter(a => a.ts).sort((a, b) => b.ts.localeCompare(a.ts));
+  const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] || "Tarea" })), ...resp.map(x => ({ c: x.client_id, ts: x.respondido_en, t: "Ha respondido a su revisión", k: "Revisión" }))].filter(a => a.ts).sort((a, b) => b.ts.localeCompare(a.ts));
   const ultimo = cid => (act.find(a => a.c === cid) || {}).ts;
   const well7 = cid => { const v = wl.filter(w => w.client_id === cid).map(wellIdx).filter(x => x != null); return v.length ? avg(v) : null; };
   // ---- Lo que requiere atención, por prioridad
@@ -1074,6 +1081,7 @@ async function viewInicio() {
   activos.forEach(c => { const v = wl.filter(w => w.client_id === c.id && w.fecha >= addDays(t, -3)).map(wellIdx).filter(x => x != null); if (v.length && avg(v) < 2.5) at.push({ p: 1, k: "bad", c: c.id, t: "Bienestar bajo los últimos días", s: `${c.nombre} · ${fmt(avg(v), 1)} de 5`, a: go(c.id, "evo"), b: "Ver" }); });
   leads.filter(l => l.estado === "nuevo").forEach(l => at.push({ p: 2, k: "acc", c: null, n: l.nombre, t: "Nueva solicitud de contacto", s: `${l.nombre} · ${l.objetivo || "sin objetivo"} · ${relTime(l.created_at)}`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Responder" }));
   onb.forEach(o => at.push({ p: 3, k: "acc", c: o.client_id, t: "Cuestionario inicial sin revisar", s: `${clientName(o.client_id)} · ${relTime(o.enviado_en)}`, a: `data-act="go-inicial" data-cid="${esc(o.client_id)}"`, b: "Revisar" }));
+  resp.forEach(r => at.push({ p: 2, k: "info", c: r.client_id, t: "Ha respondido a su revisión", s: `${clientName(r.client_id)} · ${relTime(r.respondido_en)}`, a: go(r.client_id, "informes"), b: "Leer" }));
   activos.forEach(c => { const f = hasta(c.id); const d = f ? daysBetween(t, f) : null; if (d == null || d <= 3) at.push({ p: 4, k: "warn", c: c.id, t: d == null ? "No tiene nada programado" : d < 0 ? `Sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`, s: c.nombre, a: `data-act="go-plan" data-cid="${esc(c.id)}"`, b: "Planificar" }); });
   activos.filter(c => c.user_id && !ultimo(c.id)).forEach(c => at.push({ p: 5, k: "warn", c: c.id, t: "Sin registrar nada en 7 días", s: c.nombre, a: go(c.id, "plan"), b: "Ver" }));
   drafts.forEach(r => at.push({ p: 6, k: "info", c: r.client_id, t: "Informe en borrador", s: `${clientName(r.client_id)} · ${fdate(r.fecha, { day: "numeric", month: "short" })}`, a: go(r.client_id, "informes"), b: "Publicar" }));
@@ -1398,7 +1406,7 @@ async function saveNewClient(f) {
 }
 
 /* ================= Entrenador: ficha del cliente ================= */
-const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["inicial", "Cuestionario inicial", "doc"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Informes", "doc"], ["cuenta", "Cuenta", "key"]];
+const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["inicial", "Cuestionario inicial", "doc"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Revisiones", "doc"], ["cuenta", "Cuenta", "key"]];
 async function viewCoachClient(cid) {
   if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; }
   const tab = S.coach.tab || "plan";
@@ -1772,8 +1780,8 @@ function secRow(s = {}) { return `<div class="card" data-s style="display:flex;f
 /* ---- Informes y Cuenta ---- */
 async function tabInformes(c) {
   const rp = await q(sb.from("reports").select("*").eq("client_id", c.id).order("fecha", { ascending: false }).limit(30));
-  return `<div class="row" style="flex-wrap:wrap"><button class="btn pri" data-act="rep-new" data-auto="1" title="Se rellena con los datos de la semana. Nada se publica hasta que pulses «Publicar».">+ Nuevo informe</button><button class="btn" data-act="rep-new" data-auto="0">En blanco</button></div>
-  ${rp.length ? rp.map(r => `<div class="card"><h2>${esc(r.titular || "Informe")} <small>${esc(fdate(r.fecha))}${r.semana ? " · " + esc(r.semana) : ""}</small></h2><div class="row" style="flex-wrap:wrap"><span class="chip ${r.publicado ? "ok" : "warn"}">${r.publicado ? "Visible para el cliente" : "Borrador (no lo ve)"}</span><span class="tag tag-${r.autor === "adrian" ? "workout" : "formulario"}">${r.autor === "adrian" ? "Hecho por ti" : "Hecho por Claude"}</span><span class="grow"></span><button class="btn sm" data-act="ver-informe" data-id="${esc(r.id)}">Vista del cliente</button><button class="btn sm" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button><button class="btn sm ${r.publicado ? "" : "pri"}" data-act="publicar" data-id="${esc(r.id)}" data-v="${r.publicado ? "0" : "1"}">${r.publicado ? "Ocultar" : "Publicar"}</button></div></div>`).join("") : `<div class="empty">Aún no hay informes.</div>`}`;
+  return `<div class="row" style="flex-wrap:wrap"><button class="btn pri" data-act="rep-new" data-auto="1" title="Se rellena con los datos de la semana. Nada se publica hasta que pulses «Publicar».">+ Nueva revisión</button><button class="btn" data-act="rep-new" data-auto="0">En blanco</button></div>
+  ${rp.length ? rp.map(r => `<div class="card"><h2>${esc(r.titular || "Revisión")} <small>${esc(fdate(r.fecha))}${r.semana ? " · " + esc(r.semana) : ""}</small></h2><div class="row" style="flex-wrap:wrap"><span class="chip ${r.publicado ? "ok" : "warn"}">${r.publicado ? "Visible para el cliente" : "Borrador (no lo ve)"}</span><span class="tag tag-${r.autor === "adrian" ? "workout" : "formulario"}">${r.autor === "adrian" ? "Hecho por ti" : "Hecho por Claude"}</span>${r.publicado ? `<span class="chip ${r.leido_en ? "ok" : ""}">${r.leido_en ? "Leída " + esc(relTime(r.leido_en)) : "Sin leer"}</span>` : ""}${(r.adjuntos || []).length ? `<span class="chip">📎 ${(r.adjuntos || []).length}</span>` : ""}<span class="grow"></span><button class="btn sm" data-act="ver-informe" data-id="${esc(r.id)}">Vista del cliente</button><button class="btn sm" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button><button class="btn sm ${r.publicado ? "" : "pri"}" data-act="publicar" data-id="${esc(r.id)}" data-v="${r.publicado ? "0" : "1"}">${r.publicado ? "Ocultar" : "Publicar"}</button></div>${r.respuesta ? `<div class="rresp"><b>Respuesta de ${esc(clientName(r.client_id))}</b> <span class="tiny muted">${esc(relTime(r.respondido_en))}</span><p>${esc(r.respuesta)}</p></div>` : ""}</div>`).join("") : `<div class="empty">Aún no hay revisiones.</div>`}`;
 }
 const repLines = a => (a || []).map(x => typeof x === "string" ? x : `${x.t || ""}${x.p ? " | " + x.p : ""}`).join("\n");
 async function autoReport(cid, fin) {
@@ -1814,29 +1822,47 @@ async function openReportEditor(id, auto) {
   const cid = S.coach.cid; let r;
   if (id) r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0];
   else { const t = today(); const fin = dow(t) === 7 ? t : addDays(monday(t), -1); r = auto ? await autoReport(cid, fin) : { fecha: fin, semana: "", titular: "", kpis: {}, logros: [], mejorar: [], tener_en_cuenta: [], foco: [], mensaje: "", mostrar_peso: true }; }
-  if (!r) return;
+  if (!r) return; S.repAdjOld = (r.adjuntos || []).map(a => a.path);
   const kp = Object.entries(r.kpis || {}); while (kp.length < 4) kp.push(["", { valor: "", nota: "" }]);
-  sheet(`<h2>${id ? "Editar informe" : "Nuevo informe"}</h2>${auto && !id ? `<p class="tiny muted" style="margin:0">Relleno automático con los datos de la semana (${esc(fdate(addDays(r.fecha, -6)))}–${esc(fdate(r.fecha))}). Revisa y escribe lo que quieras; nada se publica hasta que pulses Publicar.</p>` : ""}
+  sheet(`<h2>${id ? "Editar revisión" : "Nueva revisión"}</h2>${auto && !id ? `<p class="tiny muted" style="margin:0">Relleno automático con los datos de la semana (${esc(fdate(addDays(r.fecha, -6)))}–${esc(fdate(r.fecha))}). Revisa y escribe lo que quieras; nada se publica hasta que pulses Publicar.</p>` : ""}
   <form id="f-rep" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:12px">
   <div class="grid3"><div class="f"><label>Fecha (fin de semana)</label><input name="fecha" type="date" value="${esc(r.fecha)}" required></div><div class="f"><label>Semana</label><input name="semana" value="${esc(r.semana || "")}" placeholder="Mesociclo 1 · S3"></div><div class="f"><label>Titular</label><input name="titular" value="${esc(r.titular || "")}" required></div></div>
   <div><div class="small" style="font-weight:700;margin-bottom:6px">Datos destacados</div>${kp.map(([k, v]) => `<div class="kprow" data-kp><input name="k_l" value="${esc(k)}" placeholder="Etiqueta (Entrenos)"><input name="k_v" value="${esc(v && v.valor != null ? v.valor : v || "")}" placeholder="Valor (4/4)"><input name="k_n" value="${esc((v && v.nota) || "")}" placeholder="Nota (100 %)"></div>`).join("")}</div>
   <p class="tiny muted" style="margin:0">Una línea por punto. Formato: <b>frase corta | explicación sencilla</b> (la explicación es opcional).</p>
   <div class="grid2"><div class="f"><label>Lo que ha hecho bien</label><textarea name="logros">${esc(repLines(r.logros))}</textarea></div><div class="f"><label>A mejorar</label><textarea name="mejorar">${esc(repLines(r.mejorar))}</textarea></div><div class="f"><label>A tener en cuenta</label><textarea name="tener">${esc(repLines(r.tener_en_cuenta))}</textarea></div><div class="f"><label>Foco para la semana que viene</label><textarea name="foco">${esc(repLines(r.foco))}</textarea></div></div>
   <div class="f"><label>Mensaje</label><textarea name="mensaje" style="min-height:90px">${esc(r.mensaje || "")}</textarea></div>
+  <div class="f"><label>Vídeo de la revisión <span class="opt-l">enlace opcional (YouTube, Loom, Drive…)</span></label><input name="video_url" type="url" inputmode="url" value="${esc(r.video_url || "")}" placeholder="https://…"></div>
+  <div class="f"><label>Archivos <span class="opt-l">PDF, fotos, vídeo o audio · máx. 50 MB cada uno</span></label><div class="adjl" id="rep-adj">${(r.adjuntos || []).map(a => `<div class="adji" data-path="${esc(a.path)}" data-nombre="${esc(a.nombre)}" data-tipo="${esc(a.tipo)}" data-size="${esc(a.size || 0)}"><span>${adjIco(a.tipo)}</span><b>${esc(a.nombre)}</b><button type="button" class="btn ghost sm" data-act="adj-del" aria-label="Quitar">✕</button></div>`).join("")}</div><input type="file" name="archivos" multiple accept="application/pdf,image/*,video/*,audio/*"></div>
   <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="mostrar_peso" ${r.mostrar_peso !== false ? "checked" : ""}> Mostrar el peso al cliente</label>
   <div class="row" style="flex-wrap:wrap"><button class="btn pri" name="pub" value="0">Guardar borrador</button><button class="btn dark" name="pub" value="1">Guardar y publicar</button><span class="grow"></span>${id ? `<button type="button" class="btn ghost sm bad" data-act="rep-del" data-id="${esc(id)}">Borrar</button>` : ""}</div></form>`, true);
 }
 async function saveReport(f, pub) {
   const cid = S.coach.cid; const L = n => lines(f[n].value);
   const kpis = {}; f.querySelectorAll("[data-kp]").forEach(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); if (g("k_l")) kpis[g("k_l")] = { valor: g("k_v"), nota: g("k_n") }; });
-  const row = { client_id: cid, fecha: f.fecha.value, semana: f.semana.value.trim(), titular: f.titular.value.trim(), kpis, logros: L("logros"), mejorar: L("mejorar"), tener_en_cuenta: L("tener"), foco: L("foco"), mensaje: f.mensaje.value.trim(), mostrar_peso: f.mostrar_peso.checked };
+  const vurl = f.video_url.value.trim(); if (vurl && !safeUrl(vurl)) { toast("El enlace del vídeo debe empezar por https://"); return; }
+  const row = { client_id: cid, fecha: f.fecha.value, semana: f.semana.value.trim(), titular: f.titular.value.trim(), kpis, logros: L("logros"), mejorar: L("mejorar"), tener_en_cuenta: L("tener"), foco: L("foco"), mensaje: f.mensaje.value.trim(), mostrar_peso: f.mostrar_peso.checked, video_url: vurl || null };
   if (pub) { row.publicado = true; row.publicado_en = new Date().toISOString(); }
+  const btns = [...f.querySelectorAll("button[name=pub]")]; btns.forEach(b => b.disabled = true);
   try {
-    if (f.dataset.id) await q(sb.from("reports").update(row).eq("id", f.dataset.id));
-    else { let id = `${cid}-${row.fecha}`; const ex = await q(sb.from("reports").select("id").eq("id", id)); if (ex.length) id += "-" + Math.random().toString(36).slice(2, 5); await q(sb.from("reports").insert({ id, autor: "adrian", publicado: !!pub, ...row })); }
-    sheet(""); toast(pub ? "Informe publicado: ya lo ve el cliente" : "Borrador guardado"); refreshClient();
-  } catch (e) { toast(errMsg(e)); }
+    let id = f.dataset.id;
+    if (!id) { id = `${cid}-${row.fecha}`; const ex = await q(sb.from("reports").select("id").eq("id", id)); if (ex.length) id += "-" + Math.random().toString(36).slice(2, 5); }
+    const adj = [...f.querySelectorAll(".adji")].map(e => ({ path: e.dataset.path, nombre: e.dataset.nombre, tipo: e.dataset.tipo, size: +e.dataset.size || 0 }));
+    const files = [...(f.archivos.files || [])];
+    for (const [k, file] of files.entries()) {
+      if (file.size > 52428800) { toast(`«${file.name}» pesa más de 50 MB`); continue; }
+      btns[0].textContent = `Subiendo ${k + 1} de ${files.length}…`;
+      const img = /^image\//.test(file.type) && !/heic/i.test(file.type); const blob = img ? await shrink(file, 2000, .85) : file;
+      const limpio = file.name.normalize("NFD").replace(/[^\w.\-]+/g, "_").slice(-80); const path = `${cid}/${id}/${uid()}-${img ? limpio.replace(/\.\w+$/, "") + ".jpg" : limpio}`;
+      const { error } = await sb.storage.from("revisiones").upload(path, blob, { contentType: img ? "image/jpeg" : file.type || "application/octet-stream", upsert: false }); if (error) throw error;
+      adj.push({ path, nombre: file.name, tipo: img ? "image/jpeg" : file.type, size: blob.size });
+    }
+    row.adjuntos = adj;
+    if (f.dataset.id) await q(sb.from("reports").update(row).eq("id", id)); else await q(sb.from("reports").insert({ id, autor: "adrian", publicado: !!pub, ...row }));
+    const quitados = (S.repAdjOld || []).filter(p => !adj.some(a => a.path === p)); if (quitados.length) await sb.storage.from("revisiones").remove(quitados);
+    sheet(""); toast(pub ? "Revisión publicada: ya la ve el cliente" : "Borrador guardado"); refreshClient();
+  } catch (e) { toast(errMsg(e)); btns.forEach(b => b.disabled = false); btns[0].textContent = "Guardar borrador"; }
 }
+const adjIco = t => /pdf/.test(t) ? "📄" : /^image/.test(t) ? "🖼️" : /^video/.test(t) ? "🎬" : /^audio/.test(t) ? "🎙️" : "📎";
 function tabCuenta(c, pl) {
   return `<form id="f-cuenta" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Cuenta</h2><div class="f"><label for="cu-e">Email de acceso</label><input id="cu-e" name="email" type="email" value="${esc(c.email)}"></div><div class="f"><label for="cu-s">Estado</label><select id="cu-s" name="estado">${[["activo", "Activo"], ["pausa", "En pausa"], ["baja", "Baja"]].map(([v, l]) => `<option value="${v}" ${c.estado === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">«Baja» le quita el acceso a la app al momento.</p>
   <h2 style="margin-top:6px">Qué progreso ve</h2><div class="row">${[["fuerza", "Cargas"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].map(([k, l]) => `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="pv" value="${k}" ${(pl.progreso_visible || []).includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</div><div class="row"><span class="grow"></span><button class="btn pri">Guardar cambios</button></div></form>
@@ -2433,6 +2459,8 @@ document.addEventListener("click", async ev => {
       case "ex-hist": openHist(a.dataset.n); break;
       case "rec-w": S.coach.recW = +a.dataset.n; refreshClient(); break;
       case "rep-new": openReportEditor(null, a.dataset.auto === "1"); break;
+      case "adj-del": a.closest(".adji").remove(); break;
+      case "rev-resp": { const ta = $("#rev-r"); try { await q(sb.rpc("revision_responder", { p_id: a.dataset.id, p_texto: ta.value })); toast(ta.value.trim() ? "Respuesta enviada a Adrián" : "Respuesta borrada"); route(); } catch (e) { toast(errMsg(e)); } break; }
       case "rep-edit": openReportEditor(id, false); break;
       case "rep-del": if (confirmar(a)) { await q(sb.from("reports").delete().eq("id", id)); sheet(""); toast("Informe borrado"); refreshClient(); } break;
       case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r) sheet(`<h2>Vista del cliente</h2>${reportHTML(r)}<button class="btn" data-act="close">Cerrar</button>`); break; }
