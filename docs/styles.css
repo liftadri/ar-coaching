@@ -1275,3 +1275,18 @@ a.rowcard{text-decoration:none;color:inherit}
 .c2 .cleg{gap:8px 14px}
 .c2 .cleg-t + .cleg-s::before{margin:0}
 @media (max-width:700px){.cal .cleg-t,.cal .cleg-s{display:contents}}
+/* Estado del sistema */
+.sysal{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:16px;margin:0 0 14px;border:1px solid var(--line);background:var(--surface)}
+.sysal .grow{display:flex;flex-direction:column;gap:2px;flex:1;min-width:200px}
+.sysal .grow span{font-size:13px;color:var(--muted)}
+.sysal .grow b + span{margin-bottom:4px}
+.sysal .ricon{font-size:20px}
+.sysal.bad{background:color-mix(in srgb,var(--bad) 9%,var(--surface));border-color:color-mix(in srgb,var(--bad) 35%,transparent)}
+.sysal.bad b{color:color-mix(in srgb,var(--bad) 85%,#000)}
+.sysal.warn{background:color-mix(in srgb,var(--warn,#c98a12) 10%,var(--surface));border-color:color-mix(in srgb,var(--warn,#c98a12) 35%,transparent)}
+.sysb{margin-top:10px}
+.sysbar{height:8px;border-radius:5px;background:color-mix(in srgb,var(--muted) 14%,transparent);overflow:hidden;margin-top:6px}
+.sysbar i{display:block;height:100%;border-radius:5px;background:var(--ok)}
+.sysbar.warn i{background:var(--warn,#c98a12)}.sysbar.bad i{background:var(--bad)}
+.alr.warn{color:color-mix(in srgb,var(--warn,#c98a12) 80%,#000)}
+.alr.warn{background:color-mix(in srgb,var(--warn,#c98a12) 10%,transparent);border-radius:10px;padding:8px 10px;margin-top:6px}

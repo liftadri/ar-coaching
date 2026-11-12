@@ -778,6 +778,26 @@ async function habitosCoach(cid, pl) {
     return `<tr><td>${esc(h)}</td>${D.map(d => `<td class="n"><i class="hd${ds.includes(d) ? " on" : ""}"></i></td>`).join("")}<td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td><td class="n">${habStreak(ds, t) ? "🔥 " + habStreak(ds, t) : "—"}</td></tr>`; }).join("")}</tbody></table></div></div>`;
 }
 
+/* ================= Estado del sistema (espacio, copias) ================= */
+async function sysEstado() { try { const { data, error } = await sb.rpc("estado_sistema"); if (error) throw error; return data; } catch { return null; } }
+const mb = b => b >= 1073741824 ? (b / 1073741824).toFixed(2).replace(".", ",") + " GB" : Math.max(0.1, b / 1048576).toFixed(1).replace(".", ",") + " MB";
+async function sysBanner() {
+  const e = await sysEstado(); let pushOn = "on"; try { pushOn = await pushEstado(); } catch { }
+  const al = e && e.nivel > 0 ? (e.alertas || []).sort((a, b) => b.n - a.n) : [];
+  const ph = pushOn === "off" ? `<div class="sysal info"><span class="ricon">${ICON.bell}</span><span class="grow"><b>Activa los avisos urgentes en este móvil</b><span>Si te quedas sin espacio o fallan las copias, te llega una notificación.</span></span><button class="btn sm pri" data-act="push-on">Activar</button></div>` : "";
+  if (!al.length) return ph;
+  return `<div class="sysal ${e.nivel >= 2 ? "bad" : "warn"}" role="alert"><span class="ricon">${e.nivel >= 2 ? "🚨" : "⚠️"}</span><span class="grow">${al.map(a => `<b>${esc(a.t)}</b><span>${esc(a.d)}</span>`).join("")}</span><button class="btn sm" data-act="go" data-h="mas">Ver</button></div>${ph}`;
+}
+async function sysCard() {
+  const e = await sysEstado(); if (!e) return "";
+  const bar = (l, pct, used, tot) => `<div class="sysb"><div class="row" style="justify-content:space-between"><span class="small"><b>${l}</b></span><span class="tiny muted">${mb(used)} de ${tot} · ${String(pct).replace(".", ",")} %</span></div><div class="sysbar ${pct >= 85 ? "bad" : pct >= 70 ? "warn" : ""}"><i style="width:${Math.max(1.5, Math.min(100, pct))}%"></i></div></div>`;
+  const uc = e.ultima_copia ? relTime(e.ultima_copia) : "nunca";
+  return `<div class="card"><h2 class="hh">${ICON.evo}Estado del sistema ${e.nivel >= 2 ? `<span class="chip bad">Urgente</span>` : e.nivel ? `<span class="chip warn">Revisar</span>` : `<span class="chip ok">Todo bien</span>`}</h2>
+  ${bar("Datos", e.db_pct, e.db_bytes, "500 MB")}${bar("Fotos y archivos", e.files_pct, e.files_bytes, "1 GB")}
+  <p class="small" style="margin:10px 0 0">Última copia de seguridad: <b>${esc(uc)}</b></p>
+  ${(e.alertas || []).map(a => `<div class="alr ${a.n >= 2 ? "bad" : "warn"}">${a.n >= 2 ? "🚨" : "⚠"} <b>${esc(a.t)}</b> — ${esc(a.d)}</div>`).join("")}
+  <p class="tiny muted" style="margin:8px 0 0">Se revisa cada 10 minutos. Al 70 % te aviso; al 85 % o si fallan las copias, te llega un aviso urgente cada día.</p></div>`;
+}
 /* ================= Avisos (notificaciones push) ================= */
 const VAPID_PUB = "BEzch7JN7Vexv3QYdcwwkXmBn1BYTwDYqvvCUP4k039BnsbVjtQt-eEZP4_7bXTBFh05EADrcZ4rIe39d1OGEWU";
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -812,7 +832,8 @@ async function pushCardHoy() {
 async function pushCardPerfil() {
   const e = await pushEstado();
   const txt = { on: "Activados en este móvil", off: "Desactivados", denegado: "Bloqueados en los ajustes del móvil", ios: "Añade la app a la pantalla de inicio para activarlos", no: "Este navegador no los permite" }[e];
-  return `<div class="card"><h2 class="hh">${ICON.bell}Avisos</h2><div class="row" style="justify-content:space-between;flex-wrap:nowrap;gap:12px"><span class="small">${esc(txt)}</span>${e === "on" ? `<button class="btn sm" data-act="push-off">Desactivar</button>` : e === "off" ? `<button class="btn pri sm" data-act="push-on">Activar</button>` : ""}</div>${e === "denegado" ? `<p class="tiny muted" style="margin:8px 0 0">Para activarlos: Ajustes del móvil → Notificaciones → esta app.</p>` : ""}</div>`;
+  const co = S.me.role === "coach";
+  return `<div class="card"><h2 class="hh">${ICON.bell}${co ? "Tus avisos en este móvil" : "Avisos"}</h2>${co ? `<p class="tiny muted" style="margin:-4px 0 8px">Para enterarte al momento si falta espacio o fallan las copias.</p>` : ""}<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px 12px"><span class="small">${esc(txt)}</span><span class="row" style="gap:6px">${e === "on" && co ? `<button class="btn sm" data-act="push-test" data-cid="__coach">Probar</button>` : ""}${e === "on" ? `<button class="btn sm" data-act="push-off">Desactivar</button>` : e === "off" ? `<button class="btn pri sm" data-act="push-on">Activar</button>` : ""}</span></div>${e === "denegado" ? `<p class="tiny muted" style="margin:8px 0 0">Para activarlos: Ajustes del móvil → Notificaciones → esta app.</p>` : ""}</div>`;
 }
 async function pushCoachCard() {
   let v = {}; try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "push").limit(1)); v = (r[0] || {}).valor || {}; } catch { }
@@ -1294,7 +1315,7 @@ async function viewInforme(id) {
 /* ================= Perfil ================= */
 async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
-  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await pushCoachCard() + await backupCard() + await legalCard() : await pushCardPerfil();
+  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await sysCard() + await pushCardPerfil() + await pushCoachCard() + await backupCard() + await legalCard() : await pushCardPerfil();
   shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
   <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
@@ -1503,6 +1524,7 @@ async function viewInicio() {
     q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []),
     q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
     q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => [])]);
+  const sysHtml = await sysBanner();
   const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
   const hasta = cid => asAll.filter(x => x.client_id === cid).map(x => x.fecha).sort().pop();
@@ -1536,6 +1558,7 @@ async function viewInicio() {
   shell("Inicio", `<div class="home">
   <section class="hhead"><div><h1>${saludo}, Adrián</h1><p>${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p></div>
     <div class="hq"><button class="btn sm dark" data-act="new-client"><span class="plus">+</span>Cliente</button><button class="btn sm" data-act="go" data-h="lib-w-new">+ Workout</button><button class="btn sm" data-act="go" data-h="lib-p-new">+ Programa</button><button class="btn sm" data-act="go" data-h="lib">${ICON.lib}Librería</button></div></section>
+  ${sysHtml}
   <div class="kgrid">
     <button class="ktile" data-act="go" data-h="c"><span>Clientes activos</span><b>${activos.length}</b><em>${usanApp} usan la app</em></button>
     <div class="ktile"><span>Cumplimiento semanal</span><b class="${kc(semAvg)}">${semAvg == null ? "—" : semAvg + " %"}</b><div class="kbar"><i class="${kc(semAvg)}" style="width:${semAvg || 0}%"></i></div></div>
