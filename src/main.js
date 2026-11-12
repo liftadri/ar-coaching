@@ -179,6 +179,7 @@ const ICON = {
   t_med: svg('<path d="M3 15 15 3l6 6L9 21z"/><path d="M7 11l2 2M10 8l2 2M13 5l2 2"/>'),
   t_tarea: svg('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/>'),
   comunidad: svg('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a3 3 0 0 1 0 6M18 6a7 7 0 0 1 0 12"/>'),
+  euro: svg('<path d="M18 6.5A7 7 0 1 0 18 17.5"/><path d="M4 10h10M4 14h10"/>'),
   bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>'),
   hoy: svg('<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>'),
   cal: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
@@ -413,15 +414,15 @@ async function doNueva(f) {
 
 /* ================= Navegación ================= */
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
-const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["mas", "Perfil", "mas"]];
-const isCoachHash = h => ["inicio", "c", "lib", "tablon"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
+const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["cobros", "Cobros", "euro"], ["mas", "Perfil", "mas"]];
+const isCoachHash = h => ["inicio", "c", "lib", "tablon", "cobros"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
 function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; let h = t.scrollHeight; if (!t.value && t.placeholder) { t.value = t.placeholder; h = Math.max(h, t.scrollHeight); t.value = ""; } t.style.height = Math.min(Math.max(h + 2, 64), 460) + "px"; }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
   const v = S.view; document.body.classList.toggle("is-coach", coach);
   S.backTo = coach ? ((opts.crumb || []).filter(c => c[0]).slice(-1)[0] || [null])[0] : (opts.back || null);
   if (coach) {
-    const cur = v.startsWith("c") ? "c" : v.startsWith("lib") ? "lib" : v;
+    const cur = v === "c" || v.startsWith("c-") ? "c" : v.startsWith("lib") ? "lib" : v;
     const crumb = opts.crumb || [[null, title]];
     $("#app").innerHTML = `<header class="hnav"><a class="hlogo" href="#inicio" aria-label="Inicio"><img src="./logo.jpg" alt=""></a>
     <nav class="hmenu" aria-label="Secciones">${COACH_TABS.filter(t => t[0] !== "mas").map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
@@ -463,6 +464,7 @@ async function route() {
       if (h.startsWith("lib-r-")) return await viewLibRecipe(h.slice(6));
       if (h === "mas") return await viewMas();
       if (h === "tablon") return await viewTablonCoach();
+      if (h === "cobros") return await viewCobros();
       return await viewInicio();
     }
     if (h !== "tablon") await tablonUnread();
@@ -560,6 +562,60 @@ function asigRow(x) {
   const sub = [TIPOS[x.tipo], n ? n + " ejercicios" : "", x.fecha !== t ? (late ? "era para el " : "") + fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
   const btn = { workout: "Empezar", nota: "Leer", peso: "Apuntar", fotos: "Subir", medidas: "Medir", formulario: "Rellenar" }[x.tipo] || (late ? "Pendiente" : "Abrir");
   return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
+}
+
+/* ================= Cobros (todos los clientes) ================= */
+const PER = { mensual: 1, trimestral: 3, semestral: 6, anual: 12, "pago único": 0 };
+const addMonths = (d, n) => { const x = parseD(d); const day = x.getDate(); x.setDate(1); x.setMonth(x.getMonth() + n); const last = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate(); x.setDate(Math.min(day, last)); return iso(x); };
+const eur = v => v == null || v === "" ? "—" : Number(v).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: Number(v) % 1 ? 2 : 0 });
+async function viewCobros() {
+  loading("Cobros"); const t = today(); const m0 = t.slice(0, 7) + "-01", m1 = iso(new Date(+t.slice(0, 4), +t.slice(5, 7), 0));
+  const [cl, pays] = await Promise.all([q(sb.from("clients").select("id,nombre,estado,ficha").order("nombre")), q(sb.from("payments").select("*").order("fecha", { ascending: false }).limit(300))]);
+  S.coach.cobCl = cl;
+  const act = cl.filter(c => c.estado !== "baja");
+  const rows = act.map(c => { const p = (c.ficha || {}).pago || {}; const last = pays.find(x => x.client_id === c.id); return { c, p, last, prox: p.proximoCobro || "" }; });
+  const venc = rows.filter(r => r.prox && r.prox < t && num(r.p.cuota));
+  const semana = rows.filter(r => r.prox && r.prox >= t && r.prox <= addDays(t, 7));
+  const cobradoMes = pays.filter(x => x.fecha >= m0 && x.fecha <= m1).reduce((a, x) => a + (+x.importe || 0), 0);
+  const pendMes = rows.filter(r => r.prox && r.prox <= m1 && num(r.p.cuota)).reduce((a, r) => a + num(r.p.cuota), 0);
+  const mrr = rows.reduce((a, r) => { const k = PER[r.p.periodicidad || "mensual"]; return a + (k && num(r.p.cuota) ? num(r.p.cuota) / k : 0); }, 0);
+  const st = r => !r.prox ? `<span class="chip">Sin fecha</span>` : r.prox < t ? `<span class="chip bad">Vencido · ${esc(fdate(r.prox, { day: "numeric", month: "short" }))}</span>` : r.prox <= addDays(t, 7) ? `<span class="chip warn">${r.prox === t ? "Hoy" : esc(fdate(r.prox, { weekday: "short", day: "numeric", month: "short" }))}</span>` : `<span class="chip ok">${esc(fdate(r.prox, { day: "numeric", month: "short" }))}</span>`;
+  const orden = [...rows].sort((a, b) => (a.prox || "9999").localeCompare(b.prox || "9999"));
+  shell("Cobros", `<div class="pghead"><h1 class="ptitle">Cobros</h1><button class="btn pri" data-act="pay-new">+ Registrar pago</button></div>
+  <div class="kpis cob"><div class="ktile"><span>Cobrado este mes</span><b>${eur(cobradoMes)}</b><em>${(n => n === 1 ? "1 pago" : n + " pagos")(pays.filter(x => x.fecha >= m0).length)}</em></div><div class="ktile"><span>Pendiente este mes</span><b>${eur(pendMes)}</b><em>${(n => n === 1 ? "1 cobro" : n + " cobros")(rows.filter(r => r.prox && r.prox <= m1 && num(r.p.cuota)).length)}</em></div><div class="ktile ${venc.length ? "hot" : ""}"><span>Vencidos</span><b>${venc.length}</b><em>${venc.length ? eur(venc.reduce((a, r) => a + num(r.p.cuota), 0)) : "Todo al día"}</em></div><div class="ktile"><span>Ingreso mensual</span><b>${eur(Math.round(mrr))}</b><em>estimado con las cuotas</em></div></div>
+  <div class="card flat"><h2 class="hh" style="padding:16px 20px 12px;margin:0">${ICON.clientes}Clientes y próximos cobros <span class="cnt">${act.length}</span></h2><div class="tbl"><table class="htable cobt"><thead><tr><th>Cliente</th><th class="n">Cuota</th><th>Periodicidad</th><th>Método</th><th>Próximo cobro</th><th>Último pago</th><th></th></tr></thead><tbody>
+  ${orden.map(r => `<tr><td><span class="feedn">${avatar(r.c.nombre, "sm")}<a class="lnk" href="#c-${esc(encodeURIComponent(r.c.id))}">${esc(r.c.nombre)}</a></span></td><td class="n"><b>${num(r.p.cuota) ? eur(r.p.cuota) : "—"}</b></td><td>${esc(cap(r.p.periodicidad || "mensual"))}</td><td>${esc(r.p.metodo || "—")}</td><td>${st(r)}</td><td class="tiny muted">${r.last ? `${esc(fdate(r.last.fecha, { day: "numeric", month: "short" }))} · ${eur(r.last.importe)}` : "—"}</td><td class="n"><div class="row" style="flex-wrap:nowrap;gap:6px;justify-content:flex-end"><button class="btn sm ${r.prox && r.prox <= addDays(t, 7) ? "pri" : ""}" data-act="pay-new" data-cid="${esc(r.c.id)}">Cobrado</button><button class="btn sm ghost" data-act="pay-cfg" data-cid="${esc(r.c.id)}">Editar</button></div></td></tr>`).join("") || `<tr><td colspan="7" class="muted">Sin clientes activos.</td></tr>`}</tbody></table></div></div>
+  <div class="card flat"><h2 class="hh" style="padding:16px 20px 12px;margin:0">${ICON.doc}Historial de pagos <span class="cnt">${pays.length}</span></h2><div class="tbl"><table class="htable payh"><thead><tr><th>Fecha</th><th>Cliente</th><th>Concepto</th><th>Método</th><th class="n">Importe</th><th></th></tr></thead><tbody>
+  ${pays.slice(0, 80).map(x => `<tr><td>${esc(fdate(x.fecha, { day: "numeric", month: "short", year: "numeric" }))}</td><td>${esc(clientName(x.client_id))}</td><td>${esc(x.concepto || "—")}</td><td>${esc(x.metodo || "—")}</td><td class="n"><b>${eur(x.importe)}</b></td><td class="n"><button class="btn ghost sm" data-act="pay-del" data-id="${esc(x.id)}" aria-label="Borrar pago">✕</button></td></tr>`).join("") || `<tr><td colspan="6" class="muted">Aún no has registrado pagos.</td></tr>`}</tbody></table></div></div>`, { crumb: [[null, "Cobros"]] });
+}
+function payForm(cid) {
+  const cl = S.coach.cobCl || []; const c = cl.find(x => x.id === cid); const p = ((c || {}).ficha || {}).pago || {};
+  const k = PER[p.periodicidad || "mensual"]; const nx = p.proximoCobro && k ? addMonths(p.proximoCobro, k) : "";
+  sheet(`<h2>Registrar pago</h2><form id="f-pay" class="sform"><div class="f"><label for="py-c">Cliente</label><select id="py-c" name="cid" required data-act-change="pay-cli">${cl.filter(x => x.estado !== "baja").map(x => `<option value="${esc(x.id)}" ${x.id === cid ? "selected" : ""}>${esc(x.nombre)}</option>`).join("")}</select></div>
+  <div class="grid2"><div class="f"><label for="py-i">Importe (€)</label><input id="py-i" name="importe" inputmode="decimal" required value="${esc(p.cuota ?? "")}"></div><div class="f"><label for="py-f">Fecha</label><input id="py-f" name="fecha" type="date" required value="${today()}"></div></div>
+  <div class="grid2"><div class="f"><label for="py-m">Método</label><input id="py-m" name="metodo" value="${esc(p.metodo || "")}" placeholder="Bizum, transferencia…" list="py-ml"><datalist id="py-ml"><option value="Bizum"><option value="Transferencia"><option value="Efectivo"><option value="Tarjeta"><option value="PayPal"></datalist></div><div class="f"><label for="py-k">Concepto</label><input id="py-k" name="concepto" value="${esc(cap(p.periodicidad || "mensual"))} ${esc(new Date().toLocaleDateString("es-ES", { month: "long" }))}"></div></div>
+  <label class="chkrow"><input type="checkbox" name="avanzar" ${k ? "checked" : ""}><span><b>Pasar el próximo cobro${nx ? " al " + esc(fdate(nx, { day: "numeric", month: "long" })) : ""}</b><small>Según su periodicidad (${esc(p.periodicidad || "mensual")})</small></span></label>
+  <button class="btn pri block">Guardar pago</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function savePay(f) {
+  const cid = f.cid.value; const imp = num(f.importe.value); if (imp == null || imp <= 0) { toast("Escribe el importe"); return; }
+  const c = (S.coach.cobCl || []).find(x => x.id === cid) || {}; const ficha = c.ficha || {}; const p = ficha.pago || {};
+  try { await q(sb.from("payments").insert({ client_id: cid, fecha: f.fecha.value, importe: imp, metodo: f.metodo.value.trim(), concepto: f.concepto.value.trim() }));
+    const k = PER[p.periodicidad || "mensual"];
+    if (f.avanzar.checked && k) { const base = p.proximoCobro || f.fecha.value; await q(sb.from("clients").update({ ficha: { ...ficha, pago: { ...p, metodo: p.metodo || f.metodo.value.trim(), cuota: p.cuota ?? imp, proximoCobro: addMonths(base, k) } } }).eq("id", cid)); }
+    sheet(""); toast("Pago registrado"); viewCobros();
+  } catch (e) { toast(errMsg(e)); }
+}
+function payCfg(cid) {
+  const c = (S.coach.cobCl || []).find(x => x.id === cid); if (!c) return; const p = (c.ficha || {}).pago || {};
+  sheet(`<h2>Cuota de ${esc(c.nombre)}</h2><form id="f-paycfg" class="sform" data-cid="${esc(cid)}"><div class="grid2"><div class="f"><label for="pc-c">Cuota (€)</label><input id="pc-c" name="cuota" inputmode="decimal" value="${esc(p.cuota ?? "")}"></div><div class="f"><label for="pc-p">Periodicidad</label><select id="pc-p" name="periodicidad">${Object.keys(PER).map(k => `<option value="${k}" ${(p.periodicidad || "mensual") === k ? "selected" : ""}>${cap(k)}</option>`).join("")}</select></div></div>
+  <div class="grid2"><div class="f"><label for="pc-m">Método</label><input id="pc-m" name="metodo" value="${esc(p.metodo || "")}" placeholder="Bizum, transferencia…"></div><div class="f"><label for="pc-x">Próximo cobro</label><input id="pc-x" name="proximoCobro" type="date" value="${esc(p.proximoCobro || "")}"></div></div>
+  <button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function savePayCfg(f) {
+  const cid = f.dataset.cid; const c = (S.coach.cobCl || []).find(x => x.id === cid) || {}; const ficha = c.ficha || {};
+  const pago = { ...(ficha.pago || {}), cuota: num(f.cuota.value), periodicidad: f.periodicidad.value, metodo: f.metodo.value.trim(), proximoCobro: f.proximoCobro.value };
+  try { await q(sb.from("clients").update({ ficha: { ...ficha, pago } }).eq("id", cid)); sheet(""); toast("Cuota guardada"); viewCobros(); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Comunidad: tablón de Adrián ================= */
@@ -1241,7 +1297,7 @@ async function tplLib() { return await q(sb.from("workout_templates").select("id
 function exDatalist() { return `<datalist id="dl-ex">${(S.lib.ex || []).map(e => `<option value="${esc(e.nombre)}">`).join("")}</datalist>`; }
 const relTime = ts => { const d = new Date(ts); const mins = Math.round((Date.now() - d) / 6e4); if (mins < 60) return `hace ${Math.max(1, mins)} min`; const h = Math.round(mins / 60); if (h < 24) return `hace ${h} h`; return fdate(iso(d), { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }); };
 const clientName = id => ((S.coach.list.find(c => c.id === id) || {}).nombre || id);
-async function loadClients() { S.coach.list = await q(sb.from("clients").select("id,nombre,email,estado,user_id").order("nombre")); return S.coach.list; }
+async function loadClients() { S.coach.list = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha").order("nombre")); return S.coach.list; }
 
 /* ---- Editor de workout (librería, asignaciones y programas) ---- */
 const PROG = [["", "Carga: sin indicar"], ["=", "Mantener carga"], ["+1.25", "Subir 1,25 kg"], ["+2.5", "Subir 2,5 kg"], ["+5", "Subir 5 kg"], ["+10", "Subir 10 kg"], ["-2.5", "Bajar 2,5 kg"], ["-5", "Bajar 5 kg"], ["-10%", "Bajar 10 %"], ["libre", "Elige tú (por RIR)"]];
@@ -1376,6 +1432,7 @@ async function viewInicio() {
   leads.filter(l => l.estado === "nuevo").forEach(l => at.push({ p: 2, k: "acc", c: null, n: l.nombre, t: "Nueva solicitud de contacto", s: `${l.nombre} · ${l.objetivo || "sin objetivo"} · ${relTime(l.created_at)}`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Responder" }));
   onb.forEach(o => at.push({ p: 3, k: "acc", c: o.client_id, t: "Cuestionario inicial sin revisar", s: `${clientName(o.client_id)} · ${relTime(o.enviado_en)}`, a: `data-act="go-inicial" data-cid="${esc(o.client_id)}"`, b: "Revisar" }));
   resp.forEach(r => at.push({ p: 2, k: "info", c: r.client_id, t: "Ha respondido a su revisión", s: `${clientName(r.client_id)} · ${relTime(r.respondido_en)}`, a: go(r.client_id, "informes"), b: "Leer" }));
+  cl.forEach(c => { const pg = ((c.ficha || {}).pago || {}); if (c.estado !== "baja" && pg.proximoCobro && pg.proximoCobro <= t && num(pg.cuota)) at.push({ p: 2, k: "warn", c: c.id, t: pg.proximoCobro < t ? "Cobro vencido" : "Cobro hoy", s: `${c.nombre} · ${eur(pg.cuota)} · ${fdate(pg.proximoCobro, { day: "numeric", month: "short" })}`, a: `data-act="go" data-h="cobros"`, b: "Cobros" }); });
   activos.forEach(c => { const f = hasta(c.id); const d = f ? daysBetween(t, f) : null; if (d == null || d <= 3) at.push({ p: 4, k: "warn", c: c.id, t: d == null ? "No tiene nada programado" : d < 0 ? `Sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`, s: c.nombre, a: `data-act="go-plan" data-cid="${esc(c.id)}"`, b: "Planificar" }); });
   activos.filter(c => c.user_id && !ultimo(c.id)).forEach(c => at.push({ p: 5, k: "warn", c: c.id, t: "Sin registrar nada en 7 días", s: c.nombre, a: go(c.id, "plan"), b: "Ver" }));
   drafts.forEach(r => at.push({ p: 6, k: "info", c: r.client_id, t: "Informe en borrador", s: `${clientName(r.client_id)} · ${fdate(r.fecha, { day: "numeric", month: "short" })}`, a: go(r.client_id, "informes"), b: "Publicar" }));
@@ -2020,7 +2077,7 @@ function tabInfo(c, pl) {
    <div class="grid3">${fld("edad", "Edad", f.edad)}${fld("altura", "Altura", f.altura)}${fld("pesoInicial", "Peso inicial (kg)", f.pesoInicial, 'inputmode="decimal"')}</div></div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Objetivo</h2>${ta("objetivo", "Objetivo", f.objetivo, 110)}${ta("ejerciciosClave", "Ejercicios clave (uno por línea)", (f.ejerciciosClave || []).join("\n"), 60)}</div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Salud y limitaciones</h2>${ta("salud", "Una por línea · empieza con «!» las que deben destacarse arriba", (f.salud || []).join("\n"), 120)}</div>
-  <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Pago</h2><div class="grid2">${fld("cuota", "Cuota (€)", pg.cuota, 'inputmode="decimal"')}<div class="f"><label for="i-per">Periodicidad</label><select id="i-per" name="periodicidad">${["mensual", "trimestral", "semestral", "anual", "pago único"].map(p => `<option value="${p}" ${pg.periodicidad === p ? "selected" : ""}>${cap(p)}</option>`).join("")}</select></div>${fld("metodo", "Método", pg.metodo)}${fld("proximoCobro", "Próximo cobro", pg.proximoCobro, 'type="date"')}</div></div>
+  <a class="card rowcard" href="#cobros"><span class="ricon">${ICON.euro}</span><span class="grow"><b>Cuota y cobros</b><br><span class="tiny muted">${pg.cuota ? esc(eur(pg.cuota) + " · " + (pg.periodicidad || "mensual")) + (pg.proximoCobro ? " · próximo " + esc(fdate(pg.proximoCobro, { day: "numeric", month: "short" })) : "") : "Sin cuota"} · se gestionan en Cobros</span></span><span class="chev">›</span></a>
   </div>
   <div style="display:flex;flex-direction:column;gap:12px">
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Contexto</h2>${ta("disponibilidad", "Disponibilidad", f.disponibilidad, 60)}${ta("material", "Material", f.material, 60)}${ta("preferencias", "Preferencias", f.preferencias, 60)}${ta("habitos", "Hábitos actuales", f.habitos, 60)}${ta("notas", "Notas privadas (perfil, histórico, comunicación…)", f.notas, 160)}</div>
@@ -2032,7 +2089,6 @@ function tabInfo(c, pl) {
 async function saveInfo(f) {
   const c = S.coach.c; const old = c.ficha || {}; const v = n => f[n].value.trim();
   const ficha = { ...old, perfil: v("perfil"), fechaInicio: v("fechaInicio"), telefono: v("telefono"), edad: v("edad"), altura: v("altura"), pesoInicial: num(v("pesoInicial")), objetivo: v("objetivo"), ejerciciosClave: lines(v("ejerciciosClave")), salud: lines(v("salud")),
-    pago: { ...(old.pago || {}), cuota: num(v("cuota")), periodicidad: v("periodicidad"), metodo: v("metodo"), proximoCobro: v("proximoCobro") },
     disponibilidad: v("disponibilidad"), material: v("material"), preferencias: v("preferencias"), habitos: v("habitos"), notas: v("notas"),
     pendientes: [...f.querySelectorAll("[data-p]")].map(r => ({ t: r.querySelector('[name="p_t"]').value.trim(), done: r.querySelector('[name="p_d"]').checked })).filter(p => p.t),
     marcas: [...f.querySelectorAll("[data-m]")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); return { ejercicio: g("m_e"), fecha: g("m_f"), carga: num(g("m_c")), reps: num(g("m_r")), rir: num(g("m_i")), nota: g("m_n") }; }).filter(m => m.ejercicio),
@@ -2712,6 +2768,9 @@ document.addEventListener("click", async ev => {
       case "cambiar-pw": openCambiarPw(); break;
       case "close": closeSheet(); break;
       case "go-back": goBack(); break;
+      case "pay-new": payForm(a.dataset.cid || ""); break;
+      case "pay-cfg": payCfg(a.dataset.cid); break;
+      case "pay-del": if (confirmar(a)) { await q(sb.from("payments").delete().eq("id", id)); toast("Pago borrado"); viewCobros(); } break;
       case "hab": habToggle(a); break;
       case "rest-add": RT.end += (+a.dataset.s) * 1000; RT.dur = Math.max(RT.dur, Math.round((RT.end - Date.now()) / 1000)); RT.done = false; restTick(); break;
       case "rest-stop": restStop(); break;
@@ -2892,6 +2951,7 @@ document.addEventListener("change", ev => {
   if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.f === "reps" && el.value.trim()) { const r = el.closest("[data-rest]"); const s2 = r ? +r.dataset.rest : 0; const ex = el.closest("[data-exn]"); if (s2) restStart(s2, ex ? ex.dataset.exn : "Descanso"); } }
   if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
+  if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
   if (el.dataset && el.dataset.actChange === "post-todos") { const b = el.form.querySelector(".post-para"); if (b) b.hidden = el.checked; }
   if (el.dataset && el.dataset.actChange === "test-name") { const t = (S.coach.tests || []).filter(x => tKey(x.nombre) === tKey(el.value)).pop(); if (t) { const f = el.form; f.categoria.value = t.categoria || f.categoria.value; f.unidad.value = t.unidad || ""; f.menos.checked = !!t.mejor_es_menos; f.nombre.value = t.nombre; } }
   if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
@@ -2909,7 +2969,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
