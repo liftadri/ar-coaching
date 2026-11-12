@@ -1054,3 +1054,4 @@ html,body{overscroll-behavior-y:none}
 .cback{all:unset;cursor:pointer;display:none;place-items:center;width:32px;height:32px;margin:-6px 4px -6px -8px;border-radius:50%;font-size:26px;line-height:1;color:var(--ink)}
 .cback:hover{background:var(--surface-2)}
 @media (max-width:900px){.cback{display:inline-grid}}
+.privnote{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13px;font-weight:600;color:#4a463f}

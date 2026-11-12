@@ -855,7 +855,6 @@ async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
   const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await backupCard() : "";
   shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
-  ${plan && plan.objetivo ? `<div class="card"><h2>Tu objetivo</h2><p class="small" style="margin:0">${esc(plan.objetivo)}</p></div>` : ""}
   <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis informes</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
@@ -1246,8 +1245,8 @@ async function leadAlta(id) {
   const p = l.nombre.trim().split(/\s+/); let cid = slug(p[0] + "-" + (p[1] || "x").slice(0, 1)); if (S.coach.list.some(c => c.id === cid)) cid += "-" + Math.random().toString(36).slice(2, 5);
   const obj = /masa/i.test(l.objetivo) ? "hipertrofia" : /fuerza/i.test(l.objetivo) ? "fuerza" : /grasa|salud/i.test(l.objetivo) ? "salud" : "";
   try {
-    const r = await q(sb.from("clients").insert({ id: cid, nombre: l.nombre, email: l.email, estado: "activo", ficha: { telefono: l.telefono, edad: l.edad != null ? String(l.edad) : "", sexo: l.sexo, fechaInicio: today(), ...(obj ? { perfil: obj } : {}), origen: "Contacto web" } }).select("id,codigo_alta"));
-    await q(sb.from("plans").insert({ client_id: cid, objetivo: l.objetivo || "" }));
+    const r = await q(sb.from("clients").insert({ id: cid, nombre: l.nombre, email: l.email, estado: "activo", ficha: { telefono: l.telefono, edad: l.edad != null ? String(l.edad) : "", sexo: l.sexo, fechaInicio: today(), ...(obj ? { perfil: obj } : {}), origen: "Contacto web", objetivo: l.objetivo || "" } }).select("id,codigo_alta"));
+    await q(sb.from("plans").insert({ client_id: cid }));
     await q(sb.from("leads").update({ estado: "alta", client_id: cid }).eq("id", id));
     let cod = r && r[0] && r[0].codigo_alta; if (!cod) cod = ((await q(sb.from("clients").select("codigo_alta").eq("id", cid).limit(1)))[0] || {}).codigo_alta;
     S.coach.list = []; bienvenida({ id: cid, codigo_alta: cod || "(míralo en su pestaña Cuenta)", nombre: l.nombre, email: l.email, telefono: l.telefono });
@@ -1394,7 +1393,7 @@ async function saveNewClient(f) {
   const nombre = f.nombre.value.trim(), email = f.email.value.trim().toLowerCase(); let id = slug(nombre.split(" ")[0] + "-" + (nombre.split(" ")[1] || "x").slice(0, 1));
   if (!S.coach.list.length) await loadClients();
   if (S.coach.list.some(c => c.id === id)) id += "-" + Math.random().toString(36).slice(2, 5);
-  try { await q(sb.from("clients").insert({ id, nombre, email })); await q(sb.from("plans").insert({ client_id: id, objetivo: f.objetivo.value.trim() })); sheet(""); toast("Cliente creado"); S.coach.tab = "cuenta"; location.hash = "c-" + id; }
+  try { await q(sb.from("clients").insert({ id, nombre, email, ficha: { objetivo: f.objetivo.value.trim() } })); await q(sb.from("plans").insert({ client_id: id })); sheet(""); toast("Cliente creado"); S.coach.tab = "cuenta"; location.hash = "c-" + id; }
   catch (e) { toast(errMsg(e)); }
 }
 
@@ -1406,6 +1405,7 @@ async function viewCoachClient(cid) {
   const c = (await q(sb.from("clients").select("*").eq("id", cid).limit(1)))[0];
   if (!c) { shell("Cliente", `<div class="empty">No existe.</div>`, { back: "c" }); return; }
   const pl = (await q(sb.from("plans").select("*").eq("client_id", cid).limit(1)))[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
+  const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) }));
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
@@ -1672,14 +1672,15 @@ async function borrarSemana(f) { const de = monday(f.de.value); try { await q(sb
 /* ---- Mesociclos ---- */
 const SEM_TIPOS = ["carga", "descarga", "afinamiento", "competicion", "test", "transicion"];
 function mesoWeek(w = {}) { return `<div class="mw" data-w><input name="s_n" value="${esc(w.nombre || "")}" placeholder="S1" aria-label="Semana"><input type="date" name="s_i" value="${esc(w.inicio || "")}" aria-label="Inicio"><input type="date" name="s_f" value="${esc(w.fin || "")}" aria-label="Fin"><select name="s_t" aria-label="Tipo">${SEM_TIPOS.map(t => `<option ${w.tipo === t ? "selected" : ""}>${t}</option>`).join("")}</select><input name="s_fo" value="${esc(w.foco || "")}" placeholder="Foco (lo ve el cliente)" aria-label="Foco" class="mwf"><button type="button" class="btn ghost sm" data-act="mw-del" aria-label="Quitar semana">✕</button></div>`; }
-function mesoBlock(b = {}) { return `<div class="mb card" data-b><div class="grid2"><div class="f"><label>Nombre</label><input name="b_n" value="${esc(b.nombre || "")}" placeholder="Mesociclo 2 · Hipertrofia"></div><div class="f"><label>Objetivo</label><input name="b_o" value="${esc(b.objetivo || "")}"></div></div><div class="f"><label>Notas (privadas)</label><input name="b_no" value="${esc(b.notas || "")}"></div><div class="mws">${(b.semanas || []).map(mesoWeek).join("")}</div><div class="row"><button type="button" class="btn sm" data-act="mw-add">+ Semana</button><span class="grow"></span><button type="button" class="btn ghost sm" data-act="mb-del" style="color:var(--bad)">Quitar mesociclo</button></div></div>`; }
+function mesoBlock(b = {}) { return `<div class="mb card" data-b><div class="grid2"><div class="f"><label>Nombre</label><input name="b_n" value="${esc(b.nombre || "")}" placeholder="Mesociclo 2 · Hipertrofia"></div><div class="f"><label>Objetivo (privado)</label><input name="b_o" value="${esc(b.objetivo || "")}"></div></div><div class="f"><label>Notas (privadas)</label><input name="b_no" value="${esc(b.notas || "")}"></div><div class="mws">${(b.semanas || []).map(mesoWeek).join("")}</div><div class="row"><button type="button" class="btn sm" data-act="mw-add">+ Semana</button><span class="grow"></span><button type="button" class="btn ghost sm" data-act="mb-del" style="color:var(--bad)">Quitar mesociclo</button></div></div>`; }
 function openMeso() {
-  sheet(`<h2>Mesociclos</h2><p class="tiny muted" style="margin:0">Las semanas aparecen como etiqueta en el calendario y el cliente ve el foco de la semana en «Hoy».</p><form id="f-meso" style="display:flex;flex-direction:column;gap:12px"><div id="mbs" style="display:flex;flex-direction:column;gap:12px">${(S.coach.pl.bloques || []).map(mesoBlock).join("")}</div><button type="button" class="btn" data-act="mb-add">+ Mesociclo</button><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`, "wide");
+  sheet(`<h2>Mesociclos</h2><p class="tiny muted" style="margin:0">El cliente solo ve el nombre del mesociclo, las semanas y el foco de cada semana. El objetivo y las notas son privados.</p><form id="f-meso" style="display:flex;flex-direction:column;gap:12px"><div id="mbs" style="display:flex;flex-direction:column;gap:12px">${(S.coach.pl.bloques || []).map(mesoBlock).join("")}</div><button type="button" class="btn" data-act="mb-add">+ Mesociclo</button><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`, "wide");
 }
 async function saveMeso(f) {
   const bloques = [...f.querySelectorAll("[data-b]")].map((b, i) => { const g = n => b.querySelector(`[name="${n}"]`).value.trim(); const semanas = [...b.querySelectorAll("[data-w]")].map(w => { const h = n => w.querySelector(`[name="${n}"]`).value.trim(); return { nombre: h("s_n"), inicio: h("s_i"), fin: h("s_f"), tipo: h("s_t"), foco: h("s_fo") }; }).filter(w => w.nombre || w.inicio);
     const old = (S.coach.pl.bloques || [])[i] || {}; return { ...old, nombre: g("b_n"), objetivo: g("b_o"), notas: g("b_no"), inicio: semanas.length ? semanas[0].inicio : old.inicio || "", fin: semanas.length ? semanas[semanas.length - 1].fin : old.fin || "", semanas }; }).filter(b => b.nombre || b.semanas.length);
-  try { await q(sb.from("plans").upsert({ client_id: S.coach.cid, bloques }, { onConflict: "client_id" })); sheet(""); toast("Mesociclos guardados"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); }
+  const mesos = bloques.map(b => ({ objetivo: b.objetivo || "", notas: b.notas || "" })); const pub = bloques.map(({ objetivo, notas, ...b }) => b);
+  try { await q(sb.from("plans").upsert({ client_id: S.coach.cid, bloques: pub }, { onConflict: "client_id" })); await q(sb.from("clients").update({ ficha: { ...(S.coach.c.ficha || {}), mesos } }).eq("id", S.coach.cid)); sheet(""); toast("Mesociclos guardados"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ---- Información ---- */
@@ -1690,13 +1691,13 @@ function tabInfo(c, pl) {
   const f = c.ficha || {}; const pg = f.pago || {};
   const fld = (n, l, v, o = "") => `<div class="f"><label for="i-${n}">${l}</label><input id="i-${n}" name="${n}" value="${esc(v ?? "")}" ${o}></div>`;
   const ta = (n, l, v, h = 80) => `<div class="f"><label for="i-${n}">${l}</label><textarea id="i-${n}" name="${n}" style="min-height:${h}px">${esc(v ?? "")}</textarea></div>`;
-  return `<form id="f-info" class="cols" style="align-items:start">
+  return `<div class="privnote">🔒 Todo lo de esta pestaña es privado: el cliente no puede verlo ni desde la app ni accediendo a los datos.</div><form id="f-info" class="cols" style="align-items:start">
   <div style="display:flex;flex-direction:column;gap:12px">
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Datos</h2>${fld("nombre", "Nombre", c.nombre, "required")}
    <div class="f"><label for="i-perfil">Perfil</label><select id="i-perfil" name="perfil">${Object.entries(PERFILES).map(([k, l]) => `<option value="${k}" ${f.perfil === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
    <div class="grid2">${fld("fechaInicio", "Cliente desde", f.fechaInicio, 'type="date"')}${fld("telefono", "Teléfono", f.telefono, 'inputmode="tel"')}</div>
    <div class="grid3">${fld("edad", "Edad", f.edad)}${fld("altura", "Altura", f.altura)}${fld("pesoInicial", "Peso inicial (kg)", f.pesoInicial, 'inputmode="decimal"')}</div></div>
-  <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Objetivo</h2>${ta("objetivo_cli", "Objetivo que ve el cliente", pl.objetivo)}${ta("objetivo", "Objetivo detallado (privado)", f.objetivo)}${ta("ejerciciosClave", "Ejercicios clave (uno por línea)", (f.ejerciciosClave || []).join("\n"), 60)}</div>
+  <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Objetivo</h2>${ta("objetivo", "Objetivo", f.objetivo, 110)}${ta("ejerciciosClave", "Ejercicios clave (uno por línea)", (f.ejerciciosClave || []).join("\n"), 60)}</div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Salud y limitaciones</h2>${ta("salud", "Una por línea · empieza con «!» las que deben destacarse arriba", (f.salud || []).join("\n"), 120)}</div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Pago</h2><div class="grid2">${fld("cuota", "Cuota (€)", pg.cuota, 'inputmode="decimal"')}<div class="f"><label for="i-per">Periodicidad</label><select id="i-per" name="periodicidad">${["mensual", "trimestral", "semestral", "anual", "pago único"].map(p => `<option value="${p}" ${pg.periodicidad === p ? "selected" : ""}>${cap(p)}</option>`).join("")}</select></div>${fld("metodo", "Método", pg.metodo)}${fld("proximoCobro", "Próximo cobro", pg.proximoCobro, 'type="date"')}</div></div>
   </div>
@@ -1715,7 +1716,7 @@ async function saveInfo(f) {
     pendientes: [...f.querySelectorAll("[data-p]")].map(r => ({ t: r.querySelector('[name="p_t"]').value.trim(), done: r.querySelector('[name="p_d"]').checked })).filter(p => p.t),
     marcas: [...f.querySelectorAll("[data-m]")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); return { ejercicio: g("m_e"), fecha: g("m_f"), carga: num(g("m_c")), reps: num(g("m_r")), rir: num(g("m_i")), nota: g("m_n") }; }).filter(m => m.ejercicio),
     actualizado: new Date().toISOString() };
-  try { await q(sb.from("clients").update({ nombre: v("nombre"), ficha }).eq("id", c.id)); await q(sb.from("plans").upsert({ client_id: c.id, objetivo: v("objetivo_cli") }, { onConflict: "client_id" })); toast("Información guardada"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); }
+  try { await q(sb.from("clients").update({ nombre: v("nombre"), ficha }).eq("id", c.id)); toast("Información guardada"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ---- Evolución ---- */
@@ -2106,7 +2107,7 @@ async function tabNutri(c, pl) {
   if (sub === "plan") { await preloadPlan(N.plan); body = planEditorHTML(); }
   else if (sub === "calc") {
     const f = c.ficha || {}; const lastW = (await q(sb.from("weights").select("kg").eq("client_id", c.id).order("fecha", { ascending: false }).limit(7))).map(x => +x.kg);
-    N.calc = { ...CALC_DEF, peso: lastW.length ? r1(avg(lastW)) : (f.pesoInicial || ""), altura: num(String(f.altura || "").replace(/[^\d,.]/g, "").replace(",", ".")) ? (num(String(f.altura).replace(/[^\d,.]/g, "").replace(",", ".")) < 3 ? r0(num(String(f.altura).replace(/[^\d,.]/g, "").replace(",", ".")) * 100) : num(String(f.altura).replace(/[^\d,.]/g, "").replace(",", "."))) : "", edad: num(String(f.edad || "").match(/\d+/)) || "", ...(n.calc || {}) };
+    N.calc = { ...CALC_DEF, peso: lastW.length ? r1(avg(lastW)) : (f.pesoInicial || ""), altura: num(String(f.altura || "").replace(/[^\d,.]/g, "").replace(",", ".")) ? (num(String(f.altura).replace(/[^\d,.]/g, "").replace(",", ".")) < 3 ? r0(num(String(f.altura).replace(/[^\d,.]/g, "").replace(",", ".")) * 100) : num(String(f.altura).replace(/[^\d,.]/g, "").replace(",", "."))) : "", edad: num(String(f.edad || "").match(/\d+/)) || "", ...(f.calc || n.calc || {}) };
     body = `<div class="calcwrap">${calcForm(N.calc)}<div id="calc-res">${calcResult(N.calc, n)}</div></div>`;
   } else if (sub === "habitos") body = habitosHTML(pl);
   else {
@@ -2291,7 +2292,7 @@ document.addEventListener("click", async ev => {
     switch (act) {
       case "n-sub": S.coach.nsub = a.dataset.t; refreshClient(); break;
       case "n-save": await nSavePlan(); break;
-      case "n-calc-apply": { const r = calcKcal(N.calc); if (!r) break; const pl = (await q(sb.from("plans").select("nutricion").eq("client_id", S.coach.cid).limit(1)))[0] || {}; const nut = { ...(pl.nutricion || {}), calc: N.calc, objetivo: { kcal: r0(r.kcal), prot: r0(r.prot), hc: r0(r.hc), grasa: r0(r.grasa) } }; await q(sb.from("plans").upsert({ client_id: S.coach.cid, nutricion: nut }, { onConflict: "client_id" })); toast("Objetivo guardado en el plan"); S.coach.nsub = "plan"; refreshClient(); break; }
+      case "n-calc-apply": { const r = calcKcal(N.calc); if (!r) break; const pl = (await q(sb.from("plans").select("nutricion").eq("client_id", S.coach.cid).limit(1)))[0] || {}; const { calc: _c, ...nut0 } = pl.nutricion || {}; const nut = { ...nut0, objetivo: { kcal: r0(r.kcal), prot: r0(r.prot), hc: r0(r.hc), grasa: r0(r.grasa) } }; await q(sb.from("plans").upsert({ client_id: S.coach.cid, nutricion: nut }, { onConflict: "client_id" })); const cc = (await q(sb.from("clients").select("ficha").eq("id", S.coach.cid).limit(1)))[0] || {}; await q(sb.from("clients").update({ ficha: { ...(cc.ficha || {}), calc: N.calc } }).eq("id", S.coach.cid)); toast("Objetivo guardado en el plan"); S.coach.nsub = "plan"; refreshClient(); break; }
       case "n-comida-add": { const sel = $("#n-new-comida"); const nombre = sel.value || "Comida"; N.plan.comidas.push({ nombre, hora: "", opciones: [{ nombre: "Opción 1", items: [], notas: "" }] }); rerenderPlan(); break; }
       case "n-cm-del": if (confirmar(a)) { N.plan.comidas.splice(+a.dataset.ci, 1); rerenderPlan(); } break;
       case "n-cm-up": { const i = +a.dataset.ci; if (i > 0) { const c = N.plan.comidas; [c[i - 1], c[i]] = [c[i], c[i - 1]]; rerenderPlan(); } break; }
