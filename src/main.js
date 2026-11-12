@@ -2050,7 +2050,7 @@ document.addEventListener("click", async ev => {
 /* Arrastrar tareas del calendario a otro día, con ratón o con el dedo (mantener pulsado) */
 const DR = { el: null, on: false };
 function dragStart(x, y) {
-  DR.on = true; const r = DR.el.getBoundingClientRect();
+  DR.on = true; const r = DR.el.getBoundingClientRect(); try { window.getSelection().removeAllRanges(); } catch { }
   DR.gh = DR.el.cloneNode(true); DR.gh.classList.add("drag-ghost"); if (!DR.touch) DR.gh.style.width = r.width + "px"; document.body.appendChild(DR.gh);
   DR.dx = DR.touch ? 24 : x - r.left; DR.dy = DR.touch ? 54 : y - r.top; DR.el.classList.add("dragging"); document.body.classList.add("dragmode");
   try { if (navigator.vibrate) navigator.vibrate(12); } catch { }
