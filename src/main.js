@@ -1008,7 +1008,7 @@ async function viewCoachClient(cid) {
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
-  <div class="cmain"><h1 class="ptitle">${esc((CTABS.find(t => t[0] === tab) || CTABS[0])[1])}</h1>${alertas.length ? `<div class="banner"><b>Salud:</b> ${alertas.map(s => esc(String(s).slice(1))).join(" · ")}</div>` : ""}${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
+  <div class="cmain">${alertas.length ? `<div class="banner"><b>Salud:</b> ${alertas.map(s => esc(String(s).slice(1))).join(" · ")}</div>` : ""}${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
   S.coach.keep = false;
 }
 
@@ -1021,13 +1021,15 @@ async function tabPlan(c, pl) {
   S.coach.asig = as;
   const weekInfo = d => { for (const b of pl.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= addDays(d, 6) && d <= s.fin); if (w) return { b: b.nombre, s: w.nombre, tipo: w.tipo || "carga", foco: w.foco || "" }; } return null; };
   const DN = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-  let rows = "";
+  let rows = "", lastB = "";
   for (let d = g0; d <= g1; d = addDays(d, 7)) {
     const wi = weekInfo(d); const wa = as.filter(x => x.fecha >= d && x.fecha <= addDays(d, 6) && x.visible && x.tipo !== "nota"); const wp = wa.filter(x => x.fecha <= t); const wh = wp.filter(x => x.hecho).length;
-    rows += `<div class="pweek">${wi || wa.length ? `<div class="pwl2">${wi ? `<span class="wtag t-${esc(wi.tipo)}">${esc(wi.s)}</span><b>${esc(wi.b)}</b>${wi.tipo !== "carga" ? `<span class="wtipo">${esc(cap(wi.tipo))}</span>` : ""}${wi.foco ? `<span class="wfoco">${esc(wi.foco)}</span>` : ""}` : `<span class="wfoco">Semana del ${esc(fdate(d, { day: "numeric", month: "short" }))}</span>`}<span class="grow"></span>${wa.length ? `<span class="wcnt">${wp.length ? `${wh}/${wp.length} hechas · ` : ""}${wa.length} en total</span>` : ""}</div>` : ""}<div class="pgrid">`;
+    const nb = wi && wi.b !== lastB; if (wi) lastB = wi.b;
+    rows += `<div class="pweek">${wi ? `<div class="pwl2"><span class="wtag t-${esc(wi.tipo)}">${esc(wi.s)}</span><span class="wname">${[nb ? wi.b : "", wi.tipo !== "carga" ? cap(wi.tipo) : ""].filter(Boolean).map(esc).join(" · ")}</span></div>` : ""}<div class="pgrid">`;
     for (let k = 0; k < 7; k++) {
       const day = addDays(d, k); const items = as.filter(x => x.fecha === day); const evs = ev.filter(e => e.fecha <= day && day <= (e.fin || e.fecha)); const libres = wo.filter(w => w.fecha === day && !w.assignment_id);
       const cls = `${day.slice(0, 7) !== m ? " out" : ""}${day === t ? " hoy" : ""}${day < t ? " past" : ""}${k >= 5 ? " we" : ""}`;
+      if (day.slice(0, 7) !== m) { rows += `<div class="pday out" data-day="${day}"></div>`; continue; }
       rows += `<div class="pday${cls}" data-day="${day}"><div class="pdh"><span class="dn">${+day.slice(8)}</span><button class="padd" data-act="asig-new" data-d="${day}" aria-label="Añadir el ${esc(fdate(day))}">+</button></div>
       ${evs.map(e => `<button class="pch tp-evento" data-act="ev-edit" data-id="${esc(e.id)}"><i class="pi">★</i>${esc(e.titulo)}</button>`).join("")}
       ${items.map(x => `<button class="pch tp-${esc(x.tipo)}${x.hecho ? " ok" : !x.hecho && day < t ? " late" : ""}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}" draggable="true" data-drag="${esc(x.id)}" title="${esc(TIPOS[x.tipo] || "")}${x.hecho ? " · hecho" : day < t ? " · sin hacer" : ""}${x.visible ? "" : " · oculto"}">${x.hecho ? `<i class="pi ok">✓</i>` : !x.hecho && day < t && x.tipo !== "nota" ? `<i class="pi no">!</i>` : ""}${esc(x.titulo)}</button>`).join("")}
@@ -1039,15 +1041,10 @@ async function tabPlan(c, pl) {
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   const tot = as.filter(x => x.fecha >= first && x.fecha <= last && x.fecha <= t && x.visible && x.tipo !== "nota"); const pct = tot.length ? Math.round(100 * tot.filter(x => x.hecho).length / tot.length) : null;
   const mes = as.filter(x => x.fecha >= first && x.fecha <= last && x.tipo !== "nota");
-  const ring = pct == null ? "" : `<div class="ring ${pct >= 80 ? "ok" : pct >= 50 ? "warn" : "bad"}" style="--p:${pct}"><span>${pct}<small>%</small></span></div>`;
-  return `<div class="card cal"><div class="calhead"><div class="calnav"><button class="cnav" data-act="pm" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2><span>${esc(cap(mN))}</span> ${esc(yN)}</h2><button class="cnav" data-act="pm" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn ghost sm" data-act="pm" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
-    <div class="calstat">${ring}<div><b>${mes.length}</b> programadas este mes<br><span class="tiny muted">${pct == null ? "Aún sin datos de cumplimiento" : `${tot.filter(x => x.hecho).length} de ${tot.length} hechas hasta hoy`}</span></div></div></div>
-  <div class="caltools"><button class="btn sm pri" data-act="asig-new" data-d="${t}">+ Añadir</button><span class="tsep"></span>
-    <div class="tgrp"><span class="tlbl">Programas</span><button class="btn sm ghost" data-act="prog-asignar">Programar</button><button class="btn sm ghost" data-act="prog-desde-cal">Guardar como programa</button></div><span class="tsep"></span>
-    <div class="tgrp"><span class="tlbl">Semana</span><button class="btn sm ghost" data-act="copiar-semana">Copiar</button><button class="btn sm ghost" data-act="borrar-semana">Vaciar</button></div><span class="tsep"></span>
-    <button class="btn sm ghost" data-act="meso-edit">Mesociclos</button></div>
-  <div class="pgrid phead">${DN.map((n, k) => `<span class="${k >= 5 ? "we" : ""}">${n}</span>`).join("")}</div>${rows}
-  <div class="leg2">${Object.entries(TIPOS).map(([k, l]) => `<span class="lp tp-${k}"><i></i>${l}</span>`).join("")}<span class="lp tp-evento"><i></i>Evento</span><span class="lsep"></span><span class="lx"><i class="pi ok">✓</i>Hecho</span><span class="lx"><i class="pi no">!</i>Sin hacer</span><span class="lx"><i class="hidsw"></i>Oculto al cliente</span><span class="lx muted">Arrastra para mover de día</span></div></div>`;
+  return `<div class="card cal"><div class="calhead"><div class="calnav"><button class="cnav" data-act="pm" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(cap(mN))} <span>${esc(yN)}</span></h2><button class="cnav" data-act="pm" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn ghost sm" data-act="pm" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
+    <div class="calact"><button class="btn sm pri" data-act="asig-new" data-d="${t}">+ Añadir</button>
+    <details class="more"><summary class="btn sm" aria-label="Más opciones">Más ▾</summary><div class="menu"><button data-act="prog-asignar">Programar un programa</button><button data-act="prog-desde-cal">Guardar semanas como programa</button><hr><button data-act="copiar-semana">Copiar semana</button><button data-act="borrar-semana">Vaciar semana</button><hr><button data-act="meso-edit">Mesociclos</button></div></details></div></div>
+  <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}</div>`;
 }
 async function openAsig(id, fecha) {
   await exLib(); const tpls = await tplLib();
@@ -1931,7 +1928,7 @@ const refreshClient = () => { S.coach.keep = true; return viewCoachClient(S.coac
 function move(row, dir) { const sib = dir < 0 ? row.previousElementSibling : row.nextElementSibling; if (!sib) return; if (dir < 0) row.parentElement.insertBefore(row, sib); else row.parentElement.insertBefore(sib, row); }
 
 document.addEventListener("click", async ev => {
-  const a = ev.target.closest("[data-act]"); if (!a) return; const act = a.dataset.act; const id = a.dataset.id;
+  const a = ev.target.closest("[data-act]"); if (!a) return; const act = a.dataset.act; const id = a.dataset.id; const dd = a.closest("details.more"); if (dd) dd.removeAttribute("open");
   if (act === "close-bg") { if (ev.target === a) sheet(""); return; }
   try {
     switch (act) {
