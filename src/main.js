@@ -93,6 +93,12 @@ document.addEventListener("pointerout", ev => { if (ev.target.closest && ev.targ
 const S = { me: null, email: "", view: "hoy", plan: null, sub: {}, coach: { list: [], cid: null, tab: "plan", evo: "actividad" }, lib: { tab: "workouts", ex: null } };
 const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const ICON = {
+  t_cardio: svg('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
+  t_msg: svg('<path d="M4 5h16v11H9l-5 4z"/>'),
+  t_peso: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 9a4 4 0 0 1 8 0M12 9l1.5-2"/>'),
+  t_foto: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+  t_med: svg('<path d="M3 15 15 3l6 6L9 21z"/><path d="M7 11l2 2M10 8l2 2M13 5l2 2"/>'),
+  t_tarea: svg('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/>'),
   comunidad: svg('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a3 3 0 0 1 0 6M18 6a7 7 0 0 1 0 12"/>'),
   bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>'),
   hoy: svg('<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>'),
@@ -1384,8 +1390,8 @@ async function openAsig(id, fecha) {
   const logs = id && x.tipo === "workout" ? await q(sb.from("workouts").select("*").eq("assignment_id", id)) : [];
   const res = (x.resultado && x.resultado.respuestas) || [];
   sheet(`<h2>${id ? "Editar" : "Añadir"} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</h2>
-  <form id="f-asig" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:10px">
-  ${!id ? `<div class="seg wrap" role="group" aria-label="Tipo">${[...Object.entries(TIPOS), ["evento", "Evento"]].map(([k, l]) => `<button type="button" data-act="asig-tipo" data-t="${k}" aria-pressed="${x.tipo === k}">${l}</button>`).join("")}</div>` : `<p class="small" style="margin:0">${tipoChip(x.tipo)}${x.hecho ? ` <span class="chip ok">Hecho ${x.hecho_en ? esc(relTime(x.hecho_en)) : ""}</span>` : ""}${x.programa ? ` <span class="chip">${esc(x.programa)}</span>` : ""}</p>`}
+  <form id="f-asig" class="sform" data-id="${esc(id || "")}">
+  ${!id ? `<div class="tpick" role="group" aria-label="Tipo">${[...Object.entries(TIPOS), ["evento", "Evento"]].map(([k, l]) => `<button type="button" class="tp-${k}" data-act="asig-tipo" data-t="${k}" aria-pressed="${x.tipo === k}">${ICON[{ workout: "entreno", cardio: "t_cardio", formulario: "doc", nota: "t_msg", peso: "t_peso", fotos: "t_foto", medidas: "t_med", tarea: "t_tarea", evento: "cal" }[k]] || ""}<span>${l}</span></button>`).join("")}</div>` : `<p class="small" style="margin:0">${tipoChip(x.tipo)}${x.hecho ? ` <span class="chip ok">Hecho ${x.hecho_en ? esc(relTime(x.hecho_en)) : ""}</span>` : ""}${x.programa ? ` <span class="chip">${esc(x.programa)}</span>` : ""}</p>`}
   <div id="asig-body">${asigBody(x, tpls)}</div>
   ${logs.length ? `<div class="card"><h2>Lo que registró</h2>${logs.map(w => `<p class="tiny muted" style="margin:0 0 4px">${esc(fdate(w.fecha))}${w.rpe_sesion != null ? " · dureza " + w.rpe_sesion + "/10" : ""}${w.duracion_min ? " · " + w.duracion_min + " min" : ""}</p><table><tbody>${Object.entries((w.sets || []).reduce((a, s) => { (a[s.ejercicio] = a[s.ejercicio] || []).push(s); return a; }, {})).map(([ex, ss]) => `<tr><td>${esc(ex)}</td><td class="n">${esc(ss.map(s => s.hecho ? "hecho" : `${s.kg ?? "?"}×${s.reps ?? "?"}${s.rir != null ? " @" + s.rir : ""}`).join(" · "))}</td></tr>`).join("")}</tbody></table>${w.comentario ? `<p class="small">${esc(w.comentario)}</p>` : ""}`).join("")}</div>` : ""}
   ${resExtra(x)}${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta ? `<p class="small" style="margin:4px 0"><b>Comentario:</b> ${esc(x.respuesta)}</p>` : ""}</div>` : ""}
@@ -1492,9 +1498,9 @@ function asigBody(x, tpls) {
   <div class="f"><label>Notas</label><textarea name="notas"></textarea></div><label class="small"><input type="checkbox" name="visible" checked> Lo ve el cliente</label>`;
   const opts = tpls.filter(p => (t === "cardio" ? p.tipo === "cardio" : p.tipo === "workout"));
   return `<div class="grid2"><div class="f"><label>Título</label><input name="titulo" required value="${esc(x.titulo || "")}" placeholder="${{ workout: "Pierna A", cardio: "Rodaje Z2", formulario: "Revisión semanal", nota: "Buenos días", peso: "Pesarte en ayunas", fotos: "Fotos de progreso", medidas: "Medidas", tarea: "Comprar cinta métrica" }[t] || ""}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(x.fecha)}" required></div></div>
-  ${(t === "workout" || t === "cardio") && opts.length ? `<div class="row"><select id="tpl-sel" aria-label="Cargar de la librería" style="flex:1"><option value="">Cargar de la librería…</option>${opts.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="tpl-load">Cargar</button></div>` : ""}
+  ${(t === "workout" || t === "cardio") && opts.length ? `<div class="row tplrow"><select id="tpl-sel" aria-label="Cargar de la librería" style="flex:1"><option value="">Cargar de la librería…</option>${opts.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="tpl-load">Cargar</button></div>` : ""}
   ${typeExtras(t, c)}
-  <label class="small"><input type="checkbox" name="visible" ${x.visible !== false ? "checked" : ""}> Lo ve el cliente</label>
+  <label class="chkrow"><input type="checkbox" name="visible" ${x.visible !== false ? "checked" : ""}><span><b>Lo ve el cliente</b><small>Si lo desmarcas, queda como borrador solo para ti</small></span></label>
   ${!x.id ? `<div class="grid2"><div class="f"><label>Repetir</label><select name="rep"><option value="">No repetir</option><option value="1">Cada día</option><option value="2">Cada 2 días</option><option value="7">Cada semana</option></select></div><div class="f"><label>Hasta el</label><input type="date" name="rep_hasta"></div></div>` : ""}`;
 }
 async function saveAsig(f) {
