@@ -2,6 +2,6 @@
   "name": "ar-coaching",
   "private": true,
   "scripts": { "build": "esbuild src/main.js --bundle --minify --format=iife --target=es2019 --outfile=docs/app.js" },
-  "dependencies": { "@supabase/supabase-js": "2.45.4" },
-  "devDependencies": { "esbuild": "0.23.1" }
+  "dependencies": { "@supabase/supabase-js": "2.119.0" },
+  "devDependencies": { "esbuild": "0.28.2" }
 }
