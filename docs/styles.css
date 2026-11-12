@@ -1229,3 +1229,7 @@ a.rowcard{text-decoration:none;color:inherit}
   .cobt td .row{flex-direction:row!important;align-items:center}
   .cobt .tbl,.card .tbl:has(.cobt){overflow:visible}
 }
+.copprev{padding:12px 14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);font-size:13.5px;display:flex;flex-direction:column;gap:8px}
+.copl{display:flex;flex-direction:column;gap:5px}.copl span{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.copl small{color:var(--muted);font-weight:600;min-width:28px}
+.copcl{display:flex;flex-direction:column;gap:6px}
+.copcl .mchk,.post-para .mchk{display:flex;align-items:center;gap:10px;padding:10px 12px}.copcl .mchk input,.post-para .mchk input{width:20px;height:20px;min-height:0;margin:0;flex:none}

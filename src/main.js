@@ -2030,16 +2030,32 @@ async function progDesdeCal(f) {
     sheet(""); toast(`Programa guardado (${items.length} elementos)`); location.hash = "lib-p-" + r[0].id;
   } catch (e) { toast(errMsg(e)); }
 }
-function openCopiarSemana() {
-  const mon = monday(today());
-  sheet(`<h2>Copiar semana</h2><form id="f-copsem" style="display:flex;flex-direction:column;gap:10px"><div class="grid2"><div class="f"><label>Semana que copias (lunes)</label><input type="date" name="de" value="${mon}" required></div><div class="f"><label>Pegar en la semana del (lunes)</label><input type="date" name="a" value="${addDays(mon, 7)}" required></div></div><div class="f"><label>Número de semanas a pegar</label><input name="n" inputmode="numeric" value="1"></div><p class="tiny muted" style="margin:0">Copia todas las tareas de esa semana (sin el estado de hechas). Útil para repetir una semana de carga.</p><button class="btn pri block">Copiar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+async function openCopiarSemana(de0) {
+  const mon = de0 || monday(today()); const cl = (S.coach.list && S.coach.list.length ? S.coach.list : await loadClients()).filter(c => c.estado !== "baja");
+  sheet(`<h2>Copiar semana</h2><form id="f-copsem" class="sform">
+  <div class="grid2"><div class="f"><label>Semana que copias (lunes)</label><input type="date" name="de" value="${mon}" required data-act-change="copsem-prev"></div><div class="f"><label>Pegar en la semana del (lunes)</label><input type="date" name="a" value="${addDays(mon, 7)}" required></div></div>
+  <div id="copsem-prev" class="copprev"></div>
+  <div class="grid2"><div class="f"><label>Veces seguidas</label><select name="n">${[1, 2, 3, 4, 5, 6, 8, 12].map(n => `<option value="${n}">${n === 1 ? "Solo una semana" : n + " semanas seguidas"}</option>`).join("")}</select></div><div class="f"><label>Dónde se pega</label><select name="modo" data-act-change="copsem-modo"><option value="mismo">En este mismo cliente</option><option value="otros">En otros clientes</option></select></div></div>
+  <fieldset class="opts copcl" hidden><legend>Clientes en los que se pega</legend>${cl.filter(c => c.id !== S.coach.cid).map(c => `<label class="mchk"><input type="checkbox" name="dest" value="${esc(c.id)}"><span>${esc(c.nombre)}</span></label>`).join("") || `<p class="tiny muted">No hay más clientes.</p>`}</fieldset>
+  <p class="tiny muted" style="margin:0">Se copian todas las tareas de esa semana con su contenido, sin el estado de hechas ni las respuestas.</p>
+  <button class="btn pri block">Copiar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+  copsemPrev();
+}
+async function copsemPrev() {
+  const f = $("#f-copsem"); if (!f) return; const de = monday(f.de.value); const box = $("#copsem-prev");
+  const src = await q(sb.from("assignments").select("fecha,tipo,titulo").eq("client_id", S.coach.cid).gte("fecha", de).lte("fecha", addDays(de, 6)).order("fecha")).catch(() => []);
+  box.innerHTML = src.length ? `<b>${src.length} tarea${src.length > 1 ? "s" : ""} en la semana del ${esc(fdate(de, { day: "numeric", month: "long" }))}</b><div class="copl">${src.map(x => `<span>${tipoChip(x.tipo)} <small>${esc(fdate(x.fecha, { weekday: "short" }))}</small> ${esc(x.titulo)}</span>`).join("")}</div>` : `<span class="muted">Esa semana está vacía.</span>`;
 }
 async function copiarSemana(f) {
   const de = monday(f.de.value), a = monday(f.a.value), n = Math.min(12, Math.max(1, num(f.n.value) || 1)); const cid = S.coach.cid;
+  const dests = f.modo.value === "otros" ? [...f.querySelectorAll('[name="dest"]:checked')].map(x => x.value) : [cid];
+  if (!dests.length) { toast("Elige al menos un cliente"); return; }
   try { const src = await q(sb.from("assignments").select("*").eq("client_id", cid).gte("fecha", de).lte("fecha", addDays(de, 6)));
     if (!src.length) { toast("Esa semana está vacía"); return; }
-    const rows = []; for (let k = 0; k < n; k++) src.forEach(x => rows.push({ client_id: cid, fecha: addDays(a, k * 7 + daysBetween(de, x.fecha)), orden: x.orden, tipo: x.tipo, titulo: x.titulo, contenido: x.contenido, visible: x.visible, programa: x.programa }));
-    await q(sb.from("assignments").insert(rows)); sheet(""); toast(`${rows.length} tareas copiadas`); S.coach.calM = a.slice(0, 7); S.coach.keep = true; viewCoachClient(cid);
+    const rows = []; dests.forEach(d => { for (let k = 0; k < n; k++) src.forEach(x => rows.push({ client_id: d, fecha: addDays(a, k * 7 + daysBetween(de, x.fecha)), orden: x.orden, tipo: x.tipo, titulo: x.titulo, contenido: x.contenido, visible: x.visible, programa: x.programa })); });
+    await q(sb.from("assignments").insert(rows)); sheet("");
+    toast(dests.length > 1 || dests[0] !== cid ? `${rows.length} tareas copiadas en ${dests.length} cliente${dests.length > 1 ? "s" : ""}` : `${rows.length} tareas copiadas`);
+    S.coach.calM = a.slice(0, 7); S.coach.keep = true; viewCoachClient(cid);
   } catch (e) { toast(errMsg(e)); }
 }
 function openBorrarSemana() {
@@ -2952,6 +2968,8 @@ document.addEventListener("change", ev => {
   if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
   if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
+  if (el.dataset && el.dataset.actChange === "copsem-prev") copsemPrev();
+  if (el.dataset && el.dataset.actChange === "copsem-modo") { const b = el.form.querySelector(".copcl"); if (b) b.hidden = el.value !== "otros"; }
   if (el.dataset && el.dataset.actChange === "post-todos") { const b = el.form.querySelector(".post-para"); if (b) b.hidden = el.checked; }
   if (el.dataset && el.dataset.actChange === "test-name") { const t = (S.coach.tests || []).filter(x => tKey(x.nombre) === tKey(el.value)).pop(); if (t) { const f = el.form; f.categoria.value = t.categoria || f.categoria.value; f.unidad.value = t.unidad || ""; f.menos.checked = !!t.mejor_es_menos; f.nombre.value = t.nombre; } }
   if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
