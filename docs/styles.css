@@ -677,3 +677,42 @@ input,textarea,select,[contenteditable]{-webkit-user-select:text;user-select:tex
 .ptab tbody tr{cursor:pointer}
 .chart svg{display:block;width:100%;height:auto;max-height:300px;margin:0 auto}
 .sesk b small{font-size:11px;font-weight:600;color:var(--muted)}
+/* ---- Programación por series ---- */
+.wrow .pbtn{grid-column:1/-1;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:none;border:1px dashed var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;text-align:left}
+.wrow .pbtn small{font-weight:500;font-size:12px;opacity:.8}
+.wrow .pbtn:hover,.wrow .pbtn.on{border-color:var(--accent);color:var(--accent);border-style:solid}
+.presp{grid-column:1/-1;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;background:var(--surface);border:1px solid var(--line)}
+.presp[hidden]{display:none}
+.pcols{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pchk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;padding:4px 9px;border:1px solid var(--line);border-radius:999px;cursor:pointer;background:var(--bg)}
+.pchk input{width:14px;height:14px;margin:0}
+.pchk:has(input:checked){border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.prows{display:flex;flex-direction:column;gap:5px}
+.prow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:5px;border-radius:7px;background:var(--bg)}
+.prow .pn{width:20px;text-align:center;font-weight:800;color:var(--muted);font-size:13px}
+.prow select{width:auto;padding:6px;font-size:13px;font-weight:700}
+.prow input{padding:6px 7px;font-size:13.5px;text-align:center}
+
+.prow .pcl{display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--muted)}
+.prow .btn{min-height:28px;padding:2px 8px}
+.ptools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.psets{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.pset{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--bg)}
+.pset.t-top{border-color:var(--accent);border-width:1.5px}
+.pset.t-aprox{opacity:.85;border-style:dashed}
+.pset .pl{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13.5px}
+.pset .pl .n{font-weight:800;color:var(--muted);min-width:16px}
+.pset .ptag{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.pset.t-aprox .ptag{background:var(--line);color:var(--muted)}
+.pset .pt{font-weight:600}
+.pset .pnote{margin:3px 0 0 23px}
+.pin{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:6px;margin-top:7px}
+.pin label{display:flex;flex-direction:column;gap:2px}
+.pin label span{font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:center}
+.pin input{padding:9px 6px;text-align:center}
+.sp i{font-style:normal;font-size:10.5px;font-weight:800;text-transform:uppercase;margin-left:5px;color:var(--accent)}
+.prow{align-items:flex-end}
+.prow .pf{display:flex;flex-direction:column;gap:2px}
+.prow .pf span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:var(--muted);text-align:center;white-space:nowrap}
+.prow .pf.s input{width:64px}.prow .pf.m input{width:120px;text-align:left}
+.prow .pn,.prow>.btn{margin-bottom:6px}

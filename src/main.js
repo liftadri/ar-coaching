@@ -438,7 +438,7 @@ async function viewWorkout(id) {
   ${c.notas ? `<div class="card"><h2>Notas</h2><p class="small" style="margin:0;white-space:pre-wrap">${esc(c.notas)}</p></div>` : ""}
   ${c.detalle ? `<div class="card"><p class="small" style="margin:0;white-space:pre-wrap">${esc(c.detalle)}</p></div>` : ""}
   <form id="f-workout" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px">
-  ${exs.map((e, ei) => { const n = seriesOf(e.sxr); const prev = lastSets(e.nombre);
+  ${exs.map((e, ei) => { const n = seriesOf(e.sxr); const prev = lastSets(e.nombre); if (e.series && e.series.length) return presClient(e, ei, prev, draft, wo);
     const prevKg = prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
     const pg = progTxt(e.prog, pk);
     return `<div class="ex"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
@@ -454,11 +454,11 @@ async function viewWorkout(id) {
 
 /* Series ordenadas: carga, repeticiones y RIR */
 const kgTxt = v => v == null || v === "" ? "—" : fmt(v, 2) + " kg";
-const setPill = y => y.hecho ? `<span class="sp ok">Hecho ✓</span>` : `<span class="sp"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b><small>kg</small> × <b>${esc(y.reps ?? "—")}</b>${y.rir != null && y.rir !== "" ? `<em>RIR ${esc(y.rir)}</em>` : ""}</span>`;
+const setPill = y => y.hecho ? `<span class="sp ok">Hecho ✓</span>` : `<span class="sp"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b><small>kg</small> × <b>${esc(y.reps ?? "—")}</b>${y.rpe != null ? `<em>RPE ${esc(y.rpe)}</em>` : y.rir != null && y.rir !== "" ? `<em>RIR ${esc(y.rir)}</em>` : ""}${y.vel != null ? `<em>${esc(y.vel)} m/s</em>` : ""}${y.tipo ? `<i>${esc(pTipo(y.tipo))}</i>` : ""}</span>`;
 const groupSets = sets => { const g = []; (sets || []).forEach(x => { let e = g.find(z => z.n === x.ejercicio); if (!e) g.push(e = { n: x.ejercicio, s: [] }); e.s.push(x); }); return g; };
 function sessionTable(sets) {
   const g = groupSets(sets); if (!g.length) return `<div class="empty">Sin series registradas.</div>`;
-  return `<div class="tbl"><table class="stab"><thead><tr><th>Ejercicio</th><th class="n">Serie</th><th class="n">Carga</th><th class="n">Reps</th><th class="n">RIR</th><th class="n">1RM est.</th></tr></thead><tbody>${g.map(e => e.s.map((y, i) => `<tr class="${i === 0 ? "first" : ""}">${i === 0 ? `<td rowspan="${e.s.length}" class="exn"><button class="lnk linkbtn" data-act="ex-hist" data-n="${esc(e.n)}">${esc(e.n)}</button></td>` : ""}<td class="n muted">${i + 1}</td>${y.hecho ? `<td class="n" colspan="4"><span class="sp ok">Hecho ✓</span></td>` : `<td class="n"><b>${esc(kgTxt(y.kg))}</b></td><td class="n">${esc(y.reps ?? "—")}</td><td class="n">${esc(y.rir ?? "—")}</td><td class="n muted">${e1rm(y.kg, y.reps, y.rir) ? fmt(e1rm(y.kg, y.reps, y.rir)) + " kg" : "—"}</td>`}</tr>`).join("")).join("")}</tbody></table></div>`;
+  return `<div class="tbl"><table class="stab"><thead><tr><th>Ejercicio</th><th class="n">Serie</th><th class="n">Carga</th><th class="n">Reps</th><th class="n">RIR</th><th class="n">1RM est.</th></tr></thead><tbody>${g.map(e => e.s.map((y, i) => `<tr class="${i === 0 ? "first" : ""}">${i === 0 ? `<td rowspan="${e.s.length}" class="exn"><button class="lnk linkbtn" data-act="ex-hist" data-n="${esc(e.n)}">${esc(e.n)}</button></td>` : ""}<td class="n muted">${i + 1}${y.tipo ? `<div class="tiny">${esc(pTipo(y.tipo))}</div>` : ""}</td>${y.hecho ? `<td class="n" colspan="4"><span class="sp ok">Hecho ✓</span></td>` : `<td class="n"><b>${esc(kgTxt(y.kg))}</b></td><td class="n">${esc(y.reps ?? "—")}</td><td class="n">${y.rpe != null ? "RPE " + esc(y.rpe) : esc(y.rir ?? "—")}${y.vel != null ? `<div class="tiny muted">${esc(y.vel)} m/s</div>` : ""}</td><td class="n muted">${e1rm(y.kg, y.reps, y.rir) ? fmt(e1rm(y.kg, y.reps, y.rir)) + " kg" : "—"}</td>`}</tr>`).join("")).join("")}</tbody></table></div>`;
 }
 const sesStats = w => { const ss = (w.sets || []).filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: (w.sets || []).length, ej: groupSets(w.sets).length, vol }; };
 
@@ -478,10 +478,37 @@ function saveDraftFrom(el) {
   if (el.dataset.k) { const o = d[el.dataset.k] || {}; o[el.dataset.f] = el.type === "checkbox" ? el.checked : el.value; d[el.dataset.k] = o; } else if (["rpe", "dur", "com"].includes(el.name)) d[el.name] = el.value;
   try { localStorage.setItem(draftKey(id), JSON.stringify(d)); } catch { }
 }
+// Vista del cliente para un ejercicio programado serie a serie: solo ve lo que se le pauta
+function presClient(e, ei, prev, draft, wo) {
+  const cols = e.cols || []; const ss = e.series;
+  const best = wo.flatMap(w => (w.sets || []).filter(x => x.ejercicio === e.nombre)).map(x => e1rm(x.kg, x.reps, x.rir)).filter(Boolean);
+  const rm = best.length ? Math.max(...best) : null; const r125 = v => Math.round(v / 1.25) * 1.25;
+  const eff = cols.includes("rpe") ? ["rpe", "RPE"] : cols.includes("rpe_e") ? ["esf", "Esfuerzo"] : ["rir", "RIR"];
+  const topI = ss.findIndex(x => x.tipo === "top");
+  const pg = progTxt(e.prog, prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null);
+  const rows = ss.map((x, si) => {
+    const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si];
+    let kgPh = x.kg || (cols.includes("pct") && x.pct && rm ? fmt(r125(rm * x.pct / 100)) : "") || (pv && pv.kg != null ? pv.kg : "kg");
+    const top = (x.tipo === "backoff" && topI >= 0 && x.rel ? ` data-rel="${esc(x.rel)}" data-ei="${ei}"` : "") + (x.kg || (cols.includes("pct") && x.pct && rm) || (x.tipo === "backoff" && x.rel) ? " data-plan" : "");
+    const inp = (f, ph, mode = "decimal", extra = "") => `<label><span>${ph}</span><input inputmode="${mode}" data-k="${k}" data-f="${f}" value="${esc(dv[f] ?? "")}" placeholder="${esc(f === "kg" ? kgPh : (pv && pv[f] != null ? pv[f] : ""))}"${extra} aria-label="${ph} serie ${si + 1}"></label>`;
+    return `<div class="pset t-${esc(x.tipo)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
+      <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}</div></div>`;
+  }).join("");
+  return `<div class="ex"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
+  <div class="psets">${rows}</div>${prev ? `<div class="prev">La última vez (${esc(fdate(prev.fecha))}): ${prev.s.map(x => `${x.kg ?? "?"}×${x.reps ?? "?"}`).join(" · ")}</div>` : ""}
+  ${eff[0] === "rpe" ? `<p class="tiny muted" style="margin:6px 0 0">RPE: 10 = no podías hacer ni una más · 9 = te quedaba 1 · 8 = te quedaban 2.</p>` : eff[0] === "esf" ? `<p class="tiny muted" style="margin:6px 0 0">Esfuerzo: cómo de dura te ha parecido la serie, de 0 a 10.</p>` : ""}</div>`;
+}
+function topSync(el) { // back-off: se calcula con lo que levantas en el top set
+  const kg = num(el.value); document.querySelectorAll(`[data-rel][data-ei="${el.dataset.ei}"]`).forEach(i => { i.placeholder = kg ? fmt(Math.round(kg * num(i.dataset.rel) / 100 / 1.25) * 1.25) : "kg"; });
+}
 async function saveWorkout(f) {
   const id = f.dataset.id; const a = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!a) return;
   const sets = [];
   ((a.contenido || {}).ejercicios || []).forEach((e, ei) => {
+    if (e.series && e.series.length) { e.series.forEach((x, si) => { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; let kg = g("kg"); const reps = g("reps"), rpe = g("rpe"), esf = g("esf"), vel = g("vel"); let rir = g("rir");
+      if (kg == null) { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="kg"]`); if (el && el.dataset.plan != null && reps != null && num(el.placeholder) != null) kg = num(el.placeholder); }
+      if (rir == null && rpe != null) rir = Math.max(0, 10 - rpe);
+      if (kg != null || reps != null) { const o = { ejercicio: e.nombre, serie: si + 1, kg, reps, rir }; if (rpe != null) o.rpe = rpe; if (esf != null) o.esf = esf; if (vel != null) o.vel = vel; if (x.tipo && x.tipo !== "normal") o.tipo = x.tipo; sets.push(o); } }); return; }
     const n = seriesOf(e.sxr);
     if (!n) { const c = f.querySelector(`[data-k="${ei}-done"]`); if (c && c.checked) sets.push({ ejercicio: e.nombre, serie: 1, hecho: true }); return; }
     for (let si = 0; si < n; si++) { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; const kg = g("kg"), reps = g("reps"), rir = g("rir"); if (kg != null || reps != null) sets.push({ ejercicio: e.nombre, serie: si + 1, kg, reps, rir }); }
@@ -655,8 +682,80 @@ function progTxt(prog, prevKg) {
   const d = parseFloat(prog); const kg = prevKg != null ? prevKg + d : null;
   return { t: kg != null ? `${d > 0 ? "Sube" : "Baja"} ${fmt(Math.abs(d))} kg: ${fmt(kg)} kg` : `${d > 0 ? "Sube" : "Baja"} ${fmt(Math.abs(d))} kg respecto a la última vez`, kg };
 }
+/* ================= Programación avanzada por series ================= */
+const P_COLS = [["kg", "Carga (kg)"], ["rir", "RIR"], ["rpe", "RPE carga"], ["rpe_e", "RPE esfuerzo"], ["pct", "%1RM"], ["vel", "Velocidad (m/s)"], ["vl", "%VL"], ["tempo", "Tempo"]];
+const P_TIPOS = [["normal", "Serie"], ["aprox", "Aproximación"], ["top", "Top set"], ["backoff", "Back-off"], ["amrap", "AMRAP"], ["drop", "Drop set"], ["cluster", "Cluster"], ["rp", "Rest-pause"], ["myo", "Myo-reps"], ["iso", "Isométrico (s)"]];
+const P_HINT = { rpe: "6–10 (10 = sin repeticiones en reserva)", rpe_e: "Esfuerzo percibido 0–10", vel: "Velocidad media propulsiva objetivo", vl: "Corta la serie al perder este % de velocidad", pct: "Se calcula con su 1RM estimado", tempo: "Excéntrica-pausa-concéntrica-pausa, p. ej. 3-1-1-0" };
+const pTipo = k => (P_TIPOS.find(t => t[0] === k) || P_TIPOS[0])[1];
+// Resumen corto de la programación (lo que se ve en calendario, listados…)
+function presSummary(p) {
+  const ss = (p && p.series) || []; if (!ss.length) return "";
+  const allSame = ss.every(x => x.tipo === ss[0].tipo && x.reps === ss[0].reps);
+  if (allSame && ss[0].tipo === "normal") return `${ss.length}×${ss[0].reps || "?"}`;
+  const g = []; ss.forEach(x => { const l = g[g.length - 1]; const rr = x.tipo === "cluster" ? (x.cl_n && x.cl_r ? `${x.cl_n}×${x.cl_r}` : "") : x.reps; if (l && l.t === x.tipo && l.r === rr) l.n++; else g.push({ t: x.tipo, r: x.tipo === "cluster" ? (x.cl_n && x.cl_r ? `${x.cl_n}×${x.cl_r}` : "") : x.reps, n: 1 }); });
+  return g.map(z => `${z.n > 1 ? z.n + "×" : ""}${z.t === "normal" ? "" : pTipo(z.t) + " "}${z.r || ""}`.trim()).join(" + ");
+}
+// Texto del objetivo de una serie para el cliente
+function presTarget(x, cols, ctx = {}) {
+  const p = [];
+  if (x.tipo === "cluster") p.push(`${x.cl_n || "?"} bloques × ${x.cl_r || "?"} reps${x.cl_p ? ` · ${x.cl_p}″ entre bloques` : ""}`);
+  else if (x.tipo === "iso") p.push(`${x.reps || "?"} s`);
+  else if (x.tipo === "amrap") p.push(`máximas reps${x.reps ? " (≥ " + x.reps + ")" : ""}`);
+  else if (x.reps) p.push(`${x.reps} reps`);
+  if (cols.includes("kg") && x.kg) p.push(`${x.kg} kg`);
+  if (cols.includes("pct") && x.pct) p.push(`${x.pct} % 1RM${ctx.rm ? ` ≈ ${fmt(Math.round(ctx.rm * x.pct / 100 / 1.25) * 1.25)} kg` : ""}`);
+  if (x.tipo === "backoff" && x.rel) p.push(`${x.rel} % del top set`);
+  if (cols.includes("rir") && x.rir !== "" && x.rir != null) p.push(`RIR ${x.rir}`);
+  if (cols.includes("rpe") && x.rpe) p.push(`RPE ${x.rpe}`);
+  if (cols.includes("rpe_e") && x.rpe_e) p.push(`esfuerzo ${x.rpe_e}/10`);
+  if (cols.includes("vel") && x.vel) p.push(`${x.vel} m/s`);
+  if (cols.includes("vl") && x.vl) p.push(`para al perder ${x.vl} % de velocidad`);
+  if (cols.includes("tempo") && x.tempo) p.push(`tempo ${x.tempo}`);
+  if (x.desc) p.push(`descanso ${x.desc}`);
+  return p.join(" · ");
+}
+function presRow(x = {}, cols, i) {
+  const c = k => cols.includes(k);
+  const LB = { reps: "Reps", kg: "Kg", pct: "%1RM", rel: "% del top", rir: "RIR", rpe: "RPE", rpe_e: "Esfuerzo", vel: "m/s", vl: "%VL", tempo: "Tempo", desc: "Descanso", nota: "Nota", cl_n: "Bloques", cl_r: "Reps/bloque", cl_p: "Pausa (s)" };
+  const inp = (k, ph, w = "") => `<label class="pf ${w}"><span>${k === "reps" && x.tipo === "iso" ? "Segundos" : k === "reps" && x.tipo === "amrap" ? "Mín. reps" : LB[k] || ph}</span><input data-p="${k}" value="${esc(x[k] ?? "")}" placeholder="${esc(ph)}" aria-label="${esc(LB[k] || ph)}"></label>`;
+  return `<div class="prow" data-prow><span class="pn">${i + 1}</span>
+    <label class="pf"><span>Tipo</span><select data-p="tipo" aria-label="Tipo de serie">${P_TIPOS.map(([k, l]) => `<option value="${k}" ${(x.tipo || "normal") === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    ${(x.tipo || "normal") === "cluster" ? `${inp("cl_n", "4", "s")}${inp("cl_r", "2", "s")}${inp("cl_p", "20", "s")}` : inp("reps", x.tipo === "iso" ? "30" : "8", "s")}
+    ${c("kg") ? inp("kg", "kg", "s") : ""}${c("pct") ? inp("pct", "%1RM", "s") : ""}${(x.tipo || "") === "backoff" ? inp("rel", "% top", "s") : ""}${c("rir") ? inp("rir", "RIR", "s") : ""}${c("rpe") ? inp("rpe", "RPE", "s") : ""}${c("rpe_e") ? inp("rpe_e", "esfuerzo", "s") : ""}${c("vel") ? inp("vel", "m/s", "s") : ""}${c("vl") ? inp("vl", "%VL", "s") : ""}${c("tempo") ? inp("tempo", "3-1-1-0", "m") : ""}
+    ${inp("desc", "2'", "s")}${inp("nota", "opcional", "m")}
+    <button type="button" class="btn ghost sm" data-act="p-dup" aria-label="Duplicar serie">⧉</button><button type="button" class="btn ghost sm" data-act="p-del" aria-label="Quitar serie">✕</button></div>`;
+}
+function presPanel(p = {}) {
+  const cols = p.cols && p.cols.length ? p.cols : ["kg", "rir"]; const ss = p.series || [];
+  return `<div class="presp" data-pres><div class="pcols"><span class="tiny muted">Qué le indicas:</span>${P_COLS.map(([k, l]) => `<label class="pchk" title="${esc(P_HINT[k] || "")}"><input type="checkbox" data-pc="${k}" ${cols.includes(k) ? "checked" : ""}>${l}</label>`).join("")}</div>
+    <div class="prows">${ss.map((x, i) => presRow(x, cols, i)).join("")}</div>
+    <div class="ptools"><button type="button" class="btn sm" data-act="p-add">+ Serie</button><span class="tiny muted">Plantillas:</span><button type="button" class="btn ghost sm" data-act="p-tpl" data-t="recto">Series iguales</button><button type="button" class="btn ghost sm" data-act="p-tpl" data-t="topbo">Top set + back-offs</button><button type="button" class="btn ghost sm" data-act="p-tpl" data-t="aprox">Aproximaciones + efectivas</button><button type="button" class="btn ghost sm" data-act="p-tpl" data-t="piram">Pirámide</button><button type="button" class="btn ghost sm" data-act="p-tpl" data-t="cluster">Clusters</button>${ss.length ? `<span class="grow"></span><button type="button" class="btn ghost sm" data-act="p-clear" style="color:var(--bad)">Quitar programación por series</button>` : ""}</div></div>`;
+}
+function readPres(row) {
+  const pn = row.querySelector("[data-pres]"); if (!pn) return null;
+  const cols = [...pn.querySelectorAll("[data-pc]:checked")].map(i => i.dataset.pc);
+  const series = [...pn.querySelectorAll("[data-prow]")].map(r => { const o = {}; r.querySelectorAll("[data-p]").forEach(i => { const v = i.value.trim(); if (v !== "") o[i.dataset.p] = v; }); o.tipo = o.tipo || "normal"; return o; });
+  return series.length ? { cols, series } : null;
+}
+function presRerender(pn, mutate) {
+  const row = pn.closest("[data-row]"); const cur = readPres(row) || { cols: [...pn.querySelectorAll("[data-pc]:checked")].map(i => i.dataset.pc), series: [] };
+  const nx = mutate ? mutate(cur) : cur; pn.outerHTML = presPanel(nx); presSync(row);
+}
+function presSync(row) { // la casilla de series×reps muestra el resumen
+  const p = readPres(row); const sx = row.querySelector('[name="r_sxr"]'); const btn = row.querySelector('[data-act="p-toggle"]');
+  if (sx) { sx.readOnly = !!p; if (p) sx.value = presSummary(p); }
+  if (btn) btn.classList.toggle("on", !!p);
+}
+const P_TPL = {
+  recto: c => ({ ...c, series: Array.from({ length: 4 }, () => ({ tipo: "normal", reps: "8", rir: "2" })) }),
+  topbo: c => ({ cols: [...new Set([...c.cols.filter(k => k !== "rir"), "rpe"])], series: [{ tipo: "top", reps: "3", rpe: "8" }, ...Array.from({ length: 3 }, () => ({ tipo: "backoff", reps: "5", rel: "88", rpe: "7" }))] }),
+  aprox: c => ({ cols: [...new Set([...c.cols, "pct"])], series: [{ tipo: "aprox", reps: "5", pct: "50" }, { tipo: "aprox", reps: "3", pct: "65" }, { tipo: "aprox", reps: "1", pct: "75" }, ...Array.from({ length: 3 }, () => ({ tipo: "normal", reps: "5", pct: "82", rir: "2" }))] }),
+  piram: c => ({ ...c, series: [{ tipo: "normal", reps: "10", rir: "3" }, { tipo: "normal", reps: "8", rir: "2" }, { tipo: "normal", reps: "6", rir: "1" }, { tipo: "normal", reps: "8", rir: "1" }] }),
+  cluster: c => ({ cols: [...new Set([...c.cols, "pct"])], series: Array.from({ length: 3 }, () => ({ tipo: "cluster", cl_n: "4", cl_r: "2", cl_p: "20", pct: "85", desc: "3'" })) })
+};
+
 function wRow(e = {}) {
-  return `<div class="wrow" data-row><input name="r_b" value="${esc(e.bloque || "")}" placeholder="A1" aria-label="Bloque" class="rb"><input name="r_n" list="dl-ex" value="${esc(e.nombre || "")}" placeholder="Ejercicio" aria-label="Ejercicio" class="rn"><input name="r_sxr" value="${esc(e.sxr || "")}" placeholder="3×8–10" aria-label="Series × reps"><input name="r_rir" value="${esc(e.rir || "")}" placeholder="RIR" aria-label="RIR o RPE"><input name="r_des" value="${esc(e.descanso || "")}" placeholder="Descanso" aria-label="Descanso"><select name="r_prog" class="rprog" aria-label="Progresión de carga">${PROG.map(([v, l]) => `<option value="${v}" ${(e.prog || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select><input name="r_not" value="${esc(e.notas || "")}" placeholder="Notas técnicas" aria-label="Notas técnicas" class="rnot"><span class="ra"><button type="button" class="btn ghost sm" data-act="w-up" aria-label="Subir">↑</button><button type="button" class="btn ghost sm" data-act="w-down" aria-label="Bajar">↓</button><button type="button" class="btn ghost sm" data-act="w-del" aria-label="Quitar">✕</button></span></div>`;
+  return `<div class="wrow" data-row><input name="r_b" value="${esc(e.bloque || "")}" placeholder="A1" aria-label="Bloque" class="rb"><input name="r_n" list="dl-ex" value="${esc(e.nombre || "")}" placeholder="Ejercicio" aria-label="Ejercicio" class="rn"><input name="r_sxr" value="${esc(e.series && e.series.length ? presSummary(e) : (e.sxr || ""))}" ${e.series && e.series.length ? "readonly" : ""} placeholder="3×8–10" aria-label="Series × reps"><input name="r_rir" value="${esc(e.rir || "")}" placeholder="RIR" aria-label="RIR o RPE"><input name="r_des" value="${esc(e.descanso || "")}" placeholder="Descanso" aria-label="Descanso"><select name="r_prog" class="rprog" aria-label="Progresión de carga">${PROG.map(([v, l]) => `<option value="${v}" ${(e.prog || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select><input name="r_not" value="${esc(e.notas || "")}" placeholder="Notas técnicas" aria-label="Notas técnicas" class="rnot"><span class="ra"><button type="button" class="btn ghost sm" data-act="w-up" aria-label="Subir">↑</button><button type="button" class="btn ghost sm" data-act="w-down" aria-label="Bajar">↓</button><button type="button" class="btn ghost sm" data-act="w-del" aria-label="Quitar">✕</button></span><button type="button" class="pbtn ${e.series && e.series.length ? "on" : ""}" data-act="p-toggle">⚙︎ Programar por series<small>Top set, back-off, clusters, %1RM, RPE, velocidad…</small></button>${e.series && e.series.length ? presPanel(e) : ""}</div>`;
 }
 function wEditor(c = {}, tipo = "workout") {
   if (tipo === "cardio") return cardioEditor(c);
@@ -669,7 +768,7 @@ function wEditor(c = {}, tipo = "workout") {
 function readWEditor(root, tipo) {
   if (tipo === "cardio") return readCardio(root);
   const vid = n => { const e = (S.lib.ex || []).find(x => x.nombre.toLowerCase() === n.toLowerCase()); return e && e.video_url ? e.video_url : ""; };
-  const ejercicios = [...root.querySelectorAll("[data-row]")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); const nombre = g("r_n"); return { bloque: g("r_b"), nombre, sxr: g("r_sxr"), rir: g("r_rir"), descanso: g("r_des"), notas: g("r_not"), prog: (r.querySelector('[name="r_prog"]') || {}).value || "", video: vid(nombre) }; }).filter(e => e.nombre);
+  const ejercicios = [...root.querySelectorAll("[data-row]")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); const nombre = g("r_n"); const o = { bloque: g("r_b"), nombre, sxr: g("r_sxr"), rir: g("r_rir"), descanso: g("r_des"), notas: g("r_not"), prog: (r.querySelector('[name="r_prog"]') || {}).value || "", video: vid(nombre) }; const pr = readPres(r); return pr ? { ...o, cols: pr.cols, series: pr.series, sxr: presSummary(pr) } : o; }).filter(e => e.nombre);
   return { calentamiento: root.querySelector('[name="w_cal"]').value.trim(), notas: root.querySelector('[name="w_not"]').value.trim(), ejercicios };
 }
 async function newExercisesFrom(c) { // añade a la librería los ejercicios escritos a mano
@@ -2020,6 +2119,15 @@ document.addEventListener("click", async ev => {
       case "w-up": move(a.closest("[data-row]"), -1); break;
       case "w-down": move(a.closest("[data-row]"), 1); break;
       case "w-del": a.closest("[data-row]").remove(); break;
+      case "p-toggle": { const row = a.closest("[data-row]"); const pn = row.querySelector("[data-pres]");
+        if (pn) { pn.hidden = !pn.hidden; break; }
+        const sx = row.querySelector('[name="r_sxr"]').value; const n = seriesOf(sx) || 3; const reps = (sx.match(/[x×]\s*([\d–\-]+)/i) || [])[1] || ""; const rir = row.querySelector('[name="r_rir"]').value.trim(); const des = row.querySelector('[name="r_des"]').value.trim();
+        row.insertAdjacentHTML("beforeend", presPanel({ cols: ["kg", "rir"], series: Array.from({ length: n }, () => ({ tipo: "normal", reps, rir, desc: des })) })); presSync(row); break; }
+      case "p-add": { const pn = a.closest("[data-pres]"); presRerender(pn, c => ({ ...c, series: [...c.series, { ...(c.series[c.series.length - 1] || { tipo: "normal" }) }] })); break; }
+      case "p-dup": { const pn = a.closest("[data-pres]"); const i = [...pn.querySelectorAll("[data-prow]")].indexOf(a.closest("[data-prow]")); presRerender(pn, c => { const ss = [...c.series]; ss.splice(i + 1, 0, { ...ss[i] }); return { ...c, series: ss }; }); break; }
+      case "p-del": { const pn = a.closest("[data-pres]"); const i = [...pn.querySelectorAll("[data-prow]")].indexOf(a.closest("[data-prow]")); presRerender(pn, c => ({ ...c, series: c.series.filter((_, k) => k !== i) })); break; }
+      case "p-tpl": { const pn = a.closest("[data-pres]"); presRerender(pn, c => P_TPL[a.dataset.t](c)); break; }
+      case "p-clear": { const row = a.closest("[data-row]"); a.closest("[data-pres]").remove(); presSync(row); const sx = row.querySelector('[name="r_sxr"]'); sx.readOnly = false; break; }
       case "asig-dup": { const f = a.closest("form"); const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; await q(sb.from("assignments").insert({ client_id: x.client_id, fecha: f.dup_fecha.value, orden: x.orden, tipo: x.tipo, titulo: x.titulo, contenido: x.contenido, visible: x.visible, programa: x.programa })); sheet(""); toast("Duplicado"); refreshClient(); break; }
       case "asig-del": if (confirmar(a)) { await q(sb.from("assignments").delete().eq("id", id)); sheet(""); toast("Borrado"); refreshClient(); } break;
       case "ev-edit": openEvent(id); break;
@@ -2138,13 +2246,15 @@ document.addEventListener("pointercancel", () => { if (!DR.on) dragEnd(); });
 let qT;
 document.addEventListener("input", ev => {
   const el = ev.target;
-  if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
+  if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.top != null) topSync(el); }
+  if (el.closest && el.closest("[data-pres]") && el.dataset.p) presSync(el.closest("[data-row]"));
   if (el.id === "ex-q") { clearTimeout(qT); qT = setTimeout(() => { S.lib.q = el.value; S.lib.focusQ = true; viewLib(); }, 250); }
   if (el.dataset && el.dataset.prog && S.sub.prog) S.sub.prog[el.dataset.prog] = el.dataset.prog === "semanas" ? Math.min(16, Math.max(1, +el.value || 1)) : el.value;
 });
 document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
+  if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
   if (el.dataset && el.dataset.actChange === "test-name") { const t = (S.coach.tests || []).filter(x => tKey(x.nombre) === tKey(el.value)).pop(); if (t) { const f = el.form; f.categoria.value = t.categoria || f.categoria.value; f.unidad.value = t.unidad || ""; f.menos.checked = !!t.mejor_es_menos; f.nombre.value = t.nombre; } }
   if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
