@@ -429,8 +429,8 @@ const draftKey = id => `arc-draft-${S.me.cid}-${id}`;
 // Referencia discreta: lo que hizo la última vez en ese ejercicio
 function exMarks(nombre, wo, prev) {
   if (!prev || !prev.s.length) return { html: "", best: 0 };
-  const ss = prev.s.map(x => `${x.kg != null ? fmt(x.kg, 2) : "?"}×${x.reps ?? "?"}`).join(" · ");
-  return { best: 0, html: `<div class="mk-prev">Anterior · ${esc(fdate(prev.fecha, { day: "numeric", month: "short" }))}: <span>${esc(ss)}</span></div>` };
+  const ss = prev.s.map(x => `<i><b>${esc(x.kg != null ? fmt(x.kg, 2) : "?")}</b> kg × <b>${esc(x.reps ?? "?")}</b></i>`).join("");
+  return { best: 0, html: `<div class="mk-prev"><span class="mkl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>Anterior · ${esc(fdate(prev.fecha, { day: "numeric", month: "short" }))}</span><span class="mks">${ss}</span></div>` };
 }
 async function viewWorkout(id) {
   loading("Entreno");

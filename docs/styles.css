@@ -867,5 +867,9 @@ input[type=checkbox],input[type=radio]{accent-color:var(--ink)}
 .hero .chip{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.14);color:#fff}
 .rail button,.rail button[aria-current="true"]{border-left-color:transparent!important}
 /* Referencia de la sesión anterior */
-.mk-prev{font-size:12.5px;color:var(--muted);line-height:1.4}
-.mk-prev span{color:var(--ink);opacity:.75;font-variant-numeric:tabular-nums}
+.mk-prev{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;padding:8px 10px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.mk-prev .mkl{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);white-space:nowrap}
+.mk-prev .mkl svg{width:13px;height:13px}
+.mk-prev .mks{display:flex;flex-wrap:wrap;gap:5px}
+.mk-prev i{font-style:normal;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px 9px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mk-prev i b{color:var(--ink);font-weight:650}
