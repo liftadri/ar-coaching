@@ -90,6 +90,7 @@ function opBuild(o) {
   const t = sb.from(o.table);
   if (o.t === "insert") return t.insert(o.row);
   if (o.t === "upsert") return t.upsert(o.row, { onConflict: o.oc });
+  if (o.t === "delete") { let b = t.delete(); Object.entries(o.match).forEach(([k, v]) => { b = b.eq(k, v); }); return b; }
 }
 // Ejecuta una operación; sin red la deja en cola (manteniendo el orden) y devuelve {queued:true}
 async function op(o) {
@@ -254,7 +255,7 @@ async function init() {
   });
   const { data } = await sb.auth.getSession();
   if (S.recovery) return;
-  if (!data || !data.session) return location.hash === "#empezar" ? renderEmpezar() : renderLogin();
+  if (!data || !data.session) return location.hash === "#empezar" ? renderEmpezar() : ["#legal", "#privacidad"].includes(location.hash) ? renderLegal(location.hash.slice(1)) : renderLogin();
   S.email = data.session.user.email || "";
   await afterLogin();
 }
@@ -265,9 +266,73 @@ async function afterLogin() {
     S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre }; S.plan = null;
     const hc = isCoachHash(location.hash.slice(1));
     if (!location.hash || (S.me.role === "coach") !== hc) location.hash = S.me.role === "coach" ? "inicio" : "hoy";
+    S.gate = S.me.role === "client" && await needConsent();
+    if (S.gate && !["legal", "privacidad"].includes(location.hash.slice(1))) { renderConsent(); return; }
     if (S.me.role === "client") { const ob = await q(sb.from("onboarding").select("client_id").limit(1)).catch(() => [{}]); S.needCom = !ob.length; if (S.needCom && location.hash !== "#comienzo") { location.hash = "comienzo"; return; } }
     await route();
   } catch (e) { $("#app").innerHTML = `<div class="login">${LOGO}<h1>No se pudo cargar</h1><p>${esc(errMsg(e))}</p><button class="btn pri" data-act="reload">Reintentar</button><button class="btn ghost" data-act="logout">Cerrar sesión</button></div>`; }
+}
+/* ================= Legal: aviso legal, privacidad y consentimientos ================= */
+const LEGAL_V = "2026-11";
+async function legalDatos() {
+  if (S.legal) return S.legal;
+  try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "legal").limit(1)); S.legal = (r[0] || {}).valor || {}; } catch { S.legal = {}; }
+  return S.legal;
+}
+const pend = v => v ? esc(v) : `<span class="lpend">[pendiente de completar]</span>`;
+async function renderLegal(cual) {
+  const L = await legalDatos(); const tit = L.marca || "Adrián Rodríguez Coaching";
+  const contacto = [L.email ? `email ${esc(L.email)}` : "", L.telefono ? `WhatsApp ${esc(L.telefono)}` : ""].filter(Boolean).join(" o ") || pend("");
+  const aviso = `<h1>Aviso legal</h1><p class="lmeta">Versión ${LEGAL_V}</p>
+  <h2>Titular</h2><ul><li><b>Nombre:</b> ${pend(L.nombre)}</li><li><b>NIF:</b> ${pend(L.nif)}</li><li><b>Domicilio:</b> ${pend(L.domicilio)}</li><li><b>Contacto:</b> ${contacto}</li><li><b>Actividad:</b> ${esc(L.actividad || "Asesoría online de entrenamiento personal")}</li></ul>
+  <h2>Objeto</h2><p>Esta aplicación permite a los clientes de ${esc(tit)} recibir su planificación de entrenamiento, registrar su progreso y comunicarse con su entrenador. El formulario de contacto sirve para solicitar información sobre las asesorías.</p>
+  <h2>Uso</h2><p>El acceso a la app es personal e intransferible. Cada usuario es responsable de custodiar su contraseña y de que los datos que registra sean veraces. No está permitido usarla con fines distintos a los del servicio.</p>
+  <h2>Salud y responsabilidad</h2><p>Las pautas de entrenamiento y de hábitos que se ofrecen no sustituyen el consejo médico, fisioterapéutico ni dietético-nutricional. Si tienes una lesión, una enfermedad, dolor o cualquier síntoma, consulta a un profesional sanitario antes de entrenar y avísale a tu entrenador. ${esc(tit)} no pauta dietas ni cantidades de calorías o macronutrientes con fines terapéuticos.</p>
+  <h2>Propiedad intelectual</h2><p>Los contenidos de la app (programas, textos, vídeos, imágenes y diseño) pertenecen a su titular o se usan con permiso. No pueden copiarse ni distribuirse sin autorización.</p>
+  <h2>Legislación</h2><p>Se rige por la legislación española. Para cualquier controversia, las partes se someten a los juzgados y tribunales que correspondan conforme a la ley.</p>`;
+  const priv = `<h1>Política de privacidad</h1><p class="lmeta">Versión ${LEGAL_V}</p>
+  <h2>Responsable</h2><p>${pend(L.nombre)} (${esc(tit)}) · NIF ${pend(L.nif)} · ${pend(L.domicilio)} · Contacto: ${contacto}.</p>
+  <h2>Qué datos tratamos</h2><ul><li><b>Identificación y contacto:</b> nombre, email, teléfono, edad y sexo.</li><li><b>Datos del servicio:</b> objetivos, disponibilidad, material, planificación, entrenos registrados, cargas y repeticiones.</li><li><b>Datos de salud y bienestar</b> (categoría especial): lesiones y limitaciones, sueño, fatiga, estrés, molestias, frecuencia cardiaca y variabilidad, peso, medidas corporales y fotos de progreso.</li><li><b>Comunicaciones:</b> respuestas a formularios, comentarios, revisiones y reacciones en la comunidad.</li></ul>
+  <h2>Para qué</h2><ul><li>Atender tu solicitud de información (formulario de contacto).</li><li>Prestarte el servicio de asesoría: diseñar y ajustar tu entrenamiento, hacer el seguimiento y las revisiones semanales.</li><li>Gestionar la relación con el cliente, incluidos los cobros.</li></ul>
+  <h2>Base legal</h2><ul><li>Formulario de contacto: tu <b>consentimiento</b> (art. 6.1.a RGPD).</li><li>Servicio de asesoría: la <b>ejecución del contrato</b> (art. 6.1.b RGPD).</li><li>Datos de salud: tu <b>consentimiento explícito</b> (art. 9.2.a RGPD), que puedes retirar en cualquier momento. Si lo retiras, no podremos usar esos datos para adaptar tu entrenamiento.</li><li>Obligaciones fiscales y contables: <b>obligación legal</b> (art. 6.1.c RGPD).</li></ul>
+  <h2>Cuánto tiempo</h2><p>Mientras seas cliente y, después, el tiempo necesario para atender posibles responsabilidades legales. Las solicitudes de contacto que no terminen en alta se borran como máximo a los 12 meses. Los datos fiscales se conservan los plazos que marca la ley.</p>
+  <h2>Quién más accede</h2><p>Nadie salvo tu entrenador. Para que la app funcione se usan proveedores que actúan como encargados del tratamiento: <b>Supabase</b> (base de datos y archivos, servidores en la Unión Europea, París) y <b>GitHub Pages</b> (alojamiento de la web de la app, sin datos de clientes). No se venden ni se ceden datos a terceros ni se usan para publicidad.</p>
+  <h2>Seguridad</h2><p>Los datos viajan cifrados, cada cliente solo puede ver los suyos y el acceso del entrenador está protegido. Las copias de seguridad se guardan cifradas.</p>
+  <h2>Tus derechos</h2><p>Puedes pedir acceso, rectificación, supresión, oposición, limitación y portabilidad de tus datos, y retirar tu consentimiento, escribiendo a ${contacto}. Si crees que no se han tratado bien, puedes reclamar ante la Agencia Española de Protección de Datos (aepd.es).</p>`;
+  const body = cual === "privacidad" ? priv : aviso;
+  const otro = cual === "privacidad" ? `<a href="#legal">Aviso legal</a>` : `<a href="#privacidad">Política de privacidad</a>`;
+  if (S.me) { shell(cual === "privacidad" ? "Privacidad" : "Aviso legal", `<article class="card legal">${body}<p class="lmeta">${otro}</p></article>`, S.me.role === "coach" ? { crumb: [["mas", "Perfil"], [null, cual === "privacidad" ? "Privacidad" : "Aviso legal"]] } : { back: "mas" }); return; }
+  document.body.classList.add("pub");
+  $("#app").innerHTML = `<div class="ctw"><header class="cth"><img src="./logo-blanco.png" alt="" class="ctlogo"><span class="ctbrand">${esc(tit)}</span></header><article class="ctcard legal">${body}<p class="lmeta">${otro} · <a href="javascript:history.back()">Volver</a></p></article></div>`;
+  window.scrollTo(0, 0);
+}
+// Puerta de consentimiento: la primera vez (y si cambia la versión)
+async function needConsent() {
+  if (!S.me || S.me.role === "coach") return false;
+  try { const r = await q(sb.from("consentimientos").select("tipo").eq("version", LEGAL_V)); const t = new Set(r.map(x => x.tipo)); return !(t.has("privacidad") && t.has("salud")); } catch { return false; }
+}
+function renderConsent() {
+  $("#app").innerHTML = `<form class="login consent-g" id="f-consent">${LOGO}<h1>Antes de empezar</h1>
+  <p>Para prepararte el entrenamiento y hacer tu seguimiento, tu entrenador necesita guardar algunos datos tuyos, entre ellos datos de salud y bienestar (peso, medidas, sueño, molestias, fotos de progreso…). Solo los ve él.</p>
+  <label class="cchk"><input type="checkbox" name="priv" required><span>He leído el <a href="#legal">Aviso legal</a> y la <a href="#privacidad">Política de privacidad</a> y los acepto.</span></label>
+  <label class="cchk"><input type="checkbox" name="salud" required><span>Doy mi <b>consentimiento explícito</b> para que se traten mis datos de salud con la única finalidad de prestarme el servicio de entrenamiento. Puedo retirarlo cuando quiera.</span></label>
+  <button class="btn pri block">Aceptar y continuar</button><button type="button" class="btn ghost" data-act="logout">Ahora no (cerrar sesión)</button></form>`;
+}
+async function saveConsent(f) {
+  if (!f.priv.checked || !f.salud.checked) { toast("Marca las dos casillas para continuar"); return; }
+  try { await q(sb.rpc("registrar_consentimientos", { p_version: LEGAL_V, p_tipos: ["privacidad", "salud"] })); S.gate = false; toast("¡Gracias!"); await afterLogin(); } catch (e) { toast(errMsg(e)); }
+}
+async function legalCard() {
+  const L = await legalDatos(); const f = (k, l, ph = "") => `<div class="f"><label for="lg-${k}">${l}</label><input id="lg-${k}" name="${k}" value="${esc(L[k] || "")}" placeholder="${esc(ph)}"></div>`;
+  const falta = ["nif", "domicilio"].some(k => !L[k]) || (!L.email && !L.telefono);
+  return `<form class="card" id="f-legal" style="display:flex;flex-direction:column;gap:12px"><h2 class="hh">${ICON.doc}Datos legales</h2>
+  ${falta ? `<div class="banner">Completa tu NIF, domicilio y un contacto: aparecen en el Aviso legal y la Política de privacidad, y la ley exige que estén.</div>` : ""}
+  <div class="grid2">${f("nombre", "Nombre del titular")}${f("marca", "Marca")}${f("nif", "NIF", "12345678Z")}${f("telefono", "Teléfono / WhatsApp de contacto")}</div>${f("domicilio", "Domicilio (puede ser profesional)")}${f("email", "Email de contacto", "contacto@…")}
+  <div class="row"><a class="lnk" href="#legal">Ver aviso legal</a><a class="lnk" href="#privacidad">Ver privacidad</a><span class="grow"></span><button class="btn pri">Guardar</button></div></form>`;
+}
+async function saveLegal(f) {
+  const v = n => f[n].value.trim(); const valor = { ...(S.legal || {}), nombre: v("nombre"), marca: v("marca"), nif: v("nif").toUpperCase(), domicilio: v("domicilio"), email: v("email"), telefono: v("telefono") };
+  try { await q(sb.from("ajustes").upsert({ clave: "legal", valor, updated_at: new Date().toISOString() }, { onConflict: "clave" })); S.legal = valor; toast("Datos legales guardados"); route(); } catch (e) { toast(errMsg(e)); }
 }
 function renderNoAccess() {
   $("#app").innerHTML = `<form class="login" id="f-alta-codigo">${LOGO}<h1>Activa tu cuenta</h1><p>Has entrado como <b>${esc(S.email)}</b>. Escribe el código de alta que te ha dado Adrián para vincular tu cuenta.</p>
@@ -285,7 +350,7 @@ function renderLogin(stage) {
     <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
     ${pwField("pw", "Crea una contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repite la contraseña", "new-password")}
     <div class="f"><label for="codigo">Código de alta</label><input id="codigo" name="codigo" autocomplete="off" autocapitalize="characters" required maxlength="12" placeholder="8 caracteres"></div>
-    <button class="btn pri block">Crear mi cuenta</button></form>`; return;
+    <button class="btn pri block">Crear mi cuenta</button><p class="tiny muted" style="margin:0">Al crear tu cuenta aceptas el <a href="#legal">Aviso legal</a> y la <a href="#privacidad">Política de privacidad</a>.</p></form>`; return;
   }
   if (stage === "olvido") {
     $("#app").innerHTML = `<form class="login" id="f-olvido">${head}<p>Te enviaremos un enlace a tu email para crear una contraseña nueva. Ábrelo en este mismo móvil.</p>
@@ -376,14 +441,17 @@ function shell(title, body, opts = {}) {
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
 async function route() {
+  if (!location.hash.startsWith("#a-")) { keepAwake(false); if (RT.end) restStop(); }
   offBanner(); if (navigator.onLine && offQ().length) offFlush();
+  if (["legal", "privacidad"].includes(location.hash.slice(1))) return renderLegal(location.hash.slice(1));
+  if (S.gate) return renderConsent();
   if (!S.me) { const h0 = location.hash.slice(1); if (h0 === "empezar") renderEmpezar(); else if (document.body.classList.contains("pub")) { document.body.classList.remove("pub"); renderLogin(); } return; }
   if (location.hash === "#empezar") { renderEmpezar(); return; }
   document.body.classList.remove("pub");
   const coach = S.me.role === "coach";
   let h = location.hash.slice(1) || (coach ? "inicio" : "hoy");
   if (!coach && isCoachHash(h) && h !== "tablon") h = "hoy"; // la vista de entrenador no existe para clientes
-  if (coach && !isCoachHash(h) && h !== "mas") h = "inicio";
+  if (coach && !isCoachHash(h) && h !== "mas" && h !== "legal" && h !== "privacidad") h = "inicio";
   S.view = h;
   try {
     if (coach) {
@@ -400,7 +468,7 @@ async function route() {
     if (h !== "tablon") await tablonUnread();
     if (h === "tablon") return await viewTablon();
     if (h === "comienzo") return await viewComienzo();
-    if (h === "cal") return await viewCal();
+    if (h === "cal") return await (localStorage.getItem("arc-cal2") ? viewCal2() : viewCal());
     if (h === "entreno") return await viewEntreno();
     if (h.startsWith("a-")) return await viewWorkout(h.slice(2));
     if (h === "nutri") return await viewNutri();
@@ -595,12 +663,48 @@ async function savePost(f) {
   } catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 
+/* ================= Hábitos diarios con racha ================= */
+const habId = t => String(t).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "habito";
+function habStreak(dias, hoy) { // días seguidos hasta hoy (o hasta ayer si hoy aún no está)
+  const set = new Set(dias); let d = set.has(hoy) ? hoy : addDays(hoy, -1), n = 0;
+  while (set.has(d)) { n++; d = addDays(d, -1); } return n;
+}
+async function habitosHoy(plan) {
+  const hs = (plan.habitos || []).filter(Boolean); if (!hs.length) return "";
+  const t = today(); const logs = await q(sb.from("habit_logs").select("fecha,habito").gte("fecha", addDays(t, -60))).catch(() => []);
+  const by = {}; logs.forEach(l => (by[l.habito] = by[l.habito] || []).push(l.fecha));
+  const hechosHoy = hs.filter(h => (by[habId(h)] || []).includes(t)).length;
+  const todos = d => hs.every(h => (by[habId(h)] || []).includes(d)); let full = 0, d0 = todos(t) ? t : addDays(t, -1); while (todos(d0) && full < 365) { full++; d0 = addDays(d0, -1); }
+  return `<section class="card habs"><div class="habh"><h2>Tus hábitos de hoy</h2><span class="habn">${hechosHoy}/${hs.length}</span></div>
+  ${full >= 2 ? `<p class="habfull">🔥 ${full} días seguidos cumpliéndolos todos</p>` : ""}
+  <div class="habl">${hs.map(h => { const id = habId(h); const on = (by[id] || []).includes(t); const st = habStreak(by[id] || [], t);
+    return `<button class="hab${on ? " on" : ""}" data-act="hab" data-h="${esc(id)}" aria-pressed="${on}"><span class="hchk">${on ? "✓" : ""}</span><span class="htx">${esc(h)}</span>${st >= 2 ? `<span class="hst" title="Días seguidos">🔥 ${st}</span>` : ""}</button>`; }).join("")}</div></section>`;
+}
+async function habToggle(b) {
+  const on = b.getAttribute("aria-pressed") !== "true"; const id = b.dataset.h; const t = today();
+  b.setAttribute("aria-pressed", on); b.classList.toggle("on", on); b.querySelector(".hchk").textContent = on ? "✓" : "";
+  const card = b.closest(".habs"); const n = card.querySelectorAll(".hab.on").length, tot = card.querySelectorAll(".hab").length; card.querySelector(".habn").textContent = `${n}/${tot}`;
+  if (on && n === tot) { toast("¡Todos los hábitos de hoy hechos! 💪"); try { navigator.vibrate && navigator.vibrate(30); } catch { } }
+  try { if (on) await op({ t: "upsert", table: "habit_logs", row: { client_id: S.me.cid, fecha: t, habito: id }, oc: "client_id,fecha,habito" });
+    else await op({ t: "delete", table: "habit_logs", match: { client_id: S.me.cid, fecha: t, habito: id } });
+    if (S.queued) { S.queued = false; }
+  } catch (e) { toast(errMsg(e)); }
+}
+async function habitosCoach(cid, pl) {
+  const hs = (pl.habitos || []).filter(Boolean); if (!hs.length) return `<div class="card"><h2>Hábitos diarios</h2><p class="small muted" style="margin:0">No tiene hábitos diarios. Añádelos en Nutrición → Hábitos y pautas.</p></div>`;
+  const t = today(); const D = Array.from({ length: 14 }, (_, i) => addDays(t, -13 + i));
+  const logs = await q(sb.from("habit_logs").select("fecha,habito").eq("client_id", cid).gte("fecha", addDays(t, -60))).catch(() => []);
+  const by = {}; logs.forEach(l => (by[l.habito] = by[l.habito] || []).push(l.fecha));
+  return `<div class="card"><h2>Hábitos diarios <small>últimos 14 días</small></h2><div class="tbl"><table class="habt"><thead><tr><th>Hábito</th>${D.map(d => `<th class="n">${esc(fdate(d, { day: "numeric" }))}</th>`).join("")}<th class="n">%</th><th class="n">Racha</th></tr></thead><tbody>${hs.map(h => { const ds = by[habId(h)] || []; const p = Math.round(100 * D.filter(d => ds.includes(d)).length / D.length);
+    return `<tr><td>${esc(h)}</td>${D.map(d => `<td class="n"><i class="hd${ds.includes(d) ? " on" : ""}"></i></td>`).join("")}<td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td><td class="n">${habStreak(ds, t) ? "🔥 " + habStreak(ds, t) : "—"}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+}
+
 /* ================= Cliente: Hoy ================= */
 async function viewHoy() {
   loading("Hoy");
   const t = today();
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana,leido_en").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
-  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy();
+  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy(); const habs = await habitosHoy(plan);
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
@@ -612,6 +716,7 @@ async function viewHoy() {
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>${prox[0] || atras.length ? "Día de descanso" : "Nada programado para hoy"}</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : atras.length ? "Recupera bien" : "Cuando Adrián te programe algo, aparecerá aquí"}</span></span></div>`}
   </div></div>
+  ${habs}
   ${atras.length ? `<div class="card"><h2>Pendiente de días anteriores</h2><div class="list">${atras.map(asigRow).join("")}</div></div>` : ""}
   ${prox.length ? `<div class="card"><h2>Próximos días <small><a href="#cal">Ver calendario</a></small></h2><div class="list">${prox.map(asigRow).join("")}</div></div>` : ""}
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
@@ -673,6 +778,37 @@ async function viewCal() {
   <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}${w ? ` <small>${esc(w.bloque)} · ${esc(w.nombre)}</small>` : ""}</h2>${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
 }
 
+// Propuesta de calendario del cliente con el estilo del calendario del entrenador (activar con localStorage arc-cal2=1)
+async function viewCal2() {
+  loading("Calendario");
+  const t = today(); const m = S.sub.calM || t.slice(0, 7); const sel = S.sub.calD && S.sub.calD.startsWith(m) ? S.sub.calD : (t.startsWith(m) ? t : m + "-01");
+  const first = m + "-01"; const last = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 0));
+  const g0 = monday(first), g1 = addDays(monday(last), 6);
+  const [plan, asig, ev, wo] = await Promise.all([getPlan(), getAsig(g0, g1), q(sb.from("events").select("*").lte("fecha", g1).order("fecha")), q(sb.from("workouts").select("fecha,dia,assignment_id").gte("fecha", g0).lte("fecha", g1))]);
+  const evOn = d => ev.filter(e => e.fecha <= d && d <= (e.fin || e.fecha));
+  const libres = wo.filter(w => !w.assignment_id);
+  let rows = "";
+  for (let wk = g0; wk <= g1; wk = addDays(wk, 7)) {
+    const w = weekNow(plan, wk) || weekNow(plan, addDays(wk, 3));
+    rows += `<div class="c2wk">${w ? `<span class="c2tag t-${esc(w.tipo || "carga")}">${esc(w.nombre)}</span><span class="c2foco">${esc(w.foco || w.bloque || "")}</span>` : ""}</div><div class="c2row">`;
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(wk, i); const out = !d.startsWith(m); const a = asig.filter(x => x.fecha === d);
+      const bars = [...a.map(x => `<i class="tp-${esc(x.tipo)}${x.hecho ? " ok" : d < t ? " late" : ""}"></i>`), ...evOn(d).map(() => `<i class="tp-evento"></i>`), ...libres.filter(x => x.fecha === d).map(() => `<i class="tp-workout ok"></i>`)].join("");
+      rows += `<button class="c2d${d === t ? " hoy" : ""}${out ? " out" : ""}" data-act="cal-d" data-d="${d}" aria-pressed="${d === sel}" aria-label="${esc(fdate(d, { weekday: "long", day: "numeric", month: "long" }))}"><b>${+d.slice(8)}</b><span class="c2bars">${bars}</span></button>`;
+    }
+    rows += `</div>`;
+  }
+  const w = weekNow(plan, sel);
+  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">Entreno registrado</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
+  const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long" })), yr = first.slice(0, 4);
+  const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
+  const ley = [["workout", "Entreno"], ["cardio", "Cardio"], ["formulario", "Formulario"], ["tarea", "Tarea"], ["evento", "Evento"]];
+  shell("Calendario", `<div class="card c2"><div class="c2head"><button class="cnav" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(mName)} <span>${yr}</span></h2><button class="cnav" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn sm" data-act="cal-m" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
+  <div class="c2dh">${["L", "M", "X", "J", "V", "S", "D"].map(x => `<span>${x}</span>`).join("")}</div>${rows}
+  <div class="c2ley">${ley.map(([k, l]) => `<span><i class="tp-${k}"></i>${l}</span>`).join("")}<span><i class="tp-workout ok"></i>Hecho</span></div></div>
+  <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}</h2>${w ? `<p class="tiny muted" style="margin:-4px 0 6px">${esc(w.bloque)} · ${esc(w.nombre)}${w.foco ? " · " + esc(w.foco) : ""}</p>` : ""}${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
+}
+
 /* ================= Cliente: Entreno ================= */
 async function viewEntreno() {
   loading("Entreno"); const t = today(); const mon = monday(t);
@@ -684,6 +820,40 @@ async function viewEntreno() {
   <div class="card"><h2>Últimos entrenos</h2>${wo.length ? `<div class="list">${wo.slice(0, 10).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${esc(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }))} · ${(x.sets || []).length} series</span></span></div>`).join("")}</div>` : `<div class="empty">Aún no has registrado ningún entreno.</div>`}</div>`);
 }
 const draftKey = id => `arc-draft-${S.me.cid}-${id}`;
+/* ================= Temporizador de descanso ================= */
+function restSecs(t) {
+  const s = String(t || "").toLowerCase().replace(",", ".").trim(); if (!s || s === "—") return 0;
+  let m = s.match(/(\d+):(\d{1,2})/); if (m) return +m[1] * 60 + +m[2];
+  m = s.match(/(\d+(?:\.\d+)?)\s*(?:-\s*\d+(?:\.\d+)?)?\s*(min|m|'|’)/); if (m) return Math.round(+m[1] * 60);
+  m = s.match(/(\d+)\s*(?:-\s*\d+)?\s*(s|seg|"|”|'')/); if (m) return +m[1];
+  m = s.match(/^(\d+(?:\.\d+)?)$/); if (m) return +m[1] <= 10 ? Math.round(+m[1] * 60) : +m[1];
+  return 0;
+}
+const RT = { end: 0, dur: 0, iv: null, done: false };
+const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
+const restBtn = x => x ? `<button type="button" class="rgo" data-act="rest-go">⏱ Descanso ${mmss(x)}</button>` : "";
+let wakeLock = null;
+async function keepAwake(on) { try { if (on && "wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; } } catch { } }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && $("#f-workout")) keepAwake(true); });
+function beep() { try { const C = window.AudioContext || window.webkitAudioContext; if (!C) return; const c = beep.c || (beep.c = new C()); [0, .22, .44].forEach((d, i) => { const o = c.createOscillator(), g = c.createGain(); o.frequency.value = i === 2 ? 1180 : 880; g.gain.setValueAtTime(0, c.currentTime + d); g.gain.linearRampToValueAtTime(.25, c.currentTime + d + .02); g.gain.exponentialRampToValueAtTime(.001, c.currentTime + d + .18); o.connect(g).connect(c.destination); o.start(c.currentTime + d); o.stop(c.currentTime + d + .2); }); } catch { } }
+function restStart(secs, label) {
+  if (!secs) return; RT.dur = secs; RT.end = Date.now() + secs * 1000; RT.done = false; RT.label = label || "Descanso";
+  try { localStorage.setItem("arc-rest", JSON.stringify({ end: RT.end, dur: RT.dur, label: RT.label })); } catch { }
+  if (beep.c && beep.c.state === "suspended") beep.c.resume();
+  restTick(); clearInterval(RT.iv); RT.iv = setInterval(restTick, 250);
+}
+function restStop() { clearInterval(RT.iv); RT.iv = null; RT.end = 0; try { localStorage.removeItem("arc-rest"); } catch { } const el = $("#rest"); if (el) el.remove(); }
+function restTick() {
+  if (!RT.end) return; if (!$("#f-workout")) { const el = $("#rest"); if (el) el.remove(); return; }
+  let el = $("#rest"); if (!el) { el = document.createElement("div"); el.id = "rest"; el.setAttribute("role", "timer"); document.body.appendChild(el); el.innerHTML = `<svg viewBox="0 0 44 44" class="rring"><circle cx="22" cy="22" r="19"/><circle cx="22" cy="22" r="19" class="rp"/></svg><div class="rtxt"><span class="rl"></span><b class="rt"></b></div><div class="rbtns"><button type="button" data-act="rest-add" data-s="-15" aria-label="Quitar 15 segundos">−15</button><button type="button" data-act="rest-add" data-s="15" aria-label="Añadir 15 segundos">+15</button><button type="button" class="rx" data-act="rest-stop" aria-label="Cerrar temporizador">✕</button></div>`; }
+  const left = Math.max(0, Math.round((RT.end - Date.now()) / 1000));
+  el.querySelector(".rt").textContent = left ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "¡Vamos!";
+  el.querySelector(".rl").textContent = left ? RT.label : "Siguiente serie";
+  el.querySelector(".rp").style.strokeDashoffset = String(119.4 * (1 - left / Math.max(1, RT.dur)));
+  el.classList.toggle("fin", !left);
+  if (!left && !RT.done) { RT.done = true; beep(); try { navigator.vibrate && navigator.vibrate([250, 120, 250]); } catch { } setTimeout(() => { if (RT.done && !(RT.end > Date.now())) restStop(); }, 6000); }
+}
+function restResume() { try { const r = JSON.parse(localStorage.getItem("arc-rest") || "null"); if (r && r.end > Date.now() - 5000) { RT.end = r.end; RT.dur = r.dur; RT.label = r.label; RT.done = false; clearInterval(RT.iv); RT.iv = setInterval(restTick, 250); restTick(); } } catch { } }
 // Referencia discreta: lo que hizo la última vez en ese ejercicio
 function exMarks(nombre, wo, prev) {
   if (!prev || !prev.s.length) return { html: "", best: 0 };
@@ -706,8 +876,8 @@ async function viewWorkout(id) {
   <form id="f-workout" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px">
   ${exs.map((e, ei) => { const n = seriesOf(e.sxr); const prev = lastSets(e.nombre); if (e.series && e.series.length) return presClient(e, ei, prev, draft, wo);
     const prevKg = prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
-    const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev);
-    return `<div class="ex"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>${n ? mk.html : ""}
+    const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev); const rs = restSecs(e.descanso);
+    return `<div class="ex" data-rest="${rs}" data-exn="${esc(e.nombre)}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${restBtn(rs)}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>${n ? mk.html : ""}
     ${n ? `<div class="seth"><span>#</span><span>Kg</span><span>Reps</span><span>Te quedaban</span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "kg")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "reps")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "RIR")}"></div>`; }).join("")}</div>`
       : `<label class="small" style="display:flex;gap:10px;align-items:center"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""} style="width:22px;height:22px"> Hecho</label>`}</div>`; }).join("")}
   <div class="card"><h2>Al terminar</h2>
@@ -716,6 +886,7 @@ async function viewWorkout(id) {
     <p class="tiny muted">«Te quedaban»: repeticiones que aún podías hacer con buena técnica.</p>
     <button class="btn pri block">Terminar y guardar</button>
   </div></form>`, { back: "entreno", noTabs: true, sub: [TIPOS[a.tipo], fdate(a.fecha, { weekday: "long", day: "numeric", month: "long" })].join(" · ") });
+  keepAwake(true); restResume();
 }
 
 /* Series ordenadas: carga, repeticiones y RIR */
@@ -757,11 +928,11 @@ function presClient(e, ei, prev, draft, wo) {
     let kgPh = x.kg || (cols.includes("pct") && x.pct && rm ? fmt(r125(rm * x.pct / 100)) : "") || (pv && pv.kg != null ? pv.kg : "kg");
     const top = (x.tipo === "backoff" && topI >= 0 && x.rel ? ` data-rel="${esc(x.rel)}" data-ei="${ei}"` : "") + (x.kg || (cols.includes("pct") && x.pct && rm) || (x.tipo === "backoff" && x.rel) ? " data-plan" : "");
     const inp = (f, ph, mode = "decimal", extra = "") => `<label><span>${ph}</span><input inputmode="${mode}" data-k="${k}" data-f="${f}" value="${esc(dv[f] ?? "")}" placeholder="${esc(f === "kg" ? kgPh : (pv && pv[f] != null ? pv[f] : ""))}"${extra} aria-label="${ph} serie ${si + 1}"></label>`;
-    return `<div class="pset t-${esc(x.tipo)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
+    return `<div class="pset t-${esc(x.tipo)}" data-rest="${restSecs(x.desc || e.descanso)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
       <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}</div></div>`;
   }).join("");
   const mk = exMarks(e.nombre, wo, prev);
-  return `<div class="ex"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
+  return `<div class="ex" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${restBtn(restSecs(e.descanso))}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
 ${mk.html}
   <div class="psets">${rows}</div>
   ${eff[0] === "rpe" ? `<p class="tiny muted" style="margin:6px 0 0">RPE: 10 = no podías hacer ni una más · 9 = te quedaba 1 · 8 = te quedaban 2.</p>` : eff[0] === "esf" ? `<p class="tiny muted" style="margin:6px 0 0">Esfuerzo: cómo de dura te ha parecido la serie, de 0 a 10.</p>` : ""}</div>`;
@@ -826,14 +997,55 @@ function openPeso(c = {}) {
 async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await op({ t: "upsert", table: "weights", row: { client_id: S.me.cid, fecha: today(), kg }, oc: "client_id,fecha" }); await completarAccion("peso"); sheet(""); toast(savedMsg("Peso guardado")); route(); } catch (e) { toast(errMsg(e)); } }
 
 /* ================= Cliente: Progreso ================= */
+/* ================= Logros ================= */
+async function computeLogros(cid) {
+  const flt = qb => cid ? qb.eq("client_id", cid) : qb;
+  const [wo, as, hl, pl] = await Promise.all([
+    q(flt(sb.from("workouts").select("fecha,sets").order("fecha", { ascending: true }).limit(600))).catch(() => []),
+    q(flt(sb.from("assignments").select("fecha,tipo,hecho,visible").eq("tipo", "workout").gte("fecha", addDays(today(), -365)).lte("fecha", today()))).catch(() => []),
+    q(flt(sb.from("habit_logs").select("fecha,habito").gte("fecha", addDays(today(), -365)))).catch(() => []),
+    cid ? Promise.resolve(S.coach.pl || {}) : getPlan()]);
+  const L = [];
+  // Récords: mejor 1RM estimado por ejercicio (solo cuando supera una marca anterior)
+  const best = {};
+  wo.forEach(w => (w.sets || []).filter(x => !x.hecho && num(x.kg) != null && num(x.reps) != null).forEach(x => {
+    const e = e1rm(x.kg, x.reps, x.rir) || num(x.kg); const b = best[x.ejercicio];
+    if (b && e > b.e + 0.01) L.push({ k: "pr", f: w.fecha, t: `Récord en ${x.ejercicio}`, s: `${fmt(x.kg, 2)} kg × ${x.reps} · 1RM estimado ${fmt(e)} kg (antes ${fmt(b.e)} kg)`, ex: x.ejercicio });
+    if (!b || e > b.e) best[x.ejercicio] = { e, f: w.fecha };
+  }));
+  // Solo el último récord de cada ejercicio
+  const seen = new Set(); const prs = L.filter(x => x.k === "pr").reverse().filter(x => seen.has(x.ex) ? false : seen.add(x.ex)); L.length = 0; L.push(...prs);
+  // Entrenos registrados
+  const n = wo.length; [10, 25, 50, 100, 200, 300].forEach(m => { if (n >= m) L.push({ k: "num", f: wo[m - 1].fecha, t: `${m} entrenos registrados`, s: "Cada sesión cuenta." }); });
+  // Semanas seguidas con todos los entrenos hechos
+  const byW = {}; as.filter(a => a.visible !== false && a.fecha < monday(today())).forEach(a => { const k = monday(a.fecha); (byW[k] = byW[k] || []).push(a); });
+  const ws = Object.keys(byW).sort(); let run = 0, bestRun = 0, endRun = null;
+  ws.forEach((k, i) => { const full = byW[k].every(a => a.hecho); const cont = i && addDays(ws[i - 1], 7) === k; run = full ? (cont ? run + 1 : 1) : 0; if (run > bestRun) { bestRun = run; endRun = addDays(k, 6); } });
+  [2, 4, 8, 12, 24].forEach(m => { if (bestRun >= m) L.push({ k: "cons", f: endRun, t: `${m} semanas seguidas sin fallar un entreno`, s: "Constancia de verdad." }); });
+  // Hábitos: racha con todos los hábitos del día
+  const hs = (pl.habitos || []).filter(Boolean).map(habId);
+  if (hs.length) { const by = {}; hl.forEach(l => (by[l.fecha] = by[l.fecha] || new Set()).add(l.habito));
+    const days = Object.keys(by).filter(d => hs.every(h => by[d].has(h))).sort(); let r = 0, br = 0, bf = null;
+    days.forEach((d, i) => { r = i && addDays(days[i - 1], 1) === d ? r + 1 : 1; if (r > br) { br = r; bf = d; } });
+    [7, 14, 30, 60, 100].forEach(m => { if (br >= m) L.push({ k: "hab", f: bf, t: `${m} días seguidos con todos tus hábitos`, s: "Los hábitos hacen el cambio." }); }); }
+  // de cada tipo de hito, solo el más alto alcanzado
+  const top = {}; L.filter(x => x.k !== "pr").forEach(x => { top[x.k] = x; });
+  return [...L.filter(x => x.k === "pr"), ...Object.values(top)].sort((a, b) => String(b.f).localeCompare(String(a.f)));
+}
+const LOGO_ICO = { pr: "🏆", num: "📈", cons: "🔥", hab: "✅" };
+function logrosHTML(L, max) {
+  if (!L.length) return `<div class="card empty">Tus logros aparecerán aquí: récords, constancia y hábitos. ¡A por el primero!</div>`;
+  return `<div class="card logros"><div class="lglist">${L.slice(0, max || 99).map(x => `<div class="lg k-${x.k}"><span class="lgi">${LOGO_ICO[x.k]}</span><span class="grow"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></span><em>${esc(fdate(x.f, { day: "numeric", month: "short" }))}</em></div>`).join("")}</div></div>`;
+}
 async function viewProgreso() {
   loading("Progreso"); const plan = await getPlan();
   const vis = Array.isArray(plan.progreso_visible) ? plan.progreso_visible : ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"];
-  const segs = [["fuerza", "Cargas"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].filter(([k]) => vis.includes(k));
+  const segs = [["logros", "Logros"], ...[["fuerza", "Cargas"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].filter(([k]) => vis.includes(k))];
   if (!segs.length) { shell("Tu progreso", `<div class="empty">Adrián te enseñará aquí tu progreso.</div>`); return; }
-  const tab = segs.some(([k]) => k === S.sub.prog) ? S.sub.prog : segs[0][0];
+  const tab = segs.some(([k]) => k === S.sub.prog) ? S.sub.prog : (segs.find(([k]) => k === "fuerza") || segs[0])[0];
   let body = "";
-  if (tab === "bienestar") {
+  if (tab === "logros") body = logrosHTML(await computeLogros());
+  else if (tab === "bienestar") {
     const wl = await q(sb.from("wellness").select("*").order("fecha", { ascending: true }).limit(400));
     const byW = {}; wl.forEach(w => { const d = parseD(w.fecha); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); const k = iso(d); (byW[k] = byW[k] || []).push(w); });
     const wk = Object.entries(byW);
@@ -941,10 +1153,11 @@ async function viewInforme(id) {
 /* ================= Perfil ================= */
 async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
-  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await backupCard() : "";
+  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await backupCard() + await legalCard() : "";
   shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
   <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
+  <p class="tiny muted foot"><a href="#legal">Aviso legal</a> · <a href="#privacidad">Política de privacidad</a></p>
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
 }
 /* ================= Copias de seguridad ================= */
@@ -1291,7 +1504,7 @@ function renderEmpezar(ok) {
     <h1>¡Solicitud enviada!</h1><p class="ctlead">Gracias por dar el paso. Lo más difícil ya está hecho.</p>
     <ol class="ctsteps"><li><b>Reviso tu información</b><span>Leo con calma lo que me has contado.</span></li><li><b>Te escribo por WhatsApp</b><span>Para conocerte y resolver tus dudas.</span></li><li><b>Hablamos y empezamos</b><span>Vemos si encajamos y preparo tu plan.</span></li></ol>
     ${wa ? `<a class="btn pri block" href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener noreferrer">Escribirme ya por WhatsApp</a>` : ""}</section>
-    <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`; return; }
+    <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte<br><a href="#legal">Aviso legal</a> · <a href="#privacidad">Privacidad</a></p></div>`; return; }
   const ch = (name, v, label, ico = "", req = false) => `<label class="ctch"><input type="radio" name="${name}" value="${esc(v)}" ${req ? "required" : ""}><span>${ico ? `<i>${ico}</i>` : ""}${esc(label)}</span></label>`;
   $("#app").innerHTML = `<div class="ctw"><header class="cth"><img src="./logo-blanco.png" alt="" class="ctlogo"><span class="ctbrand">Adrián Rodríguez Coaching</span></header>
   <section class="cthero"><span class="ctkick">Asesoría online 1:1</span><h1>Empieza tu cambio</h1>
@@ -1313,9 +1526,9 @@ function renderEmpezar(ok) {
   <div class="ctsec"><h2><i>5</i>Cuéntame qué buscas</h2>
     <div class="f"><textarea id="ct-x" name="mensaje" rows="5" required maxlength="2000" aria-label="Qué buscas" placeholder="Qué te gustaría conseguir, qué has probado antes y cuánto tiempo tienes para entrenar."></textarea></div></div>
   <input name="web" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
-  <label class="ctok2"><input type="checkbox" name="ok" required><span>Acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren cuando quiera.</span></label>
+  <label class="ctok2"><input type="checkbox" name="ok" required><span>He leído la <a href="#privacidad">Política de privacidad</a> y acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren cuando quiera.</span></label>
   <button class="btn pri block ctsend">Quiero empezar <span aria-hidden="true">→</span></button></form>
-  <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`;
+  <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte<br><a href="#legal">Aviso legal</a> · <a href="#privacidad">Privacidad</a></p></div>`;
   requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow));
 }
 async function enviarContacto(f) {
@@ -1515,7 +1728,7 @@ async function viewCoachClient(cid) {
   const pl = (await q(sb.from("plans").select("*").eq("client_id", cid).limit(1)))[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
   const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) }));
   S.coach.c = c; S.coach.pl = pl;
-  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl);
+  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
   <div class="cmain"><div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
@@ -1835,7 +2048,7 @@ async function tabEvo(c) {
   else if (sub === "actividad") {
     const as = await q(sb.from("assignments").select("*").eq("client_id", cid).lte("fecha", today()).gte("fecha", addDays(today(), -28)).order("fecha", { ascending: false }));
     const byW = {}; as.forEach(x => { const k = monday(x.fecha); (byW[k] = byW[k] || []).push(x); });
-    body = `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
+    body = await habitosCoach(cid, S.coach.pl || {}) + `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
     <div class="card"><h2>Últimas tareas</h2>${as.length ? `<table><tbody>${as.slice(0, 40).map(x => `<tr data-act="asig-edit" data-id="${esc(x.id)}" style="cursor:pointer"><td style="white-space:nowrap" class="tiny muted">${esc(fdate(x.fecha, { day: "numeric", month: "short" }))}</td><td>${tipoChip(x.tipo)} ${esc(x.titulo)}${x.respuesta ? `<div class="tiny muted">«${esc(x.respuesta)}»</div>` : ""}</td><td>${x.hecho ? `<span class="chip ok">Hecho</span>` : `<span class="chip bad">No hecho</span>`}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">—</div>`}</div>`;
   } else if (sub === "entrenos") {
     const wo = await q(sb.from("workouts").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40));
@@ -1963,6 +2176,12 @@ async function saveReport(f, pub) {
   } catch (e) { toast(errMsg(e)); btns.forEach(b => b.disabled = false); btns[0].textContent = "Guardar borrador"; }
 }
 const adjIco = t => /pdf/.test(t) ? "📄" : /^image/.test(t) ? "🖼️" : /^video/.test(t) ? "🎬" : /^audio/.test(t) ? "🎙️" : "📎";
+async function consentInfo(cid) {
+  const r = await q(sb.from("consentimientos").select("tipo,version,aceptado_en").eq("client_id", cid).order("aceptado_en", { ascending: false })).catch(() => []);
+  const last = t => r.find(x => x.tipo === t);
+  const row = (t, l) => { const x = last(t); return `<div class="it" style="cursor:default"><span><b>${l}</b><br><span class="tiny muted">${x ? `Aceptado ${esc(new Date(x.aceptado_en).toLocaleString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }))} · versión ${esc(x.version)}` : "Aún no lo ha aceptado (se le pedirá al entrar en la app)"}</span></span>${x ? `<span class="done">✓</span>` : `<span class="chip warn">Pendiente</span>`}</div>`; };
+  return `<div class="card"><h2>Consentimientos</h2><div class="list">${row("privacidad", "Aviso legal y privacidad")}${row("salud", "Datos de salud")}</div></div>`;
+}
 function tabCuenta(c, pl) {
   return `<form id="f-cuenta" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Cuenta</h2><div class="f"><label for="cu-e">Email de acceso</label><input id="cu-e" name="email" type="email" value="${esc(c.email)}"></div><div class="f"><label for="cu-s">Estado</label><select id="cu-s" name="estado">${[["activo", "Activo"], ["pausa", "En pausa"], ["baja", "Baja"]].map(([v, l]) => `<option value="${v}" ${c.estado === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><p class="tiny muted" style="margin:0">«Baja» le quita el acceso a la app al momento.</p>
   <h2 style="margin-top:6px">Qué progreso ve</h2><div class="row">${[["fuerza", "Cargas"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].map(([k, l]) => `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="pv" value="${k}" ${(pl.progreso_visible || []).includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</div><div class="row"><span class="grow"></span><button class="btn pri">Guardar cambios</button></div></form>
@@ -2247,7 +2466,10 @@ async function tabNutri(c, pl) {
 function habitosHTML(pl) {
   const n = pl.nutricion || {};
   return `<form id="f-nutri" style="display:flex;flex-direction:column;gap:12px">
-  <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Hábitos <small>los ve en Hoy y en Nutrición</small></h2><textarea name="habitos" placeholder="Uno por línea: Dormir 7–8 h · 10.000 pasos · 2 L de agua">${esc((pl.habitos || []).join("\n"))}</textarea></div>
+  <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Hábitos diarios <small>el cliente los marca cada día en «Hoy» y lleva su racha</small></h2><textarea name="habitos" placeholder="Uno por línea, cortos y medibles:
+10.000 pasos
+2 L de agua
+Dormir 7 h o más">${esc((pl.habitos || []).join("\n"))}</textarea></div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Pautas generales</h2><div class="f"><label>Título</label><input name="titulo" value="${esc(n.titulo || "")}" placeholder="Pautas de alimentación"></div><div class="f"><label>Introducción</label><textarea name="notas">${esc(n.notas || "")}</textarea></div>
   <div id="secs" style="display:flex;flex-direction:column;gap:8px">${(n.secciones || []).map(secRow).join("")}</div><button type="button" class="btn sm" data-act="sec-add">+ Sección</button></div>
   <button class="btn pri block">Guardar hábitos y pautas</button></form>`;
@@ -2490,6 +2712,10 @@ document.addEventListener("click", async ev => {
       case "cambiar-pw": openCambiarPw(); break;
       case "close": closeSheet(); break;
       case "go-back": goBack(); break;
+      case "hab": habToggle(a); break;
+      case "rest-add": RT.end += (+a.dataset.s) * 1000; RT.dur = Math.max(RT.dur, Math.round((RT.end - Date.now()) / 1000)); RT.done = false; restTick(); break;
+      case "rest-stop": restStop(); break;
+      case "rest-go": { const ex = a.closest("[data-rest]"); restStart(+ex.dataset.rest || 90, ex.dataset.exn || "Descanso"); break; }
       case "bk-now": backupNow(a); break;
       case "bk-restore": openRestore(); break;
       case "post-new": openPostForm(); break;
@@ -2507,8 +2733,8 @@ document.addEventListener("click", async ev => {
       case "med-all": a.closest("fieldset").querySelectorAll("input[name=med]").forEach(i => { i.checked = a.dataset.v === "1"; }); break;
       case "fotos": openFotos(); break;
       case "prog": S.sub.prog = a.dataset.t; viewProgreso(); break;
-      case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; viewCal(); break;
-      case "cal-d": S.sub.calD = a.dataset.d; S.sub.calM = a.dataset.d.slice(0, 7); viewCal(); break;
+      case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; localStorage.getItem("arc-cal2") ? viewCal2() : viewCal(); break;
+      case "cal-d": S.sub.calD = a.dataset.d; S.sub.calM = a.dataset.d.slice(0, 7); localStorage.getItem("arc-cal2") ? viewCal2() : viewCal(); break;
       case "item": openItem(id); break;
       case "item-undo": await q(sb.rpc("completar_asignacion", { p_id: id, p_hecho: false, p_respuesta: ($("#it-r") || {}).value || "" })); sheet(""); route(); break;
       // entrenador: navegación
@@ -2663,7 +2889,7 @@ document.addEventListener("input", ev => {
 });
 document.addEventListener("change", ev => {
   const el = ev.target;
-  if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
+  if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.f === "reps" && el.value.trim()) { const r = el.closest("[data-rest]"); const s2 = r ? +r.dataset.rest : 0; const ex = el.closest("[data-exn]"); if (s2) restStart(s2, ex ? ex.dataset.exn : "Descanso"); } }
   if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
   if (el.dataset && el.dataset.actChange === "post-todos") { const b = el.form.querySelector(".post-para"); if (b) b.hidden = el.checked; }
@@ -2683,7 +2909,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
