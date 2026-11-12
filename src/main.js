@@ -1281,23 +1281,42 @@ function comienzoAlertas(r = {}) {
 const comAns = (q, v) => Array.isArray(v) ? v.join(", ") : v == null || v === "" ? "—" : String(v);
 
 /* ---- Página pública «Quiero empezar» ---- */
+const OBJ_TXT = { "Mejorar mi salud/hábitos": "Salud y hábitos", "Mejorar mi resistencia/cardio": "Resistencia y cardio" };
+const OBJ_ICO = { "Ganar masa muscular": "💪", "Perder grasa": "🔥", "Ganar fuerza": "🏋️", "Mejorar mi salud/hábitos": "🌿", "Mejorar mi resistencia/cardio": "🫀" };
 function renderEmpezar(ok) {
   document.body.classList.add("pub");
-  if (ok) { $("#app").innerHTML = `<div class="login pubw"><img class="logo" src="./logo.jpg" alt=""><h1>¡Recibido!</h1><p>Esto no es un simple formulario, es el inicio de tu cambio. Hoy ya ganaste dando este paso.</p><p>Te escribo lo antes posible para contarte cómo funciona y empezar. ¡Gracias por tu confianza!</p></div>`; return; }
-  $("#app").innerHTML = `<form class="login pubw" id="f-contacto" novalidate>
-  <img class="logo" src="./logo.jpg" alt=""><h1>Empieza tu cambio</h1>
-  <p>Cuéntame un poco sobre ti y lo que buscas. Te escribo lo antes posible para hablar y ver si encajamos.</p>
-  <div class="f"><label for="ct-n">Nombre y apellidos</label><input id="ct-n" name="nombre" autocomplete="name" required maxlength="120"></div>
-  <div class="grid2"><div class="f"><label for="ct-e">Edad</label><input id="ct-e" name="edad" inputmode="numeric" required maxlength="3"></div><div class="f"><label for="ct-s">Sexo</label><select id="ct-s" name="sexo" required><option value="">—</option><option>Hombre</option><option>Mujer</option><option>Otro</option></select></div></div>
-  <div class="f"><label for="ct-m">Correo electrónico</label><input id="ct-m" name="email" type="email" autocomplete="email" required maxlength="200"></div>
-  <div class="f"><label for="ct-t">Teléfono (WhatsApp)</label><input id="ct-t" name="telefono" type="tel" autocomplete="tel" required maxlength="30" placeholder="600 000 000"></div>
-  <fieldset class="opts"><legend>¿Cuál es tu objetivo principal?</legend>${OBJ_CONTACTO.map(o => `<label class="choice"><input type="radio" name="objetivo" value="${esc(o)}" required><span>${esc(o)}</span></label>`).join("")}<label class="choice"><input type="radio" name="objetivo" value="__otro"><span>Otro</span></label><input name="objetivo_otro" placeholder="¿Cuál?" maxlength="150" hidden></fieldset>
-  <fieldset class="opts row2"><legend>¿Has estado antes con un entrenador personal?</legend><label class="choice"><input type="radio" name="previo" value="si" required><span>Sí</span></label><label class="choice"><input type="radio" name="previo" value="no"><span>No</span></label></fieldset>
-  <div class="f"><label for="ct-x">Cuéntame brevemente qué buscas o qué te gustaría conseguir</label><textarea id="ct-x" name="mensaje" required maxlength="2000"></textarea></div>
+  const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
+  if (ok) { $("#app").innerHTML = `<div class="ctw"><header class="cth"><img src="./logo-blanco.png" alt="" class="ctlogo"><span class="ctbrand">Adrián Rodríguez Coaching</span></header>
+    <section class="ctcard ctok"><div class="okmark" aria-hidden="true"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg></div>
+    <h1>¡Solicitud enviada!</h1><p class="ctlead">Gracias por dar el paso. Lo más difícil ya está hecho.</p>
+    <ol class="ctsteps"><li><b>Reviso tu información</b><span>Leo con calma lo que me has contado.</span></li><li><b>Te escribo por WhatsApp</b><span>Normalmente en menos de 24 horas.</span></li><li><b>Hablamos y empezamos</b><span>Vemos si encajamos y preparo tu plan.</span></li></ol>
+    ${wa ? `<a class="btn pri block" href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener noreferrer">Escribirme ya por WhatsApp</a>` : ""}</section>
+    <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`; return; }
+  const ch = (name, v, label, ico = "", req = false) => `<label class="ctch"><input type="radio" name="${name}" value="${esc(v)}" ${req ? "required" : ""}><span>${ico ? `<i>${ico}</i>` : ""}${esc(label)}</span></label>`;
+  $("#app").innerHTML = `<div class="ctw"><header class="cth"><img src="./logo-blanco.png" alt="" class="ctlogo"><span class="ctbrand">Adrián Rodríguez Coaching</span></header>
+  <section class="cthero"><span class="ctkick">Asesoría online 1:1</span><h1>Empieza tu cambio</h1>
+  <p>Entrenamiento hecho para ti, tu cuerpo y tu vida, con seguimiento real cada semana. Cuéntame un poco sobre ti: en <b>2 minutos</b> lo tienes y te escribo personalmente para conocerte. Sin compromiso.</p>
+  <div class="ctpills"><span>✓ Plan 100 % personalizado</span><span>✓ Revisión cada semana</span><span>✓ App propia</span></div></section>
+  <form class="ctcard" id="f-contacto" novalidate>
+  <div class="ctsec"><h2><i>1</i>Sobre ti</h2>
+    <div class="f"><label for="ct-n">Nombre y apellidos</label><input id="ct-n" name="nombre" autocomplete="name" required maxlength="120" placeholder="Tu nombre"></div>
+    <div class="ctrow"><div class="f"><label for="ct-e">Edad</label><input id="ct-e" name="edad" inputmode="numeric" required maxlength="3" placeholder="25"></div>
+    <div class="f grow"><label>Sexo</label><div class="ctseg">${["Hombre", "Mujer", "Otro"].map((o, i) => `<label><input type="radio" name="sexo" value="${o}" ${i ? "" : "required"}><span>${o}</span></label>`).join("")}</div></div></div></div>
+  <div class="ctsec"><h2><i>2</i>Cómo te contacto</h2>
+    <div class="f"><label for="ct-t">WhatsApp</label><input id="ct-t" name="telefono" type="tel" autocomplete="tel" required maxlength="30" placeholder="600 000 000"></div>
+    <div class="f"><label for="ct-m">Email</label><input id="ct-m" name="email" type="email" autocomplete="email" required maxlength="200" placeholder="tu@email.com"></div></div>
+  <div class="ctsec"><h2><i>3</i>Tu objetivo principal</h2>
+    <div class="ctgrid">${OBJ_CONTACTO.map((o, i) => ch("objetivo", o, OBJ_TXT[o] || o, OBJ_ICO[o] || "", !i)).join("")}${ch("objetivo", "__otro", "Otro", "✨")}</div>
+    <input name="objetivo_otro" placeholder="¿Cuál es tu objetivo?" maxlength="150" hidden></div>
+  <div class="ctsec"><h2><i>4</i>¿Has tenido entrenador personal antes?</h2>
+    <div class="ctseg big"><label><input type="radio" name="previo" value="si" required><span>Sí</span></label><label><input type="radio" name="previo" value="no"><span>No, sería la primera vez</span></label></div></div>
+  <div class="ctsec"><h2><i>5</i>Cuéntame qué buscas</h2>
+    <div class="f"><textarea id="ct-x" name="mensaje" required maxlength="2000" aria-label="Qué buscas" placeholder="Qué te gustaría conseguir, qué has probado antes, cuánto tiempo tienes para entrenar…"></textarea></div></div>
   <input name="web" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
-  <label class="small consent"><input type="checkbox" name="ok" required> Acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren en cualquier momento.</label>
-  <button class="btn pri block">Enviar</button>
-  <p class="tiny muted" style="text-align:center;margin:0">¿Ya eres cliente? <a href="#">Entra en la app</a></p></form>`;
+  <label class="ctok2"><input type="checkbox" name="ok" required><span>Acepto que Adrián Rodríguez use estos datos solo para contactarme sobre las asesorías. Puedo pedir que se borren cuando quiera.</span></label>
+  <button class="btn pri block ctsend">Quiero empezar <span aria-hidden="true">→</span></button>
+  <p class="ctnote">🔒 Tus datos solo los veo yo · Te respondo en menos de 24 h</p></form>
+  <p class="ctfoot">Adrián Rodríguez · Graduado en Ciencias de la Actividad Física y del Deporte</p></div>`;
 }
 async function enviarContacto(f) {
   const v = n => (f[n] && f[n].value || "").trim(); const obj = (f.querySelector('[name="objetivo"]:checked') || {}).value || ""; const prev = (f.querySelector('[name="previo"]:checked') || {}).value || "";
@@ -1306,7 +1325,7 @@ async function enviarContacto(f) {
   if (falta) { toast("Falta " + falta); return; }
   const b = f.querySelector("button.pri"); b.disabled = true; b.textContent = "Enviando…";
   try { await q(sb.rpc("enviar_contacto", { p: { nombre: v("nombre"), edad: String(edad), sexo: v("sexo"), email: v("email"), telefono: v("telefono"), objetivo: obj === "__otro" ? v("objetivo_otro") : obj, entrenador_previo: prev, mensaje: v("mensaje"), web: v("web"), consentimiento: true } })); renderEmpezar(true); window.scrollTo(0, 0); }
-  catch (e) { toast(errMsg(e)); b.disabled = false; b.textContent = "Enviar"; }
+  catch (e) { toast(errMsg(e)); b.disabled = false; b.innerHTML = "Quiero empezar <span aria-hidden=\"true\">→</span>"; }
 }
 
 /* ---- Entrenador: solicitudes ---- */
