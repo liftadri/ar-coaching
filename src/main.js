@@ -256,6 +256,8 @@ async function init() {
   });
   const { data } = await sb.auth.getSession();
   if (S.recovery) return;
+  const errUrl = new URLSearchParams((location.hash.includes("error") ? location.hash.slice(1) : "") || location.search).get("error_description");
+  if (errUrl && !(data && data.session)) { history.replaceState(null, "", location.pathname); renderLogin("olvido"); toast(/expired|invalid/i.test(errUrl) ? "Ese enlace ha caducado o ya se usó. Pide uno nuevo aquí." : "No se pudo abrir el enlace. Pide uno nuevo aquí."); return; }
   if (!data || !data.session) return location.hash === "#empezar" ? renderEmpezar() : ["#legal", "#privacidad"].includes(location.hash) ? renderLegal(location.hash.slice(1)) : renderLogin();
   S.email = data.session.user.email || "";
   await afterLogin();
@@ -354,9 +356,15 @@ function renderLogin(stage) {
     <button class="btn pri block">Crear mi cuenta</button><p class="tiny muted" style="margin:0">Al crear tu cuenta aceptas el <a href="#legal">Aviso legal</a> y la <a href="#privacidad">Política de privacidad</a>.</p></form>`; return;
   }
   if (stage === "olvido") {
-    $("#app").innerHTML = `<form class="login" id="f-olvido">${head}<p>Te enviaremos un enlace a tu email para crear una contraseña nueva. Ábrelo en este mismo móvil.</p>
-    <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
-    <button class="btn pri block">Enviar enlace</button><button type="button" class="btn ghost" data-act="login-tab" data-t="">Volver</button></form>`; return;
+    $("#app").innerHTML = `<form class="login" id="f-olvido">${head}<p>Te enviaremos un email con un código para crear una contraseña nueva.</p>
+    <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required value="${esc(S.recEmail || "")}"></div>
+    <button class="btn pri block">Enviar código</button><button type="button" class="btn ghost" data-act="login-tab" data-t="">Volver</button></form>`; return;
+  }
+  if (stage === "codigo") {
+    $("#app").innerHTML = `<form class="login" id="f-rcod">${head}<p>Te hemos enviado un email a <b>${esc(S.recEmail || "")}</b>. Escribe aquí el código que aparece (mira también en spam) y tu nueva contraseña.</p>
+    <div class="f"><label for="otp">Código del email</label><input id="otp" name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="123456" style="letter-spacing:.3em;font-size:20px;text-align:center"></div>
+    ${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}
+    <button class="btn pri block">Guardar contraseña</button><button type="button" class="btn ghost" data-act="login-tab" data-t="olvido">No me ha llegado: reenviar</button><button type="button" class="btn ghost" data-act="login-tab" data-t="">Volver</button></form>`; return;
   }
   if (stage === "nueva") {
     $("#app").innerHTML = `<form class="login" id="f-nueva">${head}<p>Escribe tu nueva contraseña.</p>${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar contraseña</button></form>`; return;
@@ -368,6 +376,8 @@ function renderLogin(stage) {
 }
 function authMsg(e) {
   const m = (e && e.message) || "";
+  if (/^El código/.test(m)) return m;
+  if (/code verifier|flow state|auth code/i.test(m)) return "Abre el enlace en el mismo navegador donde lo pediste, o usa el código del email.";
   if (/invalid login credentials/i.test(m)) return "Email o contraseña incorrectos.";
   if (/already registered|already exists/i.test(m)) return "Ese email ya tiene cuenta. Entra desde «Entrar».";
   if (/password/i.test(m) && /(short|least|weak|characters)/i.test(m)) return "La contraseña es demasiado débil: usa al menos 8 caracteres, mezclando letras y números.";
@@ -402,11 +412,24 @@ async function doAltaCodigo(f) {
 }
 async function doOlvido(f) {
   const b = f.querySelector("button.pri"); b.disabled = true;
-  try { await q(sb.auth.resetPasswordForEmail(f.email.value.trim().toLowerCase(), { redirectTo: location.origin + location.pathname })); toast("Si ese email tiene cuenta, te llegará un enlace en unos minutos."); renderLogin(); }
-  catch (e) { toast(errMsg(e)); b.disabled = false; }
+  const email = f.email.value.trim().toLowerCase();
+  try { await q(sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); S.recEmail = email; toast("Si ese email tiene cuenta, te llegará en unos minutos."); renderLogin("codigo"); }
+  catch (e) { toast(/rate|seconds|too many/i.test(e.message || "") ? "Has pedido varios emails seguidos. Espera un minuto y vuelve a intentarlo." : errMsg(e)); b.disabled = false; }
+}
+async function doRecCodigo(f) {
+  if (f.pw.value !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
+  if (f.pw.value.length < 8) { toast("La contraseña debe tener al menos 8 caracteres"); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try {
+    const { error } = await sb.auth.verifyOtp({ email: S.recEmail, token: f.otp.value.trim(), type: "recovery" });
+    if (error) throw new Error(/expired|invalid/i.test(error.message) ? "El código no es correcto o ha caducado. Pide otro." : error.message);
+    await q(sb.auth.updateUser({ password: f.pw.value })); S.recovery = false; toast("Contraseña cambiada");
+    const { data } = await sb.auth.getSession(); S.email = (data.session && data.session.user.email) || S.recEmail; await afterLogin();
+  } catch (e) { toast(authMsg(e)); b.disabled = false; }
 }
 async function doNueva(f) {
   if (f.pw.value !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
+  if (f.pw.value.length < 8) { toast("La contraseña debe tener al menos 8 caracteres"); return; }
   const b = f.querySelector("button.pri"); b.disabled = true;
   try { await q(sb.auth.updateUser({ password: f.pw.value })); S.recovery = false; toast("Contraseña cambiada"); history.replaceState(null, "", location.pathname); const { data } = await sb.auth.getSession(); S.email = (data.session && data.session.user.email) || ""; await afterLogin(); }
   catch (e) { toast(authMsg(e)); b.disabled = false; }
@@ -3047,7 +3070,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
