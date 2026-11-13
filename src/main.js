@@ -247,7 +247,6 @@ setInterval(checkUpdate, 120000);
 
 /* Sin zoom en la app (iOS ignora user-scalable=no) */
 ["gesturestart", "gesturechange", "gestureend"].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
-document.addEventListener("touchmove", e => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
 /* ================= Arranque y acceso ================= */
 const LOGO = `<img class="logo" src="./logo.jpg" alt="">`;
 async function init() {
@@ -1936,16 +1935,18 @@ const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "inf
 async function viewCoachClient(cid) {
   if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; }
   const tab = S.coach.tab || "plan";
-  const c = (await q(sb.from("clients").select("*").eq("id", cid).limit(1)))[0];
+  const reuse = S.coach.inPlace && S.coach.c && S.coach.c.id === cid && S.coach.pl;
+  const [cr, pr] = reuse ? [[S.coach.c], [S.coach.pl]] : await Promise.all([q(sb.from("clients").select("*").eq("id", cid).limit(1)), q(sb.from("plans").select("*").eq("client_id", cid).limit(1))]);
+  const c = cr[0];
   if (!c) { shell("Cliente", `<div class="empty">No existe.</div>`, { back: "c" }); return; }
-  const pl = (await q(sb.from("plans").select("*").eq("client_id", cid).limit(1)))[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
-  const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) }));
+  const pl = reuse ? S.coach.pl : pr[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
+  if (!reuse) { const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) })); }
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}`;
   const rail = document.querySelector("#app .rail");
-  if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
+  if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
   <div class="cmain">${mainHTML}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
   S.coach.shownCid = cid;
@@ -2981,7 +2982,11 @@ document.addEventListener("click", async ev => {
       // entrenador: navegación
       case "new-client": openNewClient(); break;
       case "go-plan": S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
-      case "ctab": { if (a.getAttribute("aria-current") === "true") break; S.coach.tab = a.dataset.t; S.coach.inPlace = true; try { await viewCoachClient(S.coach.cid); } finally { S.coach.inPlace = false; } break; }
+      case "ctab": { if (a.getAttribute("aria-current") === "true") break; const rl = a.closest(".rail"), cm = $("#app .cmain");
+        if (rl) rl.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b === a)));
+        if (cm) cm.classList.add("cload");
+        S.coach.tab = a.dataset.t; const tk = S.coach.tabTk = (S.coach.tabTk || 0) + 1; S.coach.inPlace = true;
+        try { await viewCoachClient(S.coach.cid); } finally { S.coach.inPlace = false; if (tk === S.coach.tabTk) { const m2 = $("#app .cmain"); if (m2) m2.classList.remove("cload"); } } break; }
       case "evo": S.coach.evo = a.dataset.t; refreshClient(); break;
       case "pm": S.coach.calM = a.dataset.m; refreshClient(); break;
       // planificación

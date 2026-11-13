@@ -1347,3 +1347,8 @@ h1,h2,h3{font-family:var(--display);font-stretch:116%;font-weight:800;letter-spa
 .btn.danger{color:var(--bad)}
 .btn.pri.danger{background:var(--bad);color:#fff}
 .archs summary .hh svg{width:18px;height:18px}.archs summary .hh{display:inline-flex;align-items:center;gap:8px;font-size:17px}
+.cmain.cload{opacity:.55;pointer-events:none;transition:opacity .12s .08s}.cmain{transition:opacity .12s}
+/* Rendimiento: barras opacas sin desenfoque (ahorra composición en cada scroll) y sin capa de grano fija */
+.tabs,.hnav,.top,.crumb{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+.top{background:var(--bg)!important}
+body::before{content:none!important}
