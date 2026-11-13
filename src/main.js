@@ -463,8 +463,8 @@ function shell(title, body, opts = {}) {
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
   }
   if (S.lastView !== v) { const m = $("#main"); if (m) m.classList.add("pgin"); S.lastView = v; }
-  if (!opts.keepScroll) window.scrollTo(0, 0);
-  requestAnimationFrame(() => { document.querySelectorAll("#app textarea").forEach(grow); document.querySelectorAll('#app [aria-current="true"],#app [aria-selected="true"],#app .tabs .on').forEach(r => { const p = r.parentElement; if (p && p.scrollWidth > p.clientWidth + 4) p.scrollLeft = r.offsetLeft - p.offsetLeft - 12; }); });
+  if (!opts.keepScroll && !S.keepScroll) window.scrollTo(0, 0);
+  requestAnimationFrame(() => { document.querySelectorAll("#app textarea").forEach(grow); document.querySelectorAll('#app [aria-current="true"],#app [aria-selected="true"],#app .tabs .on').forEach(r => { const p = r.parentElement; if (p && p.classList.contains("rail") && S.railX != null) { p.scrollLeft = S.railX; S.railX = null; return; } if (p && p.scrollWidth > p.clientWidth + 4) { const pr = p.getBoundingClientRect(), rr = r.getBoundingClientRect(), c = (rr.left + rr.right) / 2; if (c < pr.left) p.scrollLeft += rr.left - pr.left - 12; else if (c > pr.right) p.scrollLeft += rr.right - pr.right + 12; } }); });
 }
 function loading(title) { shell(title, `<div class="empty">Cargando…</div>`); }
 async function route() {
@@ -2977,7 +2977,10 @@ document.addEventListener("click", async ev => {
       // entrenador: navegación
       case "new-client": openNewClient(); break;
       case "go-plan": S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
-      case "ctab": S.coach.tab = a.dataset.t; viewCoachClient(S.coach.cid); break;
+      case "ctab": { if (a.getAttribute("aria-current") === "true") break; const r0 = $(".rail"); const sx = r0 ? r0.scrollLeft : 0, top0 = r0 ? r0.getBoundingClientRect().top : null;
+        r0 && r0.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", b === a ? "true" : "false"));
+        S.coach.tab = a.dataset.t; S.keepScroll = true; S.railX = sx; await viewCoachClient(S.coach.cid); S.keepScroll = false;
+        const r1 = $(".rail"); if (r1) { r1.scrollLeft = sx; if (top0 != null) { const d = r1.getBoundingClientRect().top - top0; if (Math.abs(d) > 1) window.scrollBy(0, d); } } break; }
       case "evo": S.coach.evo = a.dataset.t; refreshClient(); break;
       case "pm": S.coach.calM = a.dataset.m; refreshClient(); break;
       // planificación
