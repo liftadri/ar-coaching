@@ -1398,3 +1398,29 @@ body::before{content:none!important}
 .rac .rabar{height:8px;border-radius:5px;background:var(--surface-2);overflow:hidden}.rac .rabar i{display:block;height:100%;background:var(--lava,var(--accent));border-radius:5px}
 .rac summary{cursor:pointer}
 .rac h2.hh{border:0;padding:0;margin:0}.rac .hh svg{color:var(--accent)}
+/* Dureza de sesión (RPE) */
+.rpep{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-top:4px}
+.rpep label{position:relative;display:block;cursor:pointer}
+.rpep input{position:absolute;opacity:0;inset:0;margin:0;pointer-events:none}
+.rpep span{display:flex;align-items:center;justify-content:center;height:46px;border-radius:10px;background:var(--surface-2);font-family:var(--display);font-weight:800;font-size:15px;color:var(--ink);transition:background .15s,color .15s,transform .1s;box-shadow:inset 0 -3px 0 color-mix(in srgb,var(--accent) calc(var(--i)*9%),transparent)}
+.rpep label:active span{transform:scale(.94)}
+.rpep input:checked+span{background:var(--lava,var(--accent));color:#fff;box-shadow:none}
+.rpep input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.rpep.need{animation:rpeneed .5s}.rpep.need span{box-shadow:inset 0 0 0 1.5px var(--accent)}
+@keyframes rpeneed{25%{transform:translateX(-5px)}50%{transform:translateX(5px)}75%{transform:translateX(-3px)}}
+.rpe-a{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;font-size:12px;color:var(--muted)}
+.rpe-a .rpe-t{font-size:14px;color:var(--ink);font-family:var(--display);text-align:center}
+.req-l{font-size:11px;font-weight:700;color:var(--accent);margin-left:4px}
+.f.span2{grid-column:1/-1}
+@media (max-width:380px){.rpep{gap:3px}.rpep span{height:42px;font-size:14px}}
+/* Duración automática */
+.durauto{display:flex;align-items:center;gap:12px;margin-top:14px;padding:12px 14px;border-radius:12px;background:var(--surface-2);color:var(--accent)}
+.durauto div{display:flex;flex-direction:column}.durauto b{font-family:var(--display);font-size:18px;color:var(--ink)}.durauto span{font-size:12px;color:var(--muted)}
+/* Comentario por ejercicio */
+.exnota{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.exnota summary{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;list-style:none;padding:4px 0}
+.exnota summary::-webkit-details-marker{display:none}
+.exnota summary svg{width:16px;height:16px}
+.exnota[open] summary{color:var(--accent)}
+.exnota textarea{margin-top:6px;min-height:56px;width:100%}
+.exn-nota{margin-top:4px;font-size:12px;font-weight:500;color:var(--ink);background:var(--surface-2);border-radius:8px;padding:5px 8px;white-space:normal}
