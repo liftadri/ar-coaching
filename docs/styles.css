@@ -1424,3 +1424,4 @@ body::before{content:none!important}
 .exnota[open] summary{color:var(--accent)}
 .exnota textarea{margin-top:6px;min-height:56px;width:100%}
 .exn-nota{margin-top:4px;font-size:12px;font-weight:500;color:var(--ink);background:var(--surface-2);border-radius:8px;padding:5px 8px;white-space:normal}
+.av.lg{display:inline-grid;place-items:center;padding:0;gap:0;border-bottom:0}
