@@ -1984,6 +1984,244 @@ const TCAT = [
   { k: "acl_rsi", n: "ACL-RSI (preparación psicológica)", g: "cuest", u: "%", tipo: "score", max: 100, bands: [[90, "ok", "Confianza para volver"], [65, "warn", "Confianza intermedia"], [0, "bad", "Baja confianza / miedo a recaer"]], proto: "12 preguntas sobre emociones, confianza y valoración del riesgo tras LCA (0–100 %). Usa la versión oficial en español. Criterio de alta del tema: > 90 %." },
   { k: "tsk", n: "Tampa (TSK-11, kinesiofobia)", g: "cuest", u: "pts", tipo: "score", max: 44, menos: true, bands: [[0, "ok", "Kinesiofobia baja"], [19, "warn", "Kinesiofobia moderada"], [28, "bad", "Kinesiofobia alta"]], proto: "11 preguntas (11–44 puntos). Más puntos = más miedo al movimiento. Criterio de alta del tema: ≤ 18." },
 ];
+/* ---- Tests de carga, velocidad y resistencia (Evaluación y control del entrenamiento, Dr. E. Carballeira, ULL) ---- */
+const r2d = (v, d = 1) => v == null || !isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d;
+function linreg(xs, ys) {
+  const n = xs.length; if (n < 2) return null; const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0; for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; syy += (ys[i] - my) ** 2; }
+  if (!sxx) return null; const b = sxy / sxx, a = my - b * mx; return { a, b, r2: syy ? (sxy * sxy) / (sxx * syy) : 1, n };
+}
+const T_TABLA = (cab, filas) => `<div class="tbl"><table class="ttab"><thead><tr>${cab.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.map(f => `<tr>${f.map((c, i) => `<td${i ? ' class="n"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+const kgR = v => v == null ? "—" : fmt(Math.round(v / 1.25) * 1.25, 2) + " kg"; // redondeo a 1,25 kg (discos)
+// Fórmulas de estimación del 1RM (tabla del tema: rango válido de repeticiones)
+const RM_F = [
+  ["Mayhew", (kg, r) => 100 * kg / (52.2 + 41.9 * Math.exp(-0.055 * r)), 10],
+  ["Brzycki", (kg, r) => kg * 100 / (102.78 - 2.78 * r), 10],
+  ["Epley", (kg, r) => (1 + 0.033 * r) * kg, 15],
+  ["Lander", (kg, r) => 100 * kg / (101.3 - 2.67123 * r), 15],
+  ["Lombardi", (kg, r) => kg * r ** 0.1, 20],
+  ["O'Conner", (kg, r) => kg * (1 + 0.025 * r), 10],
+];
+// Velocidad media propulsiva en el 1RM (VMT) publicada por ejercicio. Mejor la individual si se conoce.
+const VMT = [["Press de banca", 0.17, "González-Badillo y Sánchez-Medina 2010"], ["Sentadilla completa", 0.32, "Sánchez-Medina et al. 2017"], ["Media sentadilla / sentadilla paralela", 0.30, "orientativo"], ["Peso muerto", 0.15, "orientativo (Morán-Navarro et al. 2021)"], ["Remo tumbado con barra", 0.52, "Sánchez-Medina et al. 2014"], ["Dominada", 0.23, "Sánchez-Moreno et al. 2017"], ["Press militar", 0.19, "orientativo"], ["Hip thrust", 0.25, "orientativo"], ["Prensa de piernas", 0.25, "orientativo"]];
+const ZONAS_RM = [["Potencia", 12, "6 (de 12 posibles)", "4–6", "3–5 min"], ["Fuerza", 4, "2–3 (de 4–6)", "4–5", "2–4 min"], ["Hipertrofia", 9, "7–8 (de 8–10)", "3–5", "60–120 s"], ["Resistencia muscular", 18, "> 15 (RIR 1–3)", "2–4", "< 60 s"]];
+const pctBanca = v => 8.4326 * v * v - 73.501 * v + 112.33; // González-Badillo y Sánchez-Medina 2010 (VMP)
+const pctSentadilla = v => -5.961 * v * v - 50.71 * v + 117; // Sánchez-Medina et al. 2017 (sentadilla completa, VMP)
+const kmh = ms => ms * 3.6;
+const ritmo = kmhv => { if (!kmhv) return "—"; const s = 3600 / kmhv; return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")} min/km`; };
+
+const TCALC = [
+  /* ---------- Fuerza máxima y cargas ---------- */
+  { k: "rm1", n: "1RM directo", g: "cargas", u: "kg", tipo: "calc", ej: "lib",
+    campos: [["kg", "Carga máxima levantada (kg)", "100"], ["pc", "Peso corporal (kg) · opcional", "75"]],
+    que: "La carga más alta que puede levantar una sola vez con buena técnica. Es la referencia clásica para pautar por %1RM.",
+    proto: ["Estima su 1RM con las cargas de sus entrenos (si no tiene experiencia, haz un test exploratorio o usa la curva 4-8-12 RM).", "Calentamiento general y movilidad. Después 8–10 reps al 40–50 %, 1 min de pausa, y 3–5 reps al 70–80 %.", "3 min de pausa y 1 rep al 90 %.", "Sube de 1 a 2,5 kg por intento, 1 repetición cada vez, con 3–4 min de pausa.", "El 1RM es la última carga levantada con buena técnica. Planifícalo para llegar en 3–5 intentos (sin contar el calentamiento)."],
+    calc: d => { if (d.kg == null) return { err: "la carga" }; const out = []; let rel = null;
+      if (d.pc) { rel = d.kg / d.pc; out.push({ n: "", txt: `Fuerza relativa: ${fmt(rel, 2)} × su peso corporal` }); }
+      out.push({ n: "", txt: "El 1RM cambia de un día a otro (hasta ±18 %) y el mismo % da distinto número de repeticiones según el ejercicio y la persona: úsalo como referencia, no como dogma." });
+      return { valor: d.kg, out, tabla: T_TABLA(["% 1RM", "Carga"], [95, 90, 85, 80, 75, 70, 65, 60, 50].map(p => [p + " %", kgR(d.kg * p / 100)])) }; } },
+  { k: "xrm", n: "Estimación del 1RM por repeticiones (X RM)", g: "cargas", u: "kg", tipo: "calc", ej: "lib",
+    campos: [["kg", "Carga (kg)", "80"], ["reps", "Repeticiones hasta el fallo técnico", "6"]],
+    que: "Estima el 1RM sin levantar la carga máxima: hace todas las repeticiones posibles con una carga y se aplica una fórmula. Más fiable cuantas menos repeticiones (idealmente menos de 10).",
+    proto: ["Calentamiento progresivo (8–10 reps al 40–50 % y 3–5 reps al 70 % de lo que estimes).", "Elige una carga con la que crea que puede hacer entre 3 y 10 repeticiones.", "Repeticiones continuas, técnica estricta, hasta que no pueda hacer otra bien (fallo técnico).", "Anota carga y repeticiones. Repite el test en el mismo ejercicio, material y condiciones para comparar."],
+    calc: d => { if (d.kg == null || !d.reps) return { err: "la carga y las repeticiones" }; const r = d.reps;
+      if (r === 1) return { valor: d.kg, out: [{ n: "ok", txt: "Con 1 repetición la carga es su 1RM." }] };
+      const ests = RM_F.filter(f => r <= f[2]).map(([n, fn]) => [n, fn(d.kg, r)]); const main = (ests.find(e => e[0] === "Mayhew") || ests[0] || [0, null])[1];
+      const lo = Math.min(...ests.map(e => e[1])), hi = Math.max(...ests.map(e => e[1])); const out = [];
+      out.push({ n: r <= 6 ? "ok" : r <= 10 ? "" : "warn", txt: r <= 6 ? "Pocas repeticiones: estimación precisa." : r <= 10 ? "Estimación aceptable (error típico de 4–12 kg según fórmula)." : "Más de 10 repeticiones: la estimación pierde mucha precisión. Repite con una carga más alta." });
+      out.push({ n: "", txt: `Rango entre fórmulas: ${fmt(lo, 1)}–${fmt(hi, 1)} kg. Se toma Mayhew (la de menor error en press de banca y sentadilla según el tema).` });
+      if (/muerto/i.test(d.ej || "")) out.push({ n: "warn", txt: "En peso muerto todas las fórmulas fallan en torno a un 10 %: tómalo como orientación." });
+      return { valor: r2d(main, 1), out, tabla: T_TABLA(["Fórmula", "1RM estimado"], ests.map(([n, v]) => [n, fmt(v, 1) + " kg"])) }; } },
+  { k: "zrm", n: "Curva carga–repeticiones (4-8-12 RM)", g: "cargas", u: "kg", tipo: "calc", ej: "lib",
+    filas: { n: "pts", cols: [["reps", "RM (reps)"], ["kg", "Carga (kg)"]], ini: [[4, null], [8, null], [12, null]], min: 2, add: "+ Añadir otra RM" },
+    que: "Con 3 cargas máximas para distinto número de repeticiones (p. ej. 4, 8 y 12 RM) se traza su recta carga–repeticiones. De ahí sale su 1RM estimado y la carga exacta para cualquier zona de entrenamiento.",
+    proto: ["Mismo día o días cercanos, con calentamiento completo.", "Busca la carga con la que hace exactamente 4 repeticiones (4RM). Pausa de 3–5 min.", "Busca su 8RM y después su 12RM, con 3–5 min de pausa.", "Si una carga no sale exacta, anota las repeticiones reales: la recta se ajusta igual.", "La app calcula la recta (mínimos cuadrados: carga = a + b × reps), su 1RM y la carga para cada zona."],
+    calc: d => { const p = (d.pts || []).filter(x => x.reps && x.kg != null); if (p.length < 2) return { err: "al menos 2 cargas con sus repeticiones" };
+      const L = linreg(p.map(x => x.reps), p.map(x => x.kg)); if (!L || L.b >= 0) return { err: "cargas coherentes (más repeticiones con menos carga)" };
+      const kgAt = x => L.a + L.b * x; const rm = kgAt(1); const out = [];
+      out.push({ n: "", txt: `Recta: carga = ${fmt(L.a, 2)} ${L.b < 0 ? "−" : "+"} ${fmt(Math.abs(L.b), 2)} × repeticiones (cada repetición de más = ${fmt(Math.abs(L.b), 2)} kg menos)` });
+      out.push({ n: L.r2 >= 0.95 ? "ok" : "warn", txt: `Ajuste R² = ${fmt(L.r2, 3)}${L.r2 < 0.95 ? " · los puntos no siguen bien una recta: revisa alguna carga" : ""}` });
+      if (p.length < 3) out.push({ n: "warn", txt: "Con solo 2 cargas no hay forma de comprobar el ajuste: añade una tercera." });
+      return { valor: r2d(rm, 1), out, tabla: T_TABLA(["Repeticiones", "Carga"], [1, 2, 3, 4, 5, 6, 8, 10, 12, 15].map(x => [x + " RM", kgR(kgAt(x))])) + `<h4 class="tsub">Cargas por objetivo</h4>` + T_TABLA(["Objetivo", "Carga", "Reps/serie", "Series", "Pausa"], ZONAS_RM.map(([o, z, rp, s, pa]) => [o, `${kgR(kgAt(z))} <span class="tiny muted">(${z}RM)</span>`, rp, s, pa])) }; } },
+  { k: "lv", n: "Perfil carga–velocidad", g: "cargas", u: "kg", tipo: "calc", ej: "vmt",
+    filas: { n: "pts", cols: [["kg", "Carga (kg)"], ["v", "VMP (m/s)"]], ini: [[], [], [], [], []], min: 3, add: "+ Añadir carga" },
+    campos: [["vmt", "Velocidad en el 1RM (m/s)", "0,17"]],
+    que: "Mide a qué velocidad mueve varias cargas (con encoder o app). La relación es casi una recta: con ella se estima su 1RM sin llegar al máximo, la carga de máxima potencia y la velocidad de cada % de carga. Cada persona tiene su perfil en cada ejercicio.",
+    proto: ["Mide siempre la velocidad media propulsiva (VMP) con el mismo dispositivo, a máxima intención de velocidad y con técnica estricta.", "Empieza con la carga mínima (barra, 10–20 kg) y sube un 10–15 % de su 1RM estimado en cada escalón.", "Mínimo 5 cargas (mejor 6–8), con 2 en cada tercio del perfil (bajas, medias y altas).", "Repeticiones: 3 con cargas bajas, 2 con medias y 1 con altas. Pausas: 1 min, 2–3 min y 3–5 min.", "Si dos repeticiones de la misma carga difieren más de 0,03 m/s, repítela. Anota la mejor.", "Termina cuando la velocidad esté a menos de 0,03 m/s de su velocidad en el 1RM o cuando la técnica se rompa.", "Para comparar entre días, repite las mismas cargas."],
+    calc: d => { const p = (d.pts || []).filter(x => x.kg != null && x.v); if (p.length < 3) return { err: "al menos 3 cargas con su velocidad" };
+      const L = linreg(p.map(x => x.kg), p.map(x => x.v)); if (!L || L.b >= 0) return { err: "velocidades coherentes (más carga, menos velocidad)" };
+      const vmt = d.vmt || 0.17, rm = (vmt - L.a) / L.b, L0 = -L.a / L.b, V0 = L.a, aline = L0 * V0 / 2;
+      const Lopt = -L.a / (2 * L.b), Pmax = 9.81 * Lopt * (L.a + L.b * Lopt); const vmin = Math.min(...p.map(x => x.v)); const out = [];
+      out.push({ n: L.r2 >= 0.95 ? "ok" : L.r2 >= 0.9 ? "warn" : "bad", txt: `Ajuste R² = ${fmt(L.r2, 3)}${L.r2 < 0.95 ? " · alguna carga se sale de la recta: repítela" : " · perfil fiable"}` });
+      if (p.length < 5) out.push({ n: "warn", txt: `Solo ${p.length} cargas: el protocolo pide al menos 5.` });
+      if (vmin - vmt > 0.3) out.push({ n: "warn", txt: `La carga más pesada se movió a ${fmt(vmin, 2)} m/s, lejos de ${fmt(vmt, 2)} m/s: el 1RM se extrapola mucho. Añade alguna carga más alta.` });
+      out.push({ n: "", txt: `Cada 10 kg más, la velocidad baja ${fmt(Math.abs(L.b) * 10, 3)} m/s. L0 (carga a velocidad 0) = ${fmt(L0, 1)} kg · V0 = ${fmt(V0, 2)} m/s · área bajo la recta (Aline) = ${fmt(aline, 1)}.` });
+      out.push({ n: "", txt: `Máxima potencia ≈ ${fmt(Pmax, 0)} W con ${kgR(Lopt)} (a ${fmt(L.a / 2, 2)} m/s).` });
+      const pts = [100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 40].map(pc => { const kg = rm * pc / 100; return [pc + " %", kgR(kg), fmt(L.a + L.b * kg, 2) + " m/s"]; });
+      return { valor: r2d(rm, 1), out, tabla: T_TABLA(["% 1RM", "Carga", "Velocidad esperada"], pts) + `<p class="tiny muted" style="margin:6px 0 0">Velocidad en el 1RM usada: ${fmt(vmt, 2)} m/s. Si conoces la suya real, ponla: el 1RM estimado será más preciso.</p>` }; } },
+  { k: "vref", n: "Velocidad con carga de referencia", g: "cargas", u: "m/s", tipo: "calc", ej: "vmt",
+    campos: [["kg", "Carga (kg)", "60"], ["v", "Mejor VMP (m/s)", "0,85"]],
+    que: "Una sola carga fija, siempre la misma, movida a máxima velocidad. Si un día la mueve más rápido, ha ganado fuerza (o está más fresco); si la mueve más lento, ha perdido fuerza o está fatigado. Es el control más rápido y no exige esfuerzos máximos.",
+    proto: ["Elige una carga media (en torno al 60–70 % de su 1RM) y úsala siempre en este test.", "Mismo calentamiento, mismo ejercicio, misma técnica y mismo dispositivo cada vez.", "2–3 repeticiones a máxima intención de velocidad, con 2–3 min de pausa. Anota la mejor.", "El error de medida es de un 2,5–5 %: cambios menores pueden ser ruido."],
+    calc: d => { if (d.kg == null || !d.v) return { err: "la carga y la velocidad" }; const out = []; const ej = (d.ej || "").toLowerCase(); let pc = null;
+      if (/banca/.test(ej)) pc = pctBanca(d.v); else if (/sentadilla completa/.test(ej)) pc = pctSentadilla(d.v);
+      if (pc != null && pc > 20 && pc <= 100) out.push({ n: "", txt: `Equivale a un ${fmt(pc, 0)} % de su 1RM → 1RM estimado ≈ ${kgR(d.kg / (pc / 100))} (ecuación general del ejercicio; su perfil individual es más preciso).` });
+      out.push({ n: "", txt: "Compara siempre con la misma carga: el historial de abajo te dice si la velocidad sube (más fuerza) o baja (fatiga o pérdida de fuerza)." });
+      return { valor: d.v, unidad: "m/s", out }; },
+    cmp: (x, prev) => { const a = x.datos || {}, b = prev.datos || {}; if (a.kg !== b.kg || !b.v) return null; const pc = 100 * (a.v - b.v) / b.v; return { n: pc >= 5 ? "ok" : pc <= -5 ? "bad" : "", txt: `Con ${fmt(a.kg, 1)} kg: ${pc >= 0 ? "+" : ""}${fmt(pc, 1)} % de velocidad respecto al ${fdate(prev.fecha)}${Math.abs(pc) < 5 ? " (dentro del error de medida)" : pc > 0 ? " · mejora real" : " · pérdida real: revisa fatiga y descanso"}` }; } },
+  { k: "exc", n: "Carga excéntrica máxima (frenada en 4 s)", g: "cargas", u: "kg", tipo: "calc", ej: "lib",
+    campos: [["kg", "Carga máxima frenada (kg)", "140"], ["rmc", "Su 1RM concéntrico (kg) · opcional", "110"]],
+    que: "La carga más alta que es capaz de frenar de forma controlada durante 4–5 s en un recorrido fijo. La fuerza excéntrica es mayor que la concéntrica y es clave en prevención de lesiones y cambios de dirección.",
+    proto: ["Recorrido definido (p. ej. de 10° a 90° de rodilla en prensa) y ritmo de frenado constante (metrónomo o marcas).", "1.ª carga al 50 % de su 1RM concéntrico (1 min de pausa); 2.ª al 100 % (3 min).", "Sube un 5 % por intento con 3–4 min de pausa hasta que no mantenga el ritmo de frenado (p. ej. 80° en 4 s).", "Si falla, 5 min de pausa y un nuevo intento. Máximo 6 intentos. La carga excéntrica máxima es la última frenada con éxito."],
+    calc: d => { if (d.kg == null) return { err: "la carga frenada" }; const out = [];
+      if (d.rmc) { const r = d.kg / d.rmc; out.push({ n: r >= 1.2 ? "ok" : "warn", txt: `Ratio excéntrico/concéntrico: ${fmt(r, 2)}${r < 1.2 ? " · déficit excéntrico relativo: buen objetivo de entrenamiento" : ""}` }); }
+      return { valor: d.kg, out }; } },
+  { k: "frm", n: "Fuerza-resistencia (repeticiones al fallo)", g: "cargas", u: "reps", tipo: "calc", ej: "lib",
+    campos: [["kg", "Carga (kg)", "60"], ["pct", "% de su 1RM · opcional", "70"], ["reps", "Repeticiones hasta el fallo técnico", "15"]],
+    que: "Cuántas repeticiones aguanta con una carga fija. Si la carga es la misma, más repeticiones = más fuerza-resistencia (y, en general, más fuerza).",
+    proto: ["Elige una carga fija (un % de su 1RM o una absoluta, p. ej. su peso corporal) y úsala siempre igual.", "Ritmo constante, recorrido completo, sin pausas largas entre repeticiones.", "Hasta el fallo técnico. Anota las repeticiones.", "El número de repeticiones a un mismo % varía mucho entre ejercicios y personas: compáralo solo consigo mismo."],
+    calc: d => { if (d.kg == null || !d.reps) return { err: "la carga y las repeticiones" }; return { valor: d.reps, unidad: "reps", out: [{ n: "", txt: `${fmt(d.reps, 0)} repeticiones con ${fmt(d.kg, 1)} kg${d.pct ? ` (${fmt(d.pct, 0)} % 1RM)` : ""}` }] }; },
+    cmp: (x, prev) => { const a = x.datos || {}, b = prev.datos || {}; if (a.kg !== b.kg || !b.reps) return null; const df = a.reps - b.reps; return { n: df > 0 ? "ok" : df < 0 ? "warn" : "", txt: `Con la misma carga: ${df >= 0 ? "+" : ""}${df} repeticiones respecto al ${fdate(prev.fecha)}` }; } },
+
+  /* ---------- Saltos ---------- */
+  { k: "cmj", n: "CMJ (salto con contramovimiento)", g: "saltos", u: "cm", tipo: "calc",
+    campos: [["h", "Altura (cm)", "38"], ["pc", "Peso corporal (kg) · opcional", "75"]],
+    que: "Salto vertical con contramovimiento: la medida más usada de potencia de piernas y de fatiga neuromuscular (si baja varios días seguidos, está cansado).",
+    proto: ["Manos en la cadera durante todo el salto.", "Baja libremente hasta la profundidad que elija y salta al máximo sin pausa.", "Cae con las piernas extendidas y amortigua después (si encoge las piernas en el aire, el intento no vale).", "3 intentos con 30–60 s de pausa; se anota el mejor. Plataforma de contactos o app (p. ej. My Jump). Observa también el aterrizaje."],
+    calc: d => { if (d.h == null) return { err: "la altura" }; const out = [];
+      if (d.pc) { const p = 60.7 * d.h + 45.3 * d.pc - 2055; out.push({ n: "", txt: `Potencia pico estimada ≈ ${fmt(p, 0)} W (${fmt(p / d.pc, 1)} W/kg, ecuación de Sayers)` }); }
+      out.push({ n: "", txt: "Para controlar la fatiga, una bajada de más del 5–10 % sobre su media habitual es una señal de alerta." });
+      return { valor: d.h, out }; } },
+  { k: "sj", n: "SJ (salto sin contramovimiento)", g: "saltos", u: "cm", tipo: "calc",
+    campos: [["h", "Altura (cm)", "32"], ["cmj", "CMJ del mismo día (cm) · opcional", "36"]],
+    que: "Salto desde parado con las rodillas a 90°, sin bajar antes. Mide la fuerza explosiva concéntrica pura. Comparado con el CMJ indica cuánto aprovecha el ciclo estiramiento-acortamiento.",
+    proto: ["Manos en la cadera. Baja hasta 90° de rodilla y mantén 2–3 s inmóvil.", "Salta al máximo sin hacer ningún rebote previo (si baja antes de subir, el intento no vale).", "3 intentos con 30–60 s de pausa; se anota el mejor."],
+    calc: d => { if (d.h == null) return { err: "la altura" }; const out = [];
+      if (d.cmj) { const ie = 100 * (d.cmj - d.h) / d.h; out.push({ n: ie >= 10 ? "ok" : "", txt: `Índice de elasticidad (CMJ − SJ)/SJ = ${fmt(ie, 1)} %${ie < 5 ? " · aprovecha poco el rebote: trabaja pliometría" : ""}` }); }
+      return { valor: d.h, out }; } },
+  { k: "rsi", n: "Drop jump · índice de fuerza reactiva (RSI)", g: "saltos", u: "m/s", tipo: "calc",
+    campos: [["caj", "Altura del cajón (cm)", "30"], ["h", "Altura del salto (cm)", "30"], ["tc", "Tiempo de contacto (ms)", "200"]],
+    que: "Cae de un cajón y rebota lo más alto y rápido posible. El RSI (altura ÷ tiempo de contacto) mide la fuerza reflejo-elástico-explosiva: cuánto salta en el menor tiempo.",
+    proto: ["Manos en la cadera. Déjate caer del cajón (no saltes desde él).", "Al tocar el suelo, rebota lo más alto y rápido posible, con contacto corto (< 250 ms).", "Plataforma de contactos o app de vídeo. 3 intentos con 1 min de pausa; se anota el mejor RSI.", "Repite siempre con la misma altura de cajón."],
+    calc: d => { if (d.h == null || !d.tc) return { err: "la altura y el tiempo de contacto" }; const rsi = (d.h / 100) / (d.tc / 1000); const out = [];
+      out.push({ n: rsi >= 2 ? "ok" : rsi >= 1.5 ? "ok" : rsi >= 1 ? "warn" : "bad", txt: `RSI ${fmt(rsi, 2)} · ${rsi >= 2 ? "muy bueno" : rsi >= 1.5 ? "bueno" : rsi >= 1 ? "moderado" : "bajo"} (orientativo; compáralo sobre todo con él mismo)` });
+      if (d.tc > 250) out.push({ n: "warn", txt: `Contacto de ${fmt(d.tc, 0)} ms (> 250 ms): no es un rebote rápido. Pide menos tiempo en el suelo.` });
+      return { valor: r2d(rsi, 2), out }; } },
+
+  /* ---------- Velocidad ---------- */
+  { k: "sprint", n: "Sprint lineal 10-20-30 m", g: "velocidad", u: "s", tipo: "calc", menos: true,
+    campos: [["t10", "0–10 m (s)", "1,85"], ["t20", "0–20 m (s)", "3,10"], ["t30", "0–30 m (s)", "4,25"]],
+    que: "Tiempo en 10, 20 y 30 m lanzados desde parado. Los 10 m reflejan la aceleración; el tramo 20–30 m, la velocidad máxima.",
+    proto: ["Calentamiento con carrera suave, movilidad y 3–4 aceleraciones progresivas.", "Salida de pie, 50 cm por detrás de la primera célula (o fotocélulas/GPS de ≥ 10 Hz).", "2–3 intentos con 2–3 min de pausa completa; se anota el mejor (el de menor tiempo a 30 m).", "Misma superficie y calzado en cada test."],
+    calc: d => { if (!d.t10 && !d.t30) return { err: "algún tiempo" }; const out = [];
+      if (d.t10) out.push({ n: "", txt: `Aceleración 0–10 m: ${fmt(kmh(10 / d.t10), 1)} km/h de media` });
+      if (d.t20 && d.t30 && d.t30 > d.t20) { const vm = 10 / (d.t30 - d.t20); out.push({ n: "", txt: `Velocidad máxima (tramo 20–30 m): ${fmt(vm, 2)} m/s = ${fmt(kmh(vm), 1)} km/h` }); }
+      return { valor: d.t30 || d.t20 || d.t10, out }; } },
+  { k: "rsa", n: "RSA · sprints repetidos (6 × 30 m)", g: "velocidad", u: "%", tipo: "calc", menos: true,
+    filas: { n: "pts", cols: [["t", "Tiempo (s)"]], ini: [[], [], [], [], [], []], min: 3, add: "+ Añadir sprint" },
+    campos: [["pausa", "Pausa entre sprints (s)", "20"]],
+    que: "Capacidad de repetir sprints casi sin recuperar. El índice de fatiga dice cuánto se pierde: por debajo del 5 % repite muy bien; por encima del 8 % le cuesta mantener la potencia.",
+    proto: ["6 sprints de 30 m con 20 s de pausa pasiva (o el formato de su deporte: 12 × 20 m, 10 × 15 m…).", "Fotocélulas o GPS de ≥ 10 Hz. Cada sprint a tope desde el primero.", "Anota todos los tiempos. Se interpreta en el tiempo: en pretemporada señala un déficit; tras una semana dura, fatiga acumulada."],
+    calc: d => { const t = (d.pts || []).map(x => x.t).filter(Boolean); if (t.length < 3) return { err: "al menos 3 tiempos" };
+      const best = Math.min(...t), tot = t.reduce((a, b) => a + b, 0), dec = 100 * (tot / (best * t.length) - 1); const out = [];
+      out.push({ n: dec < 5 ? "ok" : dec <= 8 ? "warn" : "bad", txt: `Índice de fatiga ${fmt(dec, 1)} % · ${dec < 5 ? "excelente capacidad de repetir" : dec <= 8 ? "zona normal" : "le cuesta mantener la potencia (posible déficit oxidativo)"}` });
+      out.push({ n: "", txt: `Mejor ${fmt(best, 2)} s · media ${fmt(tot / t.length, 2)} s · total ${fmt(tot, 2)} s` });
+      return { valor: r2d(dec, 1), out }; } },
+  { k: "cod505", n: "Cambio de dirección (505) y déficit COD", g: "velocidad", u: "s", tipo: "calc", menos: true,
+    campos: [["izq", "505 girando con la izquierda (s)", "2,45"], ["der", "505 girando con la derecha (s)", "2,40"], ["t10", "Sprint 0–10 m (s) · opcional", "1,85"]],
+    que: "Carrera de 15 m, giro de 180° y 5 m de vuelta (se cronometran los 5 m de ida y vuelta). El déficit COD resta el sprint lineal de 10 m: aísla la habilidad de frenar y girar de lo rápido que corre.",
+    proto: ["10 m de carrera lanzada hasta la célula, 5 m más hasta la línea, giro de 180° y vuelta a la célula.", "3 intentos por lado con 2–3 min de pausa; se anota el mejor de cada lado.", "Mide el sprint de 10 m el mismo día para calcular el déficit."],
+    calc: d => { if (!d.izq && !d.der) return { err: "algún tiempo" }; const out = [];
+      if (d.izq && d.der) { const a = Math.round(100 * Math.min(d.izq, d.der) / Math.max(d.izq, d.der)); out.push({ n: semaf(a, LSI_HOP), txt: `Simetría entre lados ${a} %${a < 95 ? ` · gira peor hacia la ${d.izq > d.der ? "izquierda" : "derecha"}` : ""}` }); }
+      if (d.t10) ["izq", "der"].forEach(l => { if (d[l]) out.push({ n: "", txt: `Déficit COD ${l === "izq" ? "izquierda" : "derecha"}: ${fmt(d[l] - d.t10, 2)} s (cuanto menor, mejor gira respecto a lo rápido que corre)` }); });
+      return { valor: Math.min(...[d.izq, d.der].filter(Boolean)), izq: d.izq, der: d.der, out }; } },
+
+  /* ---------- Resistencia ---------- */
+  { k: "ift3015", n: "30-15 IFT (VIFT)", g: "resistencia", u: "km/h", tipo: "calc",
+    campos: [["vift", "Velocidad del último estadio completado (km/h)", "19,5"], ["fc", "FC máxima (lpm) · opcional", "195"], ["hrr", "FC a los 60 s de acabar (lpm) · opcional", "160"]],
+    que: "Test intermitente de 30 s corriendo y 15 s andando, con cambios de dirección cada 20 m. Su velocidad final (VIFT) integra la capacidad aeróbica, la recuperación entre esfuerzos y los cambios de dirección. Es la mejor referencia para pautar el HIIT en deportes intermitentes y de combate.",
+    proto: ["Pasillo de 40 m con líneas a 0, 20 y 40 m y una zona de 3 m detrás de cada extremo.", "Estadios de 30 s ida-vuelta siguiendo el audio oficial, con 15 s andando. Empieza a 8 km/h y sube 0,5 km/h por estadio.", "Termina cuando no llega a la zona de 3 m a tiempo en 3 ocasiones seguidas o se para.", "Anota la velocidad del último estadio completado (VIFT). Error típico < 2,5 %."],
+    calc: d => { if (!d.vift) return { err: "la VIFT" }; const out = [];
+      if (d.fc && d.hrr) out.push({ n: d.fc - d.hrr >= 30 ? "ok" : "warn", txt: `Recupera ${fmt(d.fc - d.hrr, 0)} lpm en 60 s${d.fc - d.hrr < 30 ? " · recuperación lenta" : ""}` });
+      out.push({ n: "", txt: "Una mejora de 0,5–1 km/h tras 6–8 semanas de HIIT es un cambio real. Referencia en deportes colectivos jóvenes: 18–22 km/h (hombres), 16–20 km/h (mujeres)." });
+      const it = [["30″-30″ (hasta 4 min)", 85, 90], ["15″-15″ (hasta 8 min)", 90, 95], ["10″-20″", 95, 100], ["Sprints repetidos", 105, 115]];
+      return { valor: d.vift, out, tabla: `<h4 class="tsub">HIIT por %VIFT</h4>` + T_TABLA(["Formato", "% VIFT", "Velocidad", "Distancia en 15 s"], it.map(([f, a, b]) => [f, `${a}–${b} %`, `${fmt(d.vift * a / 100, 1)}–${fmt(d.vift * b / 100, 1)} km/h`, `${fmt(d.vift * a / 100 / 3.6 * 15, 0)}–${fmt(d.vift * b / 100 / 3.6 * 15, 0)} m`])) }; } },
+  { k: "yoyo1", n: "Yo-Yo Intermitente de Recuperación nivel 1", g: "resistencia", u: "m", tipo: "calc",
+    campos: [["m", "Distancia total (m)", "1600"]],
+    que: "Carreras de 2 × 20 m a velocidad creciente con 10 s de recuperación activa. Mide la capacidad de repetir esfuerzos intensos, típica de deportes de equipo.",
+    proto: ["Pasillo de 20 m + zona de recuperación de 5 m. Audio oficial del nivel 1.", "Ida y vuelta al ritmo del pitido; 10 s trotando en la zona de recuperación.", "Primer fallo: aviso. Segundo fallo: fin. Anota la distancia total recorrida."],
+    calc: d => { if (!d.m) return { err: "la distancia" }; const vo = d.m * 0.0084 + 36.4; return { valor: d.m, out: [{ n: "", txt: `VO₂máx estimado ≈ ${fmt(vo, 1)} ml/kg/min (Bangsbo et al. 2008)` }] }; } },
+  { k: "cooper", n: "Test de Cooper (12 min)", g: "resistencia", u: "m", tipo: "calc",
+    campos: [["m", "Distancia en 12 min (m)", "2800"]],
+    que: "Correr la máxima distancia posible en 12 minutos. Estima el VO₂máx y la velocidad aeróbica de forma sencilla. Depende mucho de saber dosificar el ritmo.",
+    proto: ["Pista o recorrido llano medido. Calentamiento de 10 min.", "12 min a la máxima distancia posible, con ritmo lo más constante que pueda.", "Anota la distancia al pitido final (redondea a 10 m)."],
+    calc: d => { if (!d.m) return { err: "la distancia" }; const vo = (d.m - 504.9) / 44.73, v = d.m / 200; return { valor: d.m, out: [{ n: "", txt: `VO₂máx estimado ≈ ${fmt(vo, 1)} ml/kg/min` }, { n: "", txt: `Velocidad media ${fmt(v, 1)} km/h (${ritmo(v)}), una buena aproximación a su velocidad aeróbica máxima` }] }; } },
+  { k: "navette", n: "Course Navette (20 m)", g: "resistencia", u: "palier", tipo: "calc",
+    campos: [["p", "Último palier completado", "9,5"]],
+    que: "Ida y vuelta de 20 m al ritmo de un pitido que se acelera cada minuto. Estima el VO₂máx y la velocidad aeróbica máxima.",
+    proto: ["Pasillo de 20 m y audio oficial (empieza a 8,5 km/h y sube 0,5 km/h por minuto).", "Pisa la línea con cada pitido. El test acaba cuando no llega a la línea dos veces seguidas.", "Anota el último palier (medio palier si completó la mitad)."],
+    calc: d => { if (!d.p) return { err: "el palier" }; const v = 8 + 0.5 * d.p, vo = 6 * v - 24.4; return { valor: d.p, out: [{ n: "", txt: `Velocidad final ${fmt(v, 1)} km/h · VO₂máx estimado ≈ ${fmt(vo, 1)} ml/kg/min (Léger et al. 1988, adultos)` }] }; } },
+  { k: "vcrit", n: "Velocidad crítica (2 pruebas contrarreloj)", g: "resistencia", u: "km/h", tipo: "calc",
+    campos: [["d1", "Prueba corta: distancia (m)", "1200"], ["t1", "Prueba corta: tiempo (s)", "270"], ["d2", "Prueba larga: distancia (m)", "3600"], ["t2", "Prueba larga: tiempo (s)", "960"]],
+    que: "La velocidad más alta que puede sostener sin entrar en fatiga progresiva (frontera entre el dominio pesado y el severo). D′ es la distancia «extra» que puede correr por encima de ella antes de agotarse.",
+    proto: ["Dos contrarrelojes máximas de entre 2 y 15 min (p. ej. 1200 m y 3600 m), en días distintos o con 30–60 min de descanso.", "Ritmo lo más regular posible, a tope.", "Anota distancia y tiempo de cada una. Modelo lineal: distancia = VC × tiempo + D′."],
+    calc: d => { if (!d.d1 || !d.t1 || !d.d2 || !d.t2 || d.t2 === d.t1) return { err: "las dos pruebas" }; const cs = (d.d2 - d.d1) / (d.t2 - d.t1), dp = d.d1 - cs * d.t1; const out = [];
+      if (cs <= 0 || dp < 0) return { err: "tiempos coherentes (la prueba larga debe ir más lenta)" };
+      out.push({ n: "", txt: `VC ${fmt(kmh(cs), 2)} km/h (${ritmo(kmh(cs))}) · D′ ${fmt(dp, 0)} m` });
+      out.push({ n: "", txt: `Intervalos largos (≥ 4 min) por debajo o cerca de la VC; tiempo hasta el agotamiento a una velocidad v > VC ≈ D′ ÷ (v − VC).` });
+      return { valor: r2d(kmh(cs), 2), out, tabla: T_TABLA(["Ritmo", "Aguanta aprox."], [105, 110, 115, 120].map(p => { const v = cs * p / 100; return [`${p} % VC · ${fmt(kmh(v), 1)} km/h`, `${fmt(dp / (v - cs) / 60, 1)} min`]; })) }; } },
+  { k: "asr", n: "Reserva de velocidad anaeróbica (ASR)", g: "resistencia", u: "km/h", tipo: "calc",
+    campos: [["mss", "Velocidad máxima de sprint (km/h)", "32"], ["vam", "Velocidad aeróbica máxima (km/h)", "17"]],
+    que: "Diferencia entre su velocidad máxima de sprint y su velocidad aeróbica máxima. Con la misma VAM, quien tiene más reserva aguanta mejor los sprints repetidos. Sirve para pautar sprints en % de la reserva.",
+    proto: ["Velocidad máxima: tramo 20–30 m del test de sprint (o GPS).", "Velocidad aeróbica máxima: test de pista (Cooper, Course Navette, Montreal) o de laboratorio.", "Ambas medidas en la misma época."],
+    calc: d => { if (!d.mss || !d.vam) return { err: "las dos velocidades" }; const asr = d.mss - d.vam; return { valor: r2d(asr, 1), out: [{ n: "", txt: `ASR ${fmt(asr, 1)} km/h · ${asr >= 12 ? "perfil de velocidad (típico de deportes colectivos: 12–18 km/h)" : asr < 8 ? "perfil aeróbico (típico de fondistas, < 8 km/h)" : "perfil intermedio"}` }],
+      tabla: T_TABLA(["% de la reserva", "Velocidad"], [20, 30, 40, 50].map(p => [`VAM + ${p} %`, `${fmt(d.vam + asr * p / 100, 1)} km/h`])) }; } },
+];
+// Qué mide cada test del catálogo anterior (en palabras sencillas)
+const QUE = {
+  cmj_ul: "El mismo salto a una pierna: muestra diferencias entre piernas que en el salto a dos se esconden.",
+  drop: "Cómo aterriza tras caer de un cajón. No mide cuánto salta, sino si recibe bien el impacto (rodillas hacia dentro, ruido, estabilidad).",
+  hop_single: "Salto horizontal a una pierna. Compara piernas tras una lesión de rodilla o tobillo.",
+  hop_triple: "Tres saltos seguidos a una pierna: añade capacidad de encadenar impactos.",
+  hop_side: "Saltos laterales durante 30 s: resistencia y control lateral de cada pierna.",
+  ybal: "Equilibrio dinámico a una pierna en tres direcciones. Las diferencias entre piernas se asocian a riesgo de lesión.",
+  hq: "Relación de fuerza entre isquios y cuádriceps. Unos isquios relativamente débiles se asocian a más roturas.",
+  prensa_ul: "Fuerza de cada pierna en prensa en relación a su peso: criterio para avanzar tras una cirugía de rodilla.",
+  ohs: "Sentadilla con los brazos arriba para ver compensaciones de movilidad y control.",
+  sls: "Calidad de la sentadilla a una pierna: control de rodilla, pelvis y tronco.",
+  edema: "Cantidad de líquido en la rodilla: indica si la articulación tolera la carga.",
+  rom_ext: "Grados que le faltan para estirar la rodilla del todo.",
+  rom_flex: "Cuánto dobla la rodilla.",
+  lag: "Si al levantar la pierna recta se le dobla la rodilla: indica si el cuádriceps se activa bien.",
+  visa_p: "Cuestionario de dolor y función del tendón rotuliano (100 = sin síntomas).",
+  visa_a: "Cuestionario de dolor y función del tendón de Aquiles (100 = sin síntomas).",
+  acl_rsi: "Confianza psicológica para volver a su deporte tras el LCA.",
+  tsk: "Miedo al movimiento o a volver a lesionarse.",
+};
+Object.entries(QUE).forEach(([k, q]) => { const t = TCAT.find(x => x.k === k); if (t) t.que = q; });
+TCAT.filter(t => t.g === "iso").forEach(t => { if (!t.que) t.que = "Fuerza isométrica máxima con dinamómetro de mano: rápida, segura y útil para comparar piernas y seguir la evolución."; });
+TCALC.forEach(t => { const i = TCAT.findIndex(x => x.k === t.k); if (i >= 0) TCAT[i] = t; else TCAT.push(t); });
+TCAT_G.splice(0, TCAT_G.length, ["cargas", "Fuerza máxima y cargas"], ["saltos", "Saltos"], ["velocidad", "Velocidad y cambio de dirección"], ["resistencia", "Resistencia"], ["hops", "Hop tests"], ["equilibrio", "Equilibrio"], ["iso", "Fuerza isométrica (dinamómetro)"], ["dinamica", "Fuerza dinámica unilateral"], ["mov", "Calidad de movimiento"], ["articular", "Articular (rodilla)"], ["cuest", "Cuestionarios"]);
+
+/* lectura de un test calculado desde el formulario */
+function tReadCalc(f, t) {
+  const v = n => f[n] ? f[n].value.trim() : ""; const d = {};
+  (t.campos || []).forEach(([n]) => d[n] = num(v("c_" + n)));
+  if (t.filas) d[t.filas.n] = [...f.querySelectorAll(`[data-trow="${t.filas.n}"]`)].map(r => { const o = {}; t.filas.cols.forEach(([c]) => { const el = r.querySelector(`[name="r_${c}"]`); o[c] = el ? num(el.value.trim()) : null; }); return o; }).filter(o => Object.values(o).some(x => x != null));
+  if (t.ej) d.ej = v("c_ej");
+  return d;
+}
+function tRowHTML(t, vals = []) { return `<div class="trow" data-trow="${t.filas.n}" style="--tc:${t.filas.cols.length}">${t.filas.cols.map(([c, l], i) => `<input name="r_${c}" inputmode="decimal" aria-label="${esc(l)}" value="${vals[i] != null ? esc(vals[i]) : ""}" placeholder="${esc(l)}">`).join("")}<button type="button" class="btn ghost sm" data-act="t-row-del" aria-label="Quitar fila">✕</button></div>`; }
+function tCalcRes(r, t) {
+  if (!r) return "";
+  if (r.err) return `<div class="tres empty"><span>Falta ${esc(r.err)} para calcular.</span></div>`;
+  return `<div class="tres"><div class="tres-main"><span>${esc(({ rm1: "1RM", rsa: "Índice de fatiga", vref: "Velocidad", frm: "Repeticiones", exc: "Carga excéntrica máxima", cmj: "Altura", sj: "Altura", rsi: "RSI", sprint: "Mejor tiempo", cod505: "Mejor tiempo", ift3015: "VIFT", yoyo1: "Distancia", cooper: "Distancia", navette: "Palier", vcrit: "Velocidad crítica", asr: "Reserva (ASR)" })[t.k] || (t.u === "kg" ? "1RM estimado" : "Resultado"))}</span><b>${fmt(r.valor, 2)}<small> ${esc(r.unidad || t.u)}</small></b></div>${(r.out || []).map(i => `<div class="tint ${i.n || ""}">${esc(i.txt)}</div>`).join("")}${r.tabla || ""}</div>`;
+}
+function tPreview() {
+  const f = $("#f-test"), box = $("#t-prev"); if (!f || !box) return; const t = TC[f.clave.value]; if (!t || !t.calc) { box.innerHTML = ""; return; }
+  box.innerHTML = tCalcRes(t.calc(tReadCalc(f, t)), t);
+}
+
 const TC = Object.fromEntries(TCAT.map(t => [t.k, t]));
 const LADOS = [["", "—"], ["izq", "Izquierda"], ["der", "Derecha"]];
 function tLsiX(x) {
@@ -2017,8 +2255,14 @@ function tCampos(k) {
   if (!t) return `<div class="grid2"><div class="f"><label>Nombre del test</label><input name="nombre" required placeholder="Ej.: 1RM sentadilla" list="tests-dl"></div><div class="f"><label>Categoría</label><input name="categoria" placeholder="fuerza, resistencia…"></div></div>
     <div class="grid3"><div class="f"><label>Valor</label><input name="valor" inputmode="decimal"></div><div class="f"><label>Unidad</label><input name="unidad" placeholder="kg, cm, s"></div><label class="small" style="align-self:end"><input type="checkbox" name="menos"> Mejor cuanto menos</label></div>
     <div class="grid2">${inp("izq", "Izquierda")}${inp("der", "Derecha")}</div>`;
-  const proto = `<details class="tproto" open><summary>Protocolo</summary><p>${esc(t.proto)}</p></details>`;
+  const proto = `${t.que ? `<p class="tque">${esc(t.que)}</p>` : ""}<details class="tproto"><summary>Cómo se hace</summary>${Array.isArray(t.proto) ? `<ol>${t.proto.map(x => `<li>${esc(x)}</li>`).join("")}</ol>` : `<p>${esc(t.proto)}</p>`}</details>`;
   let f = "";
+  if (t.tipo === "calc") {
+    const ej = t.ej === "vmt" ? `<div class="f"><label>Ejercicio</label><input name="c_ej" list="dl-vmt" data-act-change="t-ej" placeholder="Elige o escribe el ejercicio" required><datalist id="dl-vmt">${VMT.map(([n, v]) => `<option value="${esc(n)}">${esc(fmt(v, 2))} m/s en el 1RM</option>`).join("")}</datalist></div>` : t.ej ? `<div class="f"><label>Ejercicio</label><input name="c_ej" list="dl-ex" placeholder="Ej.: Sentadilla trasera" required></div>` : "";
+    const cps = (t.campos || []).map(([n, l, ph]) => `<div class="f"><label>${esc(l)}</label><input name="c_${n}" inputmode="decimal" placeholder="${esc(ph || "")}"></div>`).join("");
+    const fil = t.filas ? `<div class="tfilas"><div class="trow th" style="--tc:${t.filas.cols.length}">${t.filas.cols.map(([, l]) => `<span>${esc(l)}</span>`).join("")}<span></span></div><div id="t-rows">${(t.filas.ini || []).map(v => tRowHTML(t, v)).join("")}</div><button type="button" class="btn ghost sm" data-act="t-row-add" style="align-self:flex-start">${esc(t.filas.add)}</button></div>` : "";
+    return proto + `<div class="tform">${ej ? `<div class="grid2">${ej}</div>` : ""}${cps ? `<div class="grid3">${cps}</div>` : ""}${fil}</div><div id="t-prev" aria-live="polite"></div>`;
+  }
   if (t.tipo === "simple") f = `<div class="grid2">${inp("valor", `Resultado (${t.u})`)}</div>`;
   if (t.tipo === "bil") f = `<div class="grid3">${inp("izq", `Izquierda (${t.u})`)}${inp("der", `Derecha (${t.u})`)}${lado}</div>${ref}`;
   if (t.tipo === "ybal") f = `<div class="grid3">${inp("long_izq", "Long. pierna izq. (cm)")}${inp("long_der", "Long. pierna der. (cm)")}${lado}</div>${["ant", "pm", "pl"].map(d => `<div class="grid2">${inp(d + "_izq", { ant: "Anterior", pm: "Posteromedial", pl: "Posterolateral" }[d] + " izq. (cm)")}${inp(d + "_der", { ant: "Anterior", pm: "Posteromedial", pl: "Posterolateral" }[d] + " der. (cm)")}</div>`).join("")}${ref}`;
@@ -2035,6 +2279,7 @@ function readTest(f) {
   const base = { client_id: S.coach.cid, fecha: v("fecha") || null, notas: v("notas") };
   if (!t) return { ...base, nombre: v("nombre"), categoria: v("categoria"), valor: num(v("valor")), unidad: v("unidad"), izq: num(v("izq")), der: num(v("der")), mejor_es_menos: f.menos ? f.menos.checked : false };
   const row = { ...base, clave: k, nombre: t.n, categoria: (TCAT_G.find(g => g[0] === t.g) || [0, ""])[1], unidad: t.u, mejor_es_menos: !!t.menos, afectado: v("afectado") || null, referencia: f.referencia ? f.referencia.checked : false, datos: {} };
+  if (t.tipo === "calc") { const d = tReadCalc(f, t); const r = t.calc(d); if (r.err) { row.err = r.err; return row; } row.datos = d; row.valor = r.valor; row.unidad = r.unidad || t.u; if (r.izq != null) row.izq = r.izq; if (r.der != null) row.der = r.der; if (d.ej) row.nombre = `${t.n} · ${d.ej}`; return row; }
   if (t.tipo === "simple" || t.tipo === "score" || t.tipo === "cat") row.valor = num(v("valor"));
   if (t.tipo === "bil") { row.izq = num(v("izq")); row.der = num(v("der")); }
   if (t.tipo === "ybal") { const d = {}; ["long_izq", "long_der", "ant_izq", "ant_der", "pm_izq", "pm_der", "pl_izq", "pl_der"].forEach(n => d[n] = num(v(n))); row.datos = d;
@@ -2051,8 +2296,14 @@ function tExtraHTML(x, refs, coach = true) {
   const ref = refs && x.afectado && !x.referencia ? refs.find(r => r.clave === x.clave && r.referencia) : null;
   let vsRef = "";
   if (ref && ref[x.afectado] != null && x[x.afectado] != null && +ref[x.afectado]) { const p = Math.round(100 * (t.menos ? ref[x.afectado] / x[x.afectado] : x[x.afectado] / ref[x.afectado])); vsRef = `<div class="tint ${semaf(p, t.lsi || LSI_STD)}">Pierna afectada al ${p} % de su valor previo a la lesión (${fmt(ref[x.afectado], 2)} ${esc(t.u)} el ${esc(fdate(ref.fecha))})</div>`; }
+  if (t.tipo === "calc") {
+    const r = x.datos && Object.keys(x.datos).length ? t.calc(x.datos) : null; let cmp = "";
+    if (t.cmp && refs) { const prev = refs.filter(y => y.clave === x.clave && y !== x && tKey(y.nombre) === tKey(x.nombre) && String(y.fecha || "") <= String(x.fecha || "") && y.id !== x.id).sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))[0]; const c = prev ? t.cmp(x, prev) : null; if (c) cmp = `<div class="tint ${c.n || ""}">${esc(c.txt)}</div>`; }
+    const body = r && !r.err ? `${(r.out || []).map(i => `<div class="tint ${i.n || ""}">${esc(i.txt)}</div>`).join("")}${cmp}${r.tabla ? `<details class="tcalc"><summary>Tabla de cargas y cálculos</summary>${r.tabla}</details>` : ""}` : cmp;
+    return `${t.que && coach ? `<p class="tque sm">${esc(t.que)}</p>` : ""}${body}${coach ? `<details class="tproto"><summary>Cómo se hace</summary><ol>${(t.proto || []).map(p => `<li>${esc(p)}</li>`).join("")}</ol></details>` : ""}`;
+  }
   const lsiNote = t.lsi && tLsiX(x) != null ? `<p class="tiny muted" style="margin:2px 0 0">El LSI solo no basta: la pierna sana también pierde rendimiento. Compáralo con su valor previo a la lesión (Simon 2020; Simonsson 2025).</p>` : "";
-  return `${x.referencia ? `<span class="chip">Referencia previa a la lesión</span>` : ""}${it.map(i => `<div class="tint ${i.n}">${esc(i.txt)}</div>`).join("")}${vsRef}${coach ? lsiNote + `<details class="tproto"><summary>Protocolo</summary><p>${esc(t.proto)}</p></details>` : ""}`;
+  return `${x.referencia ? `<span class="chip">Referencia previa a la lesión</span>` : ""}${it.map(i => `<div class="tint ${i.n}">${esc(i.txt)}</div>`).join("")}${vsRef}${coach ? lsiNote + `<details class="tproto"><summary>Cómo se hace</summary>${Array.isArray(t.proto) ? `<ol>${t.proto.map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : `<p>${esc(t.proto)}</p>`}</details>` : ""}`;
 }
 /* criterio automático: último test de una clave */
 function lastTest(ts, k) { return ts.filter(x => x.clave === k && !x.referencia).sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.created_at || "").localeCompare(String(a.created_at || "")))[0]; }
@@ -2668,15 +2919,15 @@ async function tabEvo(c) {
     if (ph.length) { const { data } = await sb.storage.from("fotos").createSignedUrls(ph.map(p => p.path), 600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); }
     body = `<div class="card">${ph.length ? `<div class="photos">${ph.map(p => urls[p.path] ? `<figure style="margin:0"><img src="${esc(urls[p.path])}" alt="${esc(p.vista)} ${esc(fdate(p.fecha))}" loading="lazy"><figcaption class="tiny muted">${esc(fdate(p.fecha))} · ${esc(p.vista)}</figcaption></figure>` : "").join("")}</div>` : `<div class="empty">Sin fotos.</div>`}</div>`;
   } else {
-    const ts = await q(sb.from("tests").select("*").eq("client_id", cid).order("fecha", { ascending: false, nullsFirst: false })); S.coach.tests = ts.slice().reverse();
+    const [ts] = await Promise.all([q(sb.from("tests").select("*").eq("client_id", cid).order("fecha", { ascending: false, nullsFirst: false })), exLib().catch(() => [])]); S.coach.tests = ts.slice().reverse();
     body = testsHTML(ts, true) + `<form id="f-test" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Añadir test</h2>
     <div class="grid2"><div class="f"><label>Test</label>${tCatSelect(S.coach.tclave || "")}</div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${today()}"></div></div>
     <div id="t-campos" style="display:flex;flex-direction:column;gap:10px">${tCampos(S.coach.tclave || "")}</div>
-    <div class="f"><label>Notas</label><input name="notas"></div><button class="btn pri">Añadir</button></form><datalist id="tests-dl">${[...new Set(ts.filter(x => !x.clave).map(x => x.nombre))].map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
+    <div class="f"><label>Notas</label><input name="notas" placeholder="Condiciones, dispositivo, sensaciones…"></div><button class="btn pri">Guardar test</button></form>${exDatalist()}<datalist id="tests-dl">${[...new Set(ts.filter(x => !x.clave).map(x => x.nombre))].map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
   }
   return `<div class="seg sub" role="group" aria-label="Evolución">${EVO.map(([k, l]) => `<button data-act="evo" data-t="${k}" aria-pressed="${sub === k}">${l}</button>`).join("")}</div>${body}`;
 }
-async function saveTest(f) { const row = readTest(f); if (!row.nombre) { toast("Pon el nombre del test"); return; } if (row.valor == null && row.izq == null && row.der == null && !Object.keys(row.datos || {}).length) { toast("Rellena algún resultado"); return; } try { S.coach.tclave = row.clave || ""; await q(sb.from("tests").insert(row)); toast("Test añadido"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } }
+async function saveTest(f) { const row = readTest(f); if (row.err) { toast("Falta " + row.err); return; } if (TC[row.clave] && TC[row.clave].ej && !(row.datos || {}).ej) { toast("Indica el ejercicio"); return; } if (!row.nombre) { toast("Pon el nombre del test"); return; } if (row.valor == null && row.izq == null && row.der == null && !Object.keys(row.datos || {}).length) { toast("Rellena algún resultado"); return; } try { S.coach.tclave = row.clave || ""; await q(sb.from("tests").insert(row)); toast("Test añadido"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } }
 
 /* ---- Nutrición ---- */
 function secRow(s = {}) { return `<div class="card" data-s style="display:flex;flex-direction:column;gap:8px;background:var(--bg)"><div class="row"><input name="s_t" value="${esc(s.titulo || "")}" placeholder="Desayuno, Pautas generales…" class="grow" aria-label="Título de la sección"><button type="button" class="btn ghost sm" data-act="sec-del">Quitar</button></div><textarea name="s_i" placeholder="Una línea por punto" aria-label="Puntos">${esc((s.items || []).join("\n"))}</textarea></div>`; }
@@ -3354,6 +3605,8 @@ document.addEventListener("click", async ev => {
         S.coach.tab = a.dataset.t; const tk = S.coach.tabTk = (S.coach.tabTk || 0) + 1; S.coach.inPlace = true;
         try { await viewCoachClient(S.coach.cid); } finally { S.coach.inPlace = false; if (tk === S.coach.tabTk) { const m2 = $("#app .cmain"); if (m2) m2.classList.remove("cload"); } } break; }
       case "evo": S.coach.evo = a.dataset.t; refreshClient(); break;
+      case "t-row-add": { const f = $("#f-test"), t = f && TC[f.clave.value]; if (t && t.filas) { $("#t-rows").insertAdjacentHTML("beforeend", tRowHTML(t)); const r = $("#t-rows").lastElementChild; r && r.querySelector("input").focus(); } break; }
+      case "t-row-del": { const r = a.closest(".trow"); if (r) { r.remove(); tPreview(); } break; }
       case "evo-tests": { S.coach.evo = "tests"; const b = document.querySelector('[data-act="ctab"][data-t="evo"]'); if (b) b.click(); else { S.coach.tab = "evo"; refreshClient(); } break; }
       case "pm": S.coach.calM = a.dataset.m; refreshClient(); break;
       // planificación
@@ -3504,6 +3757,7 @@ let qT;
 document.addEventListener("input", ev => {
   const el = ev.target;
   if (el.tagName === "TEXTAREA") grow(el);
+  if (el.closest && el.closest("#f-test") && el.name !== "notas") { if (el.name === "c_vmt") delete el.dataset.auto; tPreview(); }
   if (el.type === "radio" && el.closest(".rpep")) { const g = el.closest(".rpep"), t = g.parentElement.querySelector(".rpe-t"); if (t) t.textContent = RPE_TXT[el.value] || ""; g.classList.remove("need"); }
   if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.top != null) topSync(el); }
   if (el.closest && el.closest("[data-pres]") && el.dataset.p) presSync(el.closest("[data-row]"));
@@ -3517,6 +3771,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
   if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
   if (el.dataset && el.dataset.actChange === "t-clave") { S.coach.tclave = el.value; const b = $("#t-campos"); if (b) b.innerHTML = tCampos(el.value); }
+  if (el.dataset && el.dataset.actChange === "t-ej") { const p = VMT.find(x => x[0] === el.value), m = el.form && el.form.c_vmt; if (p && m && (!m.value || m.dataset.auto)) { m.value = String(p[1]).replace(".", ","); m.dataset.auto = "1"; } tPreview(); }
   if (el.dataset && el.dataset.actChange === "les-tipo") { const b = $("#les-sub"); if (b) b.innerHTML = lesSub(el.value); }
   if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
   if (el.dataset && el.dataset.actChange === "copsem-prev") copsemPrev();
