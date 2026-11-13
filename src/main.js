@@ -1943,8 +1943,12 @@ async function viewCoachClient(cid) {
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
+  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}`;
+  const rail = document.querySelector("#app .rail");
+  if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
-  <div class="cmain">${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
+  <div class="cmain">${mainHTML}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
+  S.coach.shownCid = cid;
   S.coach.keep = false;
 }
 
@@ -2977,10 +2981,7 @@ document.addEventListener("click", async ev => {
       // entrenador: navegación
       case "new-client": openNewClient(); break;
       case "go-plan": S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
-      case "ctab": { if (a.getAttribute("aria-current") === "true") break; const r0 = $(".rail"); const sx = r0 ? r0.scrollLeft : 0, top0 = r0 ? r0.getBoundingClientRect().top : null;
-        r0 && r0.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", b === a ? "true" : "false"));
-        S.coach.tab = a.dataset.t; S.keepScroll = true; S.railX = sx; await viewCoachClient(S.coach.cid); S.keepScroll = false;
-        const r1 = $(".rail"); if (r1) { r1.scrollLeft = sx; if (top0 != null) { const d = r1.getBoundingClientRect().top - top0; if (Math.abs(d) > 1) window.scrollBy(0, d); } } break; }
+      case "ctab": { if (a.getAttribute("aria-current") === "true") break; S.coach.tab = a.dataset.t; S.coach.inPlace = true; try { await viewCoachClient(S.coach.cid); } finally { S.coach.inPlace = false; } break; }
       case "evo": S.coach.evo = a.dataset.t; refreshClient(); break;
       case "pm": S.coach.calM = a.dataset.m; refreshClient(); break;
       // planificación
