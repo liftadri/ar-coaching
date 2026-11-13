@@ -2279,7 +2279,7 @@ async function viewCoachClient(cid) {
   const pl = reuse ? S.coach.pl : pr[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
   if (!reuse) { const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) })); }
   S.coach.c = c; S.coach.pl = pl;
-  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
+  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? await tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
   const rail = document.querySelector("#app .rail");
@@ -2579,7 +2579,26 @@ async function saveMeso(f) {
 const PERFILES = { hipertrofia: "Hipertrofia / estética", fuerza: "Fuerza / rendimiento", combate: "Deportes de combate", salud: "Salud / principiante / pérdida de grasa" };
 function pendRow(p = {}) { return `<div class="row pend" data-p><input type="checkbox" name="p_d" ${p.done ? "checked" : ""} aria-label="Hecho" style="width:22px;height:22px"><input name="p_t" value="${esc(p.t || "")}" class="grow" aria-label="Pendiente"><button type="button" class="btn ghost sm" data-act="row-del" aria-label="Quitar">✕</button></div>`; }
 function marcaRow(m = {}) { return `<div class="mrow" data-m><input name="m_e" list="dl-ex" value="${esc(m.ejercicio || "")}" placeholder="Ejercicio" aria-label="Ejercicio"><input type="date" name="m_f" value="${esc(m.fecha || "")}" aria-label="Fecha"><input name="m_c" inputmode="decimal" value="${esc(m.carga ?? "")}" placeholder="kg" aria-label="Carga"><input name="m_r" inputmode="numeric" value="${esc(m.reps ?? "")}" placeholder="reps" aria-label="Repeticiones"><input name="m_i" inputmode="numeric" value="${esc(m.rir ?? "")}" placeholder="RIR" aria-label="RIR"><input name="m_n" value="${esc(m.nota || "")}" placeholder="Nota" aria-label="Nota" class="mrn"><button type="button" class="btn ghost sm" data-act="row-del" aria-label="Quitar">✕</button></div>`; }
-function tabInfo(c, pl) {
+// Marcas de referencia = último resultado de cada test hecho (Evolución › Tests)
+function marcasTests(ts) {
+  const g = {}; ts.filter(x => !x.referencia).forEach(x => { const k = tKey(x.nombre); (g[k] = g[k] || []).push(x); });
+  const gr = Object.values(g).map(xs => xs.slice().sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.created_at || "").localeCompare(String(b.created_at || ""))))
+    .sort((a, b) => String(b[b.length - 1].fecha || "").localeCompare(String(a[a.length - 1].fecha || "")));
+  if (!gr.length) return `<p class="small muted" style="margin:0">Aún no hay tests. Las marcas de referencia salen de los tests que registres en Evolución › Tests.</p>`;
+  return `<div class="mref">${gr.map(xs => { const l = xs[xs.length - 1], pv = xs[xs.length - 2], v = tMain(l), u = l.unidad || "", bil = l.izq != null || l.der != null, ls = bil ? tLsi(l) : null;
+    return `<div class="mref-i"><div class="grow"><b>${esc(l.nombre)}</b><span class="tiny muted">${l.fecha ? esc(fdate(l.fecha, { day: "numeric", month: "short", year: "numeric" })) : "Sin fecha"}${xs.length > 1 ? ` · ${xs.length} veces` : ""}${bil ? ` · I ${fmt(l.izq, 2)} · D ${fmt(l.der, 2)}${ls != null ? ` · LSI ${ls} %` : ""}` : ""}</span></div><div class="mref-v"><b>${v != null ? fmt(v, 2) : "—"}<small> ${esc(u)}</small></b>${pv ? tDelta(v, tMain(pv), !!l.mejor_es_menos, u) : ""}</div></div>`; }).join("")}</div>`;
+}
+async function pendToggle(el) {
+  const c = S.coach.c; if (!c) return; const row = el.closest("[data-p]"), t = row.querySelector('[name="p_t"]').value.trim(); if (!t) return;
+  const f = c.ficha || {}; const ps = (f.pendientes || []).map(p => ({ ...p })); const i = ps.findIndex(p => p.t === t);
+  if (i >= 0) { ps[i].done = el.checked; if (el.checked) ps[i].fecha = today(); else delete ps[i].fecha; } else ps.push({ t, done: el.checked });
+  try { await q(sb.from("clients").update({ ficha: { ...f, pendientes: ps } }).eq("id", c.id)); c.ficha = { ...f, pendientes: ps };
+    const dest = el.checked ? $("#pends-ok") : $("#pends"); row.classList.add("pgone"); setTimeout(() => { if (dest) dest.appendChild(row); row.classList.remove("pgone"); const n = $("#pends-n"); if (n) n.textContent = ps.filter(p => p.done).length; const d = $("#pends-d"); if (d) d.hidden = !ps.some(p => p.done); const e = $("#pends-e"); if (e) e.hidden = ps.some(p => !p.done); }, 220);
+    toast(el.checked ? "Pendiente hecho" : "Vuelve a pendientes");
+  } catch (e) { el.checked = !el.checked; toast(errMsg(e)); }
+}
+async function tabInfo(c, pl) {
+  const tsP = q(sb.from("tests").select("*").eq("client_id", c.id).order("fecha")).catch(() => []);
   const f = c.ficha || {}; const pg = f.pago || {};
   const fld = (n, l, v, o = "") => `<div class="f"><label for="i-${n}">${l}</label><input id="i-${n}" name="${n}" value="${esc(v ?? "")}" ${o}></div>`;
   const ta = (n, l, v, h = 80) => `<div class="f"><label for="i-${n}">${l}</label><textarea id="i-${n}" name="${n}" style="min-height:${h}px">${esc(v ?? "")}</textarea></div>`;
@@ -2596,8 +2615,9 @@ function tabInfo(c, pl) {
   </div>
   <div style="display:flex;flex-direction:column;gap:12px">
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Contexto</h2>${ta("disponibilidad", "Disponibilidad", f.disponibilidad, 60)}${ta("material", "Material", f.material, 60)}${ta("preferencias", "Preferencias", f.preferencias, 60)}${ta("habitos", "Hábitos actuales", f.habitos, 60)}${ta("notas", "Notas privadas (perfil, histórico, comunicación…)", f.notas, 160)}</div>
-  <div class="card" style="display:flex;flex-direction:column;gap:8px"><h2>Pendientes</h2><div id="pends" style="display:flex;flex-direction:column;gap:6px">${(f.pendientes || []).map(pendRow).join("")}</div><button type="button" class="btn sm" data-act="pend-add">+ Pendiente</button></div>
-  <div class="card" style="display:flex;flex-direction:column;gap:8px"><h2>Marcas de referencia</h2><div id="marcas" style="display:flex;flex-direction:column;gap:6px">${(f.marcas || []).map(marcaRow).join("")}</div><button type="button" class="btn sm" data-act="marca-add">+ Marca</button></div>
+  <div class="card" style="display:flex;flex-direction:column;gap:8px"><h2>Pendientes</h2><div id="pends" style="display:flex;flex-direction:column;gap:6px">${(f.pendientes || []).filter(p => !p.done).map(pendRow).join("")}</div><p id="pends-e" class="tiny muted" style="margin:0" ${(f.pendientes || []).some(p => !p.done) ? "hidden" : ""}>Nada pendiente.</p><button type="button" class="btn sm" data-act="pend-add" style="align-self:flex-start">+ Pendiente</button>
+   <details id="pends-d" class="pdone" ${(f.pendientes || []).some(p => p.done) ? "" : "hidden"}><summary>Hechos (<span id="pends-n">${(f.pendientes || []).filter(p => p.done).length}</span>)</summary><div id="pends-ok" style="display:flex;flex-direction:column;gap:6px">${(f.pendientes || []).filter(p => p.done).map(pendRow).join("")}</div></details></div>
+  <div class="card" style="display:flex;flex-direction:column;gap:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Marcas de referencia</h2><button type="button" class="btn ghost sm" data-act="evo-tests">Tests ›</button></div>${marcasTests(await tsP)}</div>
   </div>
   <div class="savebar"><button class="btn pri">Guardar información</button></div></form>${exDatalist()}`;
 }
@@ -2605,8 +2625,7 @@ async function saveInfo(f) {
   const c = S.coach.c; const old = c.ficha || {}; const v = n => f[n].value.trim();
   const ficha = { ...old, perfil: v("perfil"), fechaInicio: v("fechaInicio"), telefono: v("telefono"), edad: v("edad"), altura: v("altura"), pesoInicial: num(v("pesoInicial")), objetivo: v("objetivo"), ejerciciosClave: lines(v("ejerciciosClave")), salud: lines(v("salud")),
     disponibilidad: v("disponibilidad"), material: v("material"), preferencias: v("preferencias"), habitos: v("habitos"), notas: v("notas"),
-    pendientes: [...f.querySelectorAll("[data-p]")].map(r => ({ t: r.querySelector('[name="p_t"]').value.trim(), done: r.querySelector('[name="p_d"]').checked })).filter(p => p.t),
-    marcas: [...f.querySelectorAll("[data-m]")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); return { ejercicio: g("m_e"), fecha: g("m_f"), carga: num(g("m_c")), reps: num(g("m_r")), rir: num(g("m_i")), nota: g("m_n") }; }).filter(m => m.ejercicio),
+    pendientes: [...f.querySelectorAll("[data-p]")].map(r => { const t = r.querySelector('[name="p_t"]').value.trim(), d = r.querySelector('[name="p_d"]').checked, o = (old.pendientes || []).find(p => p.t === t) || {}; return { ...o, t, done: d }; }).filter(p => p.t),
     actualizado: new Date().toISOString() };
   try { await q(sb.from("clients").update({ nombre: v("nombre"), ficha }).eq("id", c.id)); toast("Información guardada"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); }
 }
@@ -3208,6 +3227,7 @@ document.addEventListener("input", ev => {
   if (t.closest && t.closest("#f-food")) foodCheck();
 });
 document.addEventListener("change", ev => {
+  if (ev.target && ev.target.name === "p_d" && ev.target.closest("#f-info")) { pendToggle(ev.target); return; }
   const t = ev.target;
   if (t.dataset.calc !== undefined && t.tagName === "SELECT") { N.calc[t.name] = t.value; if (["modo", "reparto"].includes(t.name)) { const w = $(".calcwrap"); if (w) w.innerHTML = `${calcForm(N.calc)}<div id="calc-res">${calcResult(N.calc, N.plan || {})}</div>`; } }
   if (t.dataset.n) N.plan[t.dataset.n] = t.checked;
@@ -3334,6 +3354,7 @@ document.addEventListener("click", async ev => {
         S.coach.tab = a.dataset.t; const tk = S.coach.tabTk = (S.coach.tabTk || 0) + 1; S.coach.inPlace = true;
         try { await viewCoachClient(S.coach.cid); } finally { S.coach.inPlace = false; if (tk === S.coach.tabTk) { const m2 = $("#app .cmain"); if (m2) m2.classList.remove("cload"); } } break; }
       case "evo": S.coach.evo = a.dataset.t; refreshClient(); break;
+      case "evo-tests": { S.coach.evo = "tests"; const b = document.querySelector('[data-act="ctab"][data-t="evo"]'); if (b) b.click(); else { S.coach.tab = "evo"; refreshClient(); } break; }
       case "pm": S.coach.calM = a.dataset.m; refreshClient(); break;
       // planificación
       case "asig-new": openAsig(null, a.dataset.d); break;
