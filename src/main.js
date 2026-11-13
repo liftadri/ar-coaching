@@ -2309,7 +2309,7 @@ function tExtraHTML(x, refs, coach = true) {
 function lastTest(ts, k) { return ts.filter(x => x.clave === k && !x.referencia).sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.created_at || "").localeCompare(String(a.created_at || "")))[0]; }
 
 /* ---- Historial lesional (ficha.lesiones, privado) ---- */
-const REGIONES = ["Isquiosurales", "Cuádriceps", "Aductores", "Gemelo / sóleo", "Tendón rotuliano", "Tendón de Aquiles", "LCA", "Menisco interno", "Menisco externo", "Ligamento colateral", "Tobillo (esguince)", "Hombro", "Codo", "Muñeca / mano", "Lumbar", "Cervical", "Cadera", "Otra"];
+const REGIONES = ["Isquiosurales", "Cuádriceps", "Recto femoral", "Aductores", "Pubalgia / ingle", "Gemelo / sóleo", "Tendón rotuliano", "Tendón de Aquiles", "Tendón glúteo", "Fascia plantar", "LCA", "Menisco interno", "Menisco externo", "Ligamento colateral", "Rodilla (dolor patelofemoral)", "Cartílago de rodilla", "Tobillo (esguince)", "Tobillo (otra)", "Fractura de estrés", "Hombro (manguito rotador)", "Hombro (inestabilidad / luxación)", "Codo (epicondilalgia)", "Muñeca / mano", "Lumbar", "Dorsal", "Cervical", "Cadera", "Otra"];
 const LTIPOS = { muscular: "Muscular", tendinosa: "Tendinosa", ligamentosa: "Ligamentosa", meniscal: "Meniscal", osea: "Ósea", articular: "Articular / cartílago", otra: "Otra" };
 const LESTADO = { activa: "Activa", readapt: "En readaptación", recuperada: "Recuperada" };
 const MUNICH = ["", "1a · Fatiga", "1b · DOMS", "2a · Neural", "2b · Fascia", "3a · Rotura parcial < 1/3", "3b · Rotura parcial > 1/3", "4 · Rotura completa"];
@@ -2317,7 +2317,9 @@ function lesTxt(l) { return [l.region, l.lado ? ({ izq: "izq.", der: "der.", amb
 function lesionesCard(c) {
   const ls = ((c.ficha || {}).lesiones || []).slice().sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
   return `<div class="card" style="display:flex;flex-direction:column;gap:8px"><h2>Historial lesional</h2><p class="tiny muted" style="margin:-4px 0 0">La lesión previa es el mayor predictor de una nueva lesión (Meeuwisse 2007). Apunta el diagnóstico tal como lo da el médico o el fisio.</p>
-  ${ls.length ? `<div class="list">${ls.map(l => `<button type="button" class="it" data-act="les-edit" data-id="${esc(l.id)}"><span><b>${esc(lesTxt(l))}</b><br><span class="tiny muted">${esc([LTIPOS[l.tipo], l.detalle, l.episodios > 1 ? l.episodios + " episodios" : "", l.cirugia ? "operada " + fdate(l.cirugia) : ""].filter(Boolean).join(" · "))}</span></span><span class="chip ${l.estado === "recuperada" ? "" : l.estado === "readapt" ? "warn" : "bad"}">${esc(LESTADO[l.estado] || "")}</span></button>`).join("")}</div>` : `<p class="small muted" style="margin:0">Sin lesiones registradas.</p>`}
+  ${ls.length ? `<div class="les-l">${ls.map(l => { const pz = prevZona(l); const dias = l.fecha ? daysBetween(l.fecha, today()) : null;
+    return `<div class="les-i"><button type="button" class="it" data-act="les-edit" data-id="${esc(l.id)}"><span><b>${esc(lesTxt(l))}</b><br><span class="tiny muted">${esc([LTIPOS[l.tipo], l.detalle, l.episodios > 1 ? l.episodios + " episodios" : "", l.cirugia ? "operada " + fdate(l.cirugia) : "", dias != null && l.estado !== "recuperada" ? (dias < 60 ? `hace ${dias} días` : `hace ${Math.round(dias / 30.4)} meses`) : "", l.nrs != null && l.estado !== "recuperada" ? `dolor ${l.nrs}/10` : ""].filter(Boolean).join(" · "))}</span></span><span class="chip ${l.estado === "recuperada" ? "" : l.estado === "readapt" ? "warn" : "bad"}">${esc(LESTADO[l.estado] || "")}</span></button>
+    ${pz ? `<div class="les-prev"><span class="tiny"><b>Prevención:</b> ${esc(pz.txt)}</span><div class="row" style="gap:6px;flex-wrap:wrap">${pz.exs.map(n => `<button type="button" class="chip lnkchip" data-act="ex-info" data-n="${esc(n)}">ⓘ ${esc(n)}</button>`).join("")}</div></div>` : ""}</div>`; }).join("")}</div>` : `<p class="small muted" style="margin:0">Sin lesiones registradas.</p>`}
   <button type="button" class="btn sm" data-act="les-edit" data-id="">+ Añadir lesión</button></div>`;
 }
 function lesForm(id) {
@@ -2388,6 +2390,111 @@ const PROTOS = {
     { n: "Fase 4 · Retorno deportivo", dur: "6 – 9+ meses", obj: ["Cambios de dirección libres", "Pivote 180° libre", "Contacto progresivo", "Preplanificado → reactivo · lento → rápido · sin → con contacto"], ej: ["COD preplaneado 45° → reactivo", "Pivote 180° libre", "Drop jump · sprint · gestos del deporte", "Programa neuromuscular de mantenimiento ≥ 2 ×/semana"], exs: ["Drop jump", "Sprint progresivo (50 → 100 %)", "Calentamiento neuromuscular preventivo", "Isoinercial · caos controlado"],
       crit: [{ id: "f90", t: "LSI de fuerza > 90 % (élite 100 %)", tc: "Fuerza igualada entre piernas", auto: autoLsi(["dina_ext90", "dina_ext40", "dina_flex90"], 90) }, { id: "hops", t: "Hop tests (single, triple, side) LSI > 95 %", tc: "Saltos a una pierna igualados", auto: autoLsi(["hop_single", "hop_triple", "hop_side"], 95) }, { id: "cod", t: "Pivote 90–180° y cambios de dirección sin valgo ni dolor", tc: "Giros y cambios de dirección sin dolor" }, { id: "rsi", t: "ACL-RSI > 90 %", tc: "Confianza para volver", auto: autoVal("acl_rsi", v => v > 90) }, { id: "tsk", t: "TSK ≤ 18", tc: "Sin miedo a moverte", auto: autoVal("tsk", v => v <= 18) }, { id: "t9", t: "≥ 9 meses desde la cirugía", tc: "Han pasado 9 meses desde la operación", autoR: r => r.cirugia ? { ok: daysBetween(r.cirugia, today()) >= 274, txt: `${Math.floor(daysBetween(r.cirugia, today()) / 30.4)} meses desde la cirugía (${fdate(r.cirugia)})` } : null }] }] },
 };
+const TCALC_R = [
+  { k: "wblt", n: "Lunge test (rodilla a la pared)", g: "articular", u: "cm", tipo: "calc",
+    campos: [["izq", "Izquierdo (cm)", "11"], ["der", "Derecho (cm)", "9"]],
+    que: "Mide la dorsiflexión del tobillo en carga: la distancia máxima del dedo gordo a la pared tocando la pared con la rodilla sin levantar el talón. Una dorsiflexión limitada se asocia a esguinces, tendinopatías y peor sentadilla.",
+    proto: ["Descalzo, de cara a la pared, en posición de zancada.", "Lleva la rodilla a tocar la pared sin levantar el talón; aleja el pie poco a poco.", "Mide la distancia máxima del dedo gordo a la pared en la que aún toca con la rodilla.", "3 intentos por lado; se anota el mejor."],
+    calc: d => { if (d.izq == null && d.der == null) return { err: "algún lado" }; const out = [];
+      if (d.izq != null && d.der != null) { const df = Math.abs(d.izq - d.der); out.push({ n: df < 2 ? "ok" : "warn", txt: `Diferencia entre tobillos ${fmt(df, 1)} cm${df >= 2 ? " (≥ 2 cm: asimetría a trabajar)" : ""}` }); }
+      ["izq", "der"].forEach(l => { if (d[l] != null && d[l] < 9) out.push({ n: "warn", txt: `${l === "izq" ? "Izquierdo" : "Derecho"}: ${fmt(d[l], 1)} cm (por debajo de unos 9–10 cm suele considerarse limitado)` }); });
+      return { valor: Math.min(...[d.izq, d.der].filter(x => x != null)), izq: d.izq, der: d.der, out }; } },
+  { k: "heelraise", n: "Elevaciones de talón a una pierna (capacidad del gemelo)", g: "articular", u: "reps", tipo: "calc",
+    campos: [["izq", "Izquierda (reps)", "25"], ["der", "Derecha (reps)", "28"]],
+    que: "Cuántas elevaciones de talón seguidas hace a una pierna hasta la fatiga. Mide la capacidad del gemelo y el sóleo; clave en tobillo, Aquiles y carrera.",
+    proto: ["De pie a una pierna en el borde de un escalón, dedos de la mano apoyados en la pared solo para el equilibrio.", "Sube lo más alto posible y baja controlado al ritmo de un metrónomo (1 rep cada 2 s).", "Termina cuando no puede mantener el ritmo o la altura.", "Hazlo en las dos piernas; empieza por la sana."],
+    calc: d => { if (d.izq == null && d.der == null) return { err: "algún lado" }; const out = [];
+      ["izq", "der"].forEach(l => { if (d[l] != null) out.push({ n: d[l] >= 25 ? "ok" : "warn", txt: `${l === "izq" ? "Izquierda" : "Derecha"}: ${fmt(d[l], 0)} reps${d[l] < 25 ? " (por debajo de ~25: capacidad reducida)" : ""}` }); });
+      return { valor: Math.min(...[d.izq, d.der].filter(x => x != null)), izq: d.izq, der: d.der, out }; } },
+  { k: "hombro_rot", n: "Rotación externa e interna de hombro (dinamómetro)", g: "iso", u: "N", tipo: "calc", lsi: LSI_STD,
+    campos: [["er_izq", "RE izquierda (N)", "120"], ["er_der", "RE derecha (N)", "130"], ["ir_izq", "RI izquierda (N)", "170"], ["ir_der", "RI derecha (N)", "180"]],
+    que: "Fuerza isométrica de los rotadores del hombro. Mira dos cosas: que los dos hombros estén igualados y que la rotación externa no sea mucho más débil que la interna (ratio RE/RI ≥ 0,66).",
+    proto: ["Sentado o de pie, codo a 90° pegado al cuerpo (o a 90° de abducción si su deporte es por encima de la cabeza; anota la posición en Notas).", "Dinamómetro en la muñeca. 3 intentos de 3–5 s con 30–60 s de pausa; se anota el mejor.", "Misma posición en cada medición."],
+    calc: d => { if (d.er_izq == null && d.er_der == null) return { err: "la rotación externa" }; const out = [];
+      ["izq", "der"].forEach(l => { const er = d["er_" + l], ir = d["ir_" + l]; if (er && ir) { const r = er / ir; out.push({ n: r >= 0.66 ? "ok" : "warn", txt: `Ratio RE/RI ${l === "izq" ? "izquierdo" : "derecho"}: ${fmt(r, 2)}${r < 0.66 ? " (< 0,66: rotadores externos débiles)" : ""}` }); } });
+      if (d.er_izq && d.er_der) { const a = Math.round(100 * Math.min(d.er_izq, d.er_der) / Math.max(d.er_izq, d.er_der)); out.push({ n: semaf(a, LSI_STD), txt: `Simetría de rotación externa ${a} %` }); }
+      return { valor: Math.max(d.er_izq || 0, d.er_der || 0), izq: d.er_izq, der: d.er_der, out }; } },
+  { k: "mcgill", n: "Resistencia del tronco (tests de McGill)", g: "mov", u: "s", tipo: "calc",
+    campos: [["flex", "Flexores (s)", "120"], ["ext", "Extensores · Biering-Sørensen (s)", "150"], ["lat_izq", "Plancha lateral izquierda (s)", "90"], ["lat_der", "Plancha lateral derecha (s)", "95"]],
+    que: "Cuánto aguanta cada cara del tronco. Más que los segundos, importan los equilibrios entre ellas: un desequilibrio se asocia a dolor lumbar.",
+    proto: ["Flexores: sentado con el tronco a 60° apoyado en una cuña, se retira el apoyo y se mantiene.", "Extensores (Biering-Sørensen): tumbado boca abajo con la cadera en el borde de la camilla, tronco en el aire y horizontal.", "Planchas laterales: sobre el codo y los pies, cadera alta.", "Se para el crono cuando pierde la posición. Pausa de 5 min entre tests."],
+    calc: d => { if (!d.flex || !d.ext) return { err: "flexores y extensores" }; const out = []; let ok = true; const fe = d.flex / d.ext; if (fe >= 1) ok = false;
+      out.push({ n: fe < 1 ? "ok" : "warn", txt: `Flexores / extensores ${fmt(fe, 2)} (objetivo < 1,0)` });
+      if (d.lat_izq && d.lat_der) { const lr = d.lat_der / d.lat_izq; if (Math.abs(1 - lr) > 0.05) ok = false; out.push({ n: Math.abs(1 - lr) <= 0.05 ? "ok" : "warn", txt: `Lateral derecha / izquierda ${fmt(lr, 2)} (objetivo 0,95–1,05)` }); const le = Math.max(d.lat_izq, d.lat_der) / d.ext; if (le >= 0.75) ok = false; out.push({ n: le < 0.75 ? "ok" : "warn", txt: `Lateral / extensores ${fmt(le, 2)} (objetivo < 0,75)` }); }
+      return { valor: d.ext, out, ok, okTxt: ok ? "ratios en rango" : "algún ratio fuera de rango" }; } },
+];
+/* ---- Tests de tobillo, hombro y tronco (para los protocolos de readaptación) ---- */
+TCALC_R.forEach(t => { const i = TCAT.findIndex(x => x.k === t.k); if (i >= 0) TCAT[i] = t; else TCAT.push(t); TC[t.k] = t; });
+Object.assign(FASES_EX, { a1: "Tobillo · Protección", a2: "Tobillo · Movilidad y fuerza", a3: "Tobillo · Control y pliometría", a4: "Tobillo · Retorno", h1: "Hombro · Isométrico", h2: "Hombro · Manguito y escápula", h3: "Hombro · Fuerza por encima de la cabeza", h4: "Hombro · Potencia y gesto", b1: "Lumbar · Calmar y mover", b2: "Lumbar · Control del tronco", b3: "Lumbar · Fuerza global", b4: "Lumbar · Retorno", g4: "General · Retorno" });
+
+/* criterios automáticos nuevos */
+const autoWblt = maxDif => ts => { const x = lastTest(ts, "wblt"); if (!x || x.izq == null || x.der == null) return null; const d = Math.abs(x.izq - x.der); return { ok: d < maxDif, txt: `Lunge test: ${fmt(x.izq, 1)} / ${fmt(x.der, 1)} cm · diferencia ${fmt(d, 1)} cm (${fdate(x.fecha)})` }; };
+const autoMcgill = ts => { const x = lastTest(ts, "mcgill"); if (!x || !x.datos) return null; const r = TC.mcgill.calc(x.datos); if (r.err) return null; return { ok: !!r.ok, txt: `McGill: ${r.okTxt} (${fdate(x.fecha)})` }; };
+const autoRatioHombro = thr => ts => { const x = lastTest(ts, "hombro_rot"); if (!x || !x.datos) return null; const d = x.datos; const af = x.afectado || (d.er_izq <= d.er_der ? "izq" : "der"); const er = d["er_" + af], ir = d["ir_" + af]; if (!er || !ir) return null; const r = er / ir; return { ok: r >= thr, txt: `RE/RI ${fmt(r, 2)} en el hombro ${af === "izq" ? "izquierdo" : "derecho"} (${fdate(x.fecha)})` }; };
+
+Object.assign(PROTOS, {
+  tobillo: { n: "Esguince lateral de tobillo", fuente: "Consenso ROAST (Delahunt 2018), guía clínica de Vuurberg (2018) y modelo carga-capacidad (Tema 1)", fases: [
+    { n: "Protección y carga precoz", dur: "0 – 7 días", obj: ["Controlar dolor y edema (PEACE & LOVE)", "Cargar peso cuanto antes, según tolerancia", "Mantener la movilidad del tobillo", "Activar los peroneos sin dolor"], ej: ["Marcha con apoyo progresivo (ortesis o vendaje si hay inestabilidad)", "Movilidad activa en todos los planos sin dolor", "Isométricos de eversión", "Bici estática y trabajo del resto del cuerpo"], exs: ["Eversión con banda elástica"],
+      crit: [{ id: "carga", t: "Camina sin cojear con carga completa", tc: "Caminas sin cojear" }, { id: "nrs3", t: "Dolor ≤ 3/10 en las actividades diarias", tc: "Dolor de 3 o menos en el día a día" }, { id: "edema", t: "Edema en descenso", tc: "La hinchazón está bajando" }] },
+    { n: "Movilidad y fuerza", dur: "1 – 3 semanas", obj: ["Recuperar la dorsiflexión completa", "Fuerza de peroneos y tríceps sural", "Equilibrio a una pierna"], ej: ["Dorsiflexión rodilla a la pared 2–3 × 15", "Elevación de talones bilateral → unilateral", "Eversión con banda 3 × 15", "Equilibrio monopodal 3–5 × 30 s"], exs: ["Dorsiflexión rodilla a la pared", "Elevación de talones unilateral", "Eversión con banda elástica", "Equilibrio monopodal (progresión)", "Elevación de gemelos HSR (3-1-3)"],
+      crit: [{ id: "wblt", t: "Lunge test: diferencia entre tobillos < 2 cm", tc: "Doblas los dos tobillos casi igual", auto: autoWblt(2) }, { id: "heel80", t: "Elevaciones de talón a una pierna: LSI ≥ 80 %", tc: "Subes de puntillas a una pierna casi igual con las dos", auto: autoLsi(["heelraise"], 80) }, { id: "eq30", t: "Equilibrio a una pierna 30 s sin apoyo, ojos abiertos", tc: "Aguantas 30 s a una pierna" }] },
+    { n: "Control neuromuscular y pliometría", dur: "3 – 6 semanas", obj: ["Equilibrio dinámico", "Tolerar saltos y aterrizajes", "Cambios de dirección controlados"], ej: ["Y-balance y equilibrio con perturbaciones", "Saltos bilaterales → a una pierna", "Aterrizajes estables (step-off & stick)", "Desplazamientos laterales con frenada"], exs: ["Mini Y-balance", "Pogo jumps", "Step-off & stick (cajón bajo)", "Lateral step-off & stick", "Lateral shuffle + frenada 45°"],
+      crit: [{ id: "ybal", t: "Y-balance: diferencia anterior ≤ 4 cm", tc: "Equilibrio dinámico igual en las dos piernas", auto: ts => { const x = lastTest(ts, "ybal"); if (!x || !x.datos) return null; const a = num(x.datos.ant_izq), b = num(x.datos.ant_der); if (a == null || b == null) return null; return { ok: Math.abs(a - b) <= 4, txt: `Y-balance anterior: ${fmt(Math.abs(a - b), 1)} cm de diferencia (${fdate(x.fecha)})` }; } }, { id: "heel90", t: "Elevaciones de talón: LSI ≥ 90 %", tc: "Puntillas a una pierna igual con las dos", auto: autoLsi(["heelraise"], 90) }, { id: "hop90", t: "Single hop LSI ≥ 90 %", tc: "Saltas casi igual con las dos piernas", auto: autoLsi(["hop_single"], 90) }] },
+    { n: "Retorno al deporte", dur: "6 semanas +", obj: ["Sprint, cambios de dirección y gestos del deporte", "Volver primero a entrenar, luego a competir y después a rendir (Ardern 2016)", "Mantener el trabajo de equilibrio como prevención"], ej: ["Sprint progresivo y cambios de dirección reactivos", "Gestos específicos con volumen progresivo", "Programa neuromuscular ≥ 2–3 veces por semana durante al menos un año"], exs: ["Drop jump", "Sprint progresivo (50 → 100 %)", "Calentamiento neuromuscular preventivo", "Isoinercial · caos controlado"],
+      crit: [{ id: "hops95", t: "Hop tests (single, triple y side) LSI > 95 %", tc: "Saltos a una pierna igualados", auto: autoLsi(["hop_single", "hop_triple", "hop_side"], 95) }, { id: "inest", t: "Sin dolor ni sensación de que el tobillo «se va»", tc: "El tobillo no te falla" }, { id: "dep", t: "Entrenamientos completos del deporte sin síntomas", tc: "Entrenas tu deporte con normalidad" }] }] },
+  hombro: { n: "Hombro doloroso (manguito rotador)", fuente: "Modelo de carga progresiva del manguito (Littlewood 2015; Cools 2015) y modelo carga-capacidad (Tema 1)", fases: [
+    { n: "Calmar e isométricos", dur: "Según irritabilidad (1 – 3 semanas)", obj: ["Reducir la irritabilidad sin dejar de cargar", "Isométricos analgésicos", "Movilidad sin dolor", "Explicar que el dolor no significa daño"], ej: ["Isométricos de rotación externa y abducción 5 × 30–45 s", "Control escapular", "Movilidad activa-asistida sin dolor", "Evitar temporalmente lo que dispara el dolor (no todo)"], exs: ["Isométrico de rotación externa de hombro"],
+      crit: [{ id: "nrs3", t: "Dolor en reposo ≤ 3/10 y sin dolor nocturno", tc: "Poco dolor en reposo y duermes bien" }, { id: "r24", t: "Los isométricos no aumentan los síntomas a las 24 h", tc: "Los ejercicios no te dejan peor al día siguiente" }] },
+    { n: "Manguito y escápula", dur: "2 – 6 semanas", obj: ["Fuerza del manguito rotador", "Control y fuerza escapular", "Rango activo completo"], ej: ["Rotación externa con banda y en decúbito lateral 3 × 12–15", "Y-T-W en prono", "Remos con retracción escapular", "Dolor durante el ejercicio ≤ 3–4/10 aceptable si se calma en 24 h"], exs: ["Rotación externa con banda", "Rotación externa en decúbito lateral", "Y-T-W en prono"],
+      crit: [{ id: "er80", t: "Fuerza de rotación externa LSI ≥ 80 %", tc: "Rotación externa casi igual en los dos hombros", auto: autoLsi(["hombro_rot"], 80) }, { id: "rom", t: "Elevación activa completa sin arco doloroso", tc: "Subes el brazo del todo sin dolor" }] },
+    { n: "Fuerza por encima de la cabeza", dur: "4 – 8 semanas", obj: ["Empujes y tirones verticales", "Fuerza en la posición del gesto (90° de abducción)", "Volumen e intensidad progresivos"], ej: ["Press landmine → press militar", "Dominadas asistidas → dominadas", "Rotación externa a 90° de abducción", "Progresión de carga semanal ≤ 10 %"], exs: ["Press landmine unilateral", "Rotación externa a 90° de abducción", "Rotación externa con banda"],
+      crit: [{ id: "er90", t: "Rotación externa LSI ≥ 90 %", tc: "Rotación externa igualada", auto: autoLsi(["hombro_rot"], 90) }, { id: "ratio", t: "Ratio rotación externa / interna ≥ 0,66", tc: "Equilibrio de fuerza en el hombro", auto: autoRatioHombro(0.66) }, { id: "oh", t: "Tolera trabajo por encima de la cabeza sin dolor a las 24 h", tc: "Puedes empujar por encima de la cabeza sin molestias" }] },
+    { n: "Potencia y gesto", dur: "Hasta el alta", obj: ["Potencia y ciclo estiramiento-acortamiento", "Gesto del deporte (golpeo, lanzamiento, agarre)", "Mantenimiento preventivo"], ej: ["Lanzamientos de balón medicinal", "Pliometría de tren superior", "Gesto del deporte con volumen progresivo"], exs: ["Lanzamiento de balón medicinal contra la pared", "Rotación externa a 90° de abducción"],
+      crit: [{ id: "gesto", t: "Gesto del deporte sin dolor ni pérdida de rendimiento", tc: "Haces tu gesto deportivo sin dolor" }, { id: "dep", t: "Deporte completo sin reactivación a las 24–48 h", tc: "Vuelves a tu deporte sin que vuelva el dolor" }] }] },
+  lumbar: { n: "Dolor lumbar inespecífico", fuente: "Guías clínicas (ejercicio y educación, sin reposo prolongado), McGill «Big 3» y modelo carga-capacidad (Tema 1)", fases: [
+    { n: "Calmar y moverse", dur: "1 – 2 semanas", obj: ["Mantenerse activo: el reposo prolongado empeora el pronóstico", "Educar: dolor no es igual a daño", "Encontrar posiciones y movimientos tolerables", "Caminar a diario"], ej: ["Paseos de 10–30 min", "Movilidad suave en rangos cómodos", "Respiración diafragmática", "«Big 3» de McGill en versión suave"], exs: ["McGill curl-up", "Plancha lateral (side plank)", "Bird dog"],
+      crit: [{ id: "nrs3", t: "Dolor ≤ 3/10 en las actividades diarias", tc: "Dolor de 3 o menos en el día a día" }, { id: "anda", t: "Camina 20–30 min sin empeorar", tc: "Caminas media hora sin que empeore" }] },
+    { n: "Control y resistencia del tronco", dur: "2 – 4 semanas", obj: ["Resistencia de la musculatura del tronco", "Control de la columna con movimientos de brazos y piernas", "Equilibrio entre flexores, extensores y laterales"], ej: ["«Big 3» en series descendentes", "Dead bug, Pallof press", "Bisagra de cadera sin carga"], exs: ["McGill curl-up", "Plancha lateral (side plank)", "Bird dog", "Dead bug", "Pallof press caminando"],
+      crit: [{ id: "mcgill", t: "Tests de McGill con ratios equilibrados", tc: "Tu tronco aguanta igual por delante, detrás y a los lados", auto: autoMcgill }, { id: "nrs2", t: "Ejercicios del tronco sin aumento de síntomas", tc: "Los ejercicios no te dan dolor" }] },
+    { n: "Fuerza global", dur: "4 – 8 semanas", obj: ["Volver a cargar: bisagra, sentadilla, transporte", "Confianza con carga", "Progresión semanal controlada"], ej: ["Peso muerto rumano progresivo", "Sentadilla goblet", "Paseo del granjero y suitcase carry", "Carga semanal con subidas ≤ 10 %"], exs: ["Peso muerto rumano con mancuernas", "Sentadilla goblet", "Paseo del granjero (farmer carry)"],
+      crit: [{ id: "bisagra", t: "Bisagra de cadera con carga moderada y buena técnica, sin dolor", tc: "Haces peso muerto rumano sin dolor" }, { id: "r24", t: "Sin aumento de síntomas a las 24 h tras las sesiones de fuerza", tc: "Al día siguiente no estás peor" }] },
+    { n: "Retorno y mantenimiento", dur: "Hasta el alta", obj: ["Actividad y deporte completos", "Potencia y gestos rápidos", "Mantener el ejercicio como prevención de recaídas"], ej: ["Ejercicios de potencia y gesto del deporte", "Rutina de mantenimiento del tronco 2–3 veces por semana"], exs: ["Pallof press caminando", "Paseo del granjero (farmer carry)", "Sprint progresivo (50 → 100 %)"],
+      crit: [{ id: "act", t: "Actividad y deporte completos sin dolor", tc: "Haces todo con normalidad" }, { id: "tsk", t: "Sin miedo al movimiento (TSK ≤ 18)", tc: "No tienes miedo a moverte", auto: autoVal("tsk", v => v <= 18) }] }] },
+  generico: { n: "Otra lesión (progresión por criterios)", fuente: "Modelo carga-capacidad (Tema 1) y continuo de retorno de Ardern (2016)", fases: [
+    { n: "Protección", dur: "Según tejido", obj: ["Proteger el tejido sin inmovilizar más de lo necesario", "Controlar dolor e inflamación", "Mantener la condición del resto del cuerpo"], ej: ["Isométricos sin dolor", "Movilidad tolerable", "Trabajo cardiovascular y de las zonas sanas"], exs: [],
+      crit: [{ id: "nrs3", t: "Dolor en reposo ≤ 3/10", tc: "Poco dolor en reposo" }, { id: "alta", t: "Visto bueno del médico o fisio para cargar", tc: "Tu médico o fisio te da el visto bueno" }] },
+    { n: "Recuperar la capacidad", dur: "Semanas", obj: ["Rango de movimiento completo", "Fuerza > 80 % del lado sano", "Tolerancia a la carga diaria"], ej: ["Fuerza progresiva (isométrico → isotónico)", "Rango completo", "Regla de 24 h: los síntomas vuelven a su nivel al día siguiente"], exs: [],
+      crit: [{ id: "rom", t: "Rango de movimiento completo", tc: "Te mueves con todo el rango" }, { id: "f80", t: "Fuerza > 80 % del lado sano", tc: "Fuerza por encima del 80 % del otro lado" }] },
+    { n: "Capacidad específica", dur: "Semanas", obj: ["Velocidad, potencia y resistencia que pide el deporte", "Fuerza > 90 % del lado sano"], ej: ["Pliometría y velocidad progresivas", "Gestos del deporte con volumen controlado"], exs: ["Pogo jumps", "Sprint progresivo (50 → 100 %)"],
+      crit: [{ id: "f90", t: "Fuerza > 90 % del lado sano", tc: "Fuerza igualada" }, { id: "gesto", t: "Gestos rápidos sin dolor", tc: "Movimientos rápidos sin dolor" }] },
+    { n: "Retorno al deporte", dur: "Hasta el alta", obj: ["Vuelta a la participación → al deporte → al rendimiento", "Carga semanal sin picos (ACWR 0,8–1,3)"], ej: ["Entrenamiento normal progresivo", "Programa preventivo de mantenimiento"], exs: ["Calentamiento neuromuscular preventivo"],
+      crit: [{ id: "dep", t: "Entrena el deporte completo sin síntomas", tc: "Entrenas con normalidad" }, { id: "conf", t: "Confianza para competir", tc: "Te sientes preparado para competir" }] }] },
+});
+// Qué protocolo encaja con cada lesión del historial
+function protoDeLesion(l) {
+  if (!l) return ""; const r = (l.region || "").toLowerCase();
+  if (l.tipo === "tendinosa" || /tendón|tendon/.test(r)) return "tendon";
+  if (/lca|menisco/.test(r) || l.tipo === "meniscal") return "lca";
+  if (/tobillo/.test(r)) return "tobillo";
+  if (/hombro|manguito/.test(r)) return "hombro";
+  if (/lumbar/.test(r)) return "lumbar";
+  if (l.tipo === "muscular") return "muscular";
+  return "generico";
+}
+// Prevención recomendada según la zona lesionada (ejercicios de la librería con ficha)
+const PREV_ZONA = [
+  [/isquio/i, ["Nordic hamstring curl", "Sliding leg curl", "Sprint progresivo (50 → 100 %)"], "El Nordic reduce las lesiones de isquios en torno a la mitad cuando se mantiene en el tiempo."],
+  [/aductor|pubalgia|ingle/i, ["Copenhagen plank"], "El programa Copenhagen reduce las lesiones de ingle en deportes de pivote."],
+  [/gemelo|sóleo|aquiles/i, ["Elevación de talones unilateral", "Elevación de gemelos HSR (3-1-3)", "Isométrico de sóleo (rodilla flexionada)"], "Mantén la capacidad del tríceps sural y progresa la carga de carrera sin picos."],
+  [/cuádriceps|rotuliano|patelofemoral/i, ["Spanish squat", "Sentadilla HSR (3-1-3)", "Decline squat (25°)"], "Fuerza de cuádriceps mantenida y control de los saltos."],
+  [/lca|menisco|colateral|rodilla/i, ["Calentamiento neuromuscular preventivo", "Step-off & stick (cajón bajo)", "Nordic hamstring curl"], "Los programas neuromusculares (tipo FIFA 11+) reducen las lesiones de LCA; tras una reconstrucción, el riesgo de nueva rotura es alto los primeros 2 años."],
+  [/tobillo/i, ["Equilibrio monopodal (progresión)", "Eversión con banda elástica", "Mini Y-balance"], "El trabajo de equilibrio 3 veces por semana reduce las recaídas del esguince."],
+  [/hombro/i, ["Rotación externa con banda", "Y-T-W en prono", "Rotación externa a 90° de abducción"], "Mantener la fuerza de rotación externa y el control escapular, sobre todo en deportes por encima de la cabeza."],
+  [/lumbar/i, ["McGill curl-up", "Plancha lateral (side plank)", "Bird dog"], "Mantén el trabajo de tronco y de fuerza global 2–3 veces por semana."],
+  [/cadera/i, ["Copenhagen plank", "Clamshell con banda", "Lateral walk con banda"], "Fuerza de abductores y aductores de cadera."],
+];
+function prevZona(l) { const p = PREV_ZONA.find(([re]) => re.test(l.region || "")); return p ? { exs: p[1], txt: p[2] } : null; }
+
 function contraindicaciones(r) {
   const o = r.opciones || {}; const xs = [];
   if (r.protocolo === "tendon") {
@@ -2401,6 +2508,10 @@ function contraindicaciones(r) {
     if (o.plastia) xs.push("Plastia extraarticular: progresión conservadora en pivotes y cambios de dirección.");
     xs.push("BFR contraindicado en trombosis activa o insuficiencia arterial periférica. NMES y BFR, con el fisio.");
   }
+  if (r.protocolo === "tobillo") xs.push("Si no puede apoyar 4 pasos tras la lesión o hay dolor a la palpación del maléolo o la base del 5.º metatarsiano (reglas de Ottawa), derivar para descartar fractura.", "Más de 2–3 esguinces o sensación de que el tobillo «se va»: posible inestabilidad crónica, valorar con el fisio.");
+  if (r.protocolo === "hombro") xs.push("Pérdida brusca de fuerza tras un traumatismo, dolor nocturno intenso o hormigueo en el brazo: derivar a médico o fisio.", "Dolor durante el ejercicio ≤ 3–4/10 aceptable si a las 24 h vuelve a su nivel habitual.");
+  if (r.protocolo === "lumbar") xs.push("Señales de alarma, derivar al médico (urgente si hay pérdida de control de esfínteres o anestesia en la zona del sillín): dolor nocturno que no cambia con la postura, fiebre, pérdida de peso sin explicación, antecedente de cáncer, traumatismo importante, pérdida de fuerza o sensibilidad en las piernas.", "Dolor irradiado por debajo de la rodilla: valoración del fisio o médico antes de cargar.");
+  if (r.protocolo === "generico") xs.push("Seguir las restricciones del médico o fisio. Progresar por criterios y con la regla de 24 h.");
   if (r.protocolo === "muscular") xs.push("No progresar por calendario: la biología marca el ritmo. Evitar estiramientos agresivos y sprint antes de la Fase 4.");
   return xs;
 }
@@ -2411,7 +2522,8 @@ function critEstado(r, fi, c, ts) {
   return { k, ok, man, au };
 }
 async function tabReadapt(c) {
-  const [rs, ts] = await Promise.all([q(sb.from("readaptaciones").select("*").eq("client_id", c.id).order("inicio", { ascending: false })), q(sb.from("tests").select("*").eq("client_id", c.id))]);
+  const [rs, ts, wl] = await Promise.all([q(sb.from("readaptaciones").select("*").eq("client_id", c.id).order("inicio", { ascending: false })), q(sb.from("tests").select("*").eq("client_id", c.id)), q(sb.from("wellness").select("fecha,molestia_zona,molestia_0a10").eq("client_id", c.id).gte("fecha", addDays(today(), -42)).order("fecha")).catch(() => [])]);
+  S.coach.raWell = wl;
   S.coach.readapt = rs; S.coach.tests = ts;
   // los criterios que ya se cumplen según los tests se guardan, para que el cliente también los vea
   for (const r of rs.filter(x => x.estado !== "alta")) { const P = PROTOS[r.protocolo]; if (!P) continue; const fi = Math.min(r.fase || 0, P.fases.length - 1); const cr = { ...(r.criterios || {}) }; let ch = false;
@@ -2420,8 +2532,8 @@ async function tabReadapt(c) {
   const act = rs.filter(r => r.estado !== "alta"), alta = rs.filter(r => r.estado === "alta");
   const les = ((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada");
   const nuevo = `<form id="f-readnew" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>${act.length ? "Abrir otro proceso" : "Abrir un proceso de readaptación"}</h2>
-    <div class="grid3"><div class="f"><label>Protocolo</label><select name="protocolo">${Object.entries(PROTOS).map(([k, p]) => `<option value="${k}">${esc(p.n)}</option>`).join("")}</select></div>
-    <div class="f"><label>Lesión del historial</label><select name="lesion"><option value="">—</option>${les.map(l => `<option value="${esc(l.id)}">${esc(lesTxt(l))}</option>`).join("")}</select></div>
+    <div class="grid3"><div class="f"><label>Protocolo</label><select name="protocolo" id="ra-proto">${Object.entries(PROTOS).map(([k, p]) => `<option value="${k}">${esc(p.n)}</option>`).join("")}</select></div>
+    <div class="f"><label>Lesión del historial</label><select name="lesion" data-act-change="ra-les"><option value="">—</option>${les.map(l => `<option value="${esc(l.id)}">${esc(lesTxt(l))}</option>`).join("")}</select></div>
     <div class="f"><label>Inicio</label><input type="date" name="inicio" value="${today()}"></div></div>
     <p class="tiny muted" style="margin:0">La progresión se basa en criterios funcionales, no en días del calendario. ${les.length ? "" : "Puedes registrar primero la lesión en Información › Historial lesional."}</p>
     <div class="row"><span class="grow"></span><button class="btn pri">Abrir proceso</button></div></form>`;
@@ -2435,15 +2547,31 @@ function readaptCard(r, ts, c) {
   const opts = r.protocolo === "tendon" ? `<div class="grid3"><div class="f"><label>Zona</label><select data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="zona">${[["", "—"], ["rotuliano", "Rotuliano"], ["aquiles", "Aquíleo"], ["otro", "Otro"]].map(([v, l]) => `<option value="${v}" ${o.zona === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Localización</label><select data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="loc">${[["", "—"], ["media", "Porción media"], ["insercional", "Insercional"]].map(([v, l]) => `<option value="${v}" ${o.loc === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Irritabilidad</label><select data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="irrit">${[["", "—"], ["baja", "Baja · dolor > 24 h, bien tolerado"], ["media", "Media · dolor ~4/10 al entrenar"], ["alta", "Alta · dolor > 6/10 que persiste"]].map(([v, l]) => `<option value="${v}" ${o.irrit === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>`
     : r.protocolo === "lca" ? `<div class="grid3"><div class="f"><label>Fecha de cirugía</label><input type="date" value="${esc(r.cirugia || "")}" data-act-change="ra-cir" data-id="${esc(r.id)}"></div><label class="small" style="align-self:end"><input type="checkbox" data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="sutura" ${o.sutura ? "checked" : ""}> Sutura meniscal</label><label class="small" style="align-self:end"><input type="checkbox" data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="plastia" ${o.plastia ? "checked" : ""}> Plastia extraarticular</label></div>` : "";
   return `<div class="card ra"><div class="ra-h"><div><h2>${esc(r.titulo)}</h2><span class="tiny muted">${esc(P.n)} · desde ${esc(fdate(r.inicio))} (${sem} sem)${r.cirugia ? ` · cirugía ${esc(fdate(r.cirugia))} (${Math.floor(daysBetween(r.cirugia, today()) / 30.4)} meses)` : ""}</span></div><button class="btn sm ghost" data-act="ra-alta" data-id="${esc(r.id)}" data-confirm="¿Dar de alta este proceso? Quedará en «Procesos cerrados».">Dar de alta</button></div>
-  <ol class="ra-steps">${F.map((x, i) => `<li class="${i < fi ? "done" : i === fi ? "now" : ""}"><span>${i + 1}</span><em>${esc(x.n)}</em></li>`).join("")}</ol>
+  <ol class="ra-steps">${F.map((x, i) => { const h = (r.historial || []).filter(e => e.fase === i).slice(-1)[0]; const d = i === fi ? `desde ${fdate(r.fase_desde || r.inicio, { day: "numeric", month: "short" })}` : h ? `${fdate(h.desde || r.inicio, { day: "numeric", month: "short" })} – ${fdate(h.hasta, { day: "numeric", month: "short" })}` : ""; return `<li class="${i < fi ? "done" : i === fi ? "now" : ""}"><span>${i < fi ? "✓" : i + 1}</span><em>${esc(x.n)}</em>${d ? `<small>${esc(d)}</small>` : ""}</li>`; }).join("")}</ol>
   ${opts}
   <div class="ra-now"><div class="ra-col"><h3>Fase actual · ${esc(f.n)}</h3><p class="tiny muted" style="margin:0 0 6px">Orientativo: ${esc(f.dur || "—")} · lleva ${semF} sem en esta fase</p><b class="small">Objetivos</b><ul class="ra-ul">${f.obj.map(x => `<li>${esc(x)}</li>`).join("")}</ul><b class="small">Contenidos</b><ul class="ra-ul">${f.ej.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
-  <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${f.exs.map(n => `<button class="chip lnkchip" data-act="ex-info" data-n="${esc(n)}">ⓘ ${esc(n)}</button>`).join("")}</div></div>
+  ${f.exs.length ? `<b class="small">Ejercicios con ficha</b><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${f.exs.map(n => `<button class="chip lnkchip" data-act="ex-info" data-n="${esc(n)}">ⓘ ${esc(n)}</button>`).join("")}</div><button class="btn sm" data-act="ra-prog" data-id="${esc(r.id)}" style="margin-top:10px">Programar una sesión con estos ejercicios</button>` : ""}</div>
   <div class="ra-col"><h3>Criterios para avanzar <span class="cnt ${pend ? "" : "ok"}">${est.length - pend}/${est.length}</span></h3><div class="ra-crit">${est.map(e => `<label class="ra-c ${e.ok ? "ok" : ""}"><input type="checkbox" data-act-change="ra-crit" data-id="${esc(r.id)}" data-k="${esc(e.k)}" ${e.ok ? "checked" : ""}><span><b>${esc(e.cr.t)}</b>${e.au ? `<small class="${e.au.ok ? "okt" : "badt"}">${e.au.ok ? "✓" : "✗"} Según test · ${esc(e.au.txt)}${e.man.ok === false ? " · desmarcado por ti" : ""}</small>` : e.cr.auto || e.cr.autoR ? `<small class="muted">Se rellena solo al registrar el test en Evolución › Tests</small>` : ""}${e.man.fecha ? `<small class="muted">Marcado el ${esc(fdate(e.man.fecha))}</small>` : ""}</span></label>`).join("")}</div>
   ${fi < F.length - 1 ? `<button class="btn ${pend ? "" : "pri"}" data-act="ra-next" data-id="${esc(r.id)}" ${pend ? `data-confirm="Faltan ${pend} criterio(s). La progresión se basa en criterios, no en el calendario. ¿Pasar igualmente a «${esc(F[fi + 1].n)}»?"` : ""}>Pasar a ${esc(F[fi + 1].n)}</button>` : `<button class="btn ${pend ? "" : "pri"}" data-act="ra-alta" data-id="${esc(r.id)}" data-confirm="${pend ? `Faltan ${pend} criterio(s) de alta. ` : ""}¿Dar el alta funcional?">Dar el alta funcional</button>`}${fi > 0 ? ` <button class="btn ghost sm" data-act="ra-prev" data-id="${esc(r.id)}">Volver a la fase anterior</button>` : ""}</div></div>
+  ${raDolor(r, c)}
   ${ci.length ? `<div class="ra-ci"><b>⚠ Precauciones</b>${ci.map(x => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
   <div class="grid2"><div class="f"><label>Mensaje para el cliente <span class="tiny muted">(lo ve en su app)</span></label><textarea data-act-change="ra-msg" data-id="${esc(r.id)}" style="min-height:70px" placeholder="Qué toca esta fase y cómo debe sentirse…">${esc(r.mensaje || "")}</textarea></div><div class="f"><label>Notas privadas</label><textarea data-act-change="ra-notas" data-id="${esc(r.id)}" style="min-height:70px">${esc(r.notas || "")}</textarea></div></div>
   <p class="tiny muted" style="margin:0">${esc(P.fuente)}. Las decisiones médicas (diagnóstico, NMES, PRP, cirugía) corresponden al médico o al fisio.</p></div>`;
+}
+// Seguimiento del dolor: lo que el cliente apunta en el cuestionario diario + modelo de monitorización del dolor
+function raDolor(r, c) {
+  const w = (S.coach.raWell || []).filter(x => x.molestia_0a10 != null); const l = (((c.ficha || {}).lesiones) || []).find(x => x.id === r.lesion_id);
+  const pts = w.map(x => ({ x: x.fecha, y: +x.molestia_0a10 })); const ult = w[w.length - 1]; const max7 = Math.max(-1, ...w.filter(x => x.fecha >= addDays(today(), -7)).map(x => +x.molestia_0a10));
+  const est = max7 < 0 ? "" : max7 <= 2 ? "ok" : max7 <= 5 ? "warn" : "bad";
+  return `<div class="ra-pain"><div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><h3 style="margin:0">Dolor</h3>${ult ? `<span class="chip ${est}">Máx. 7 días: ${max7}/10</span>` : ""}</div>
+  <div class="semf"><span class="ok"><b>0–2</b> Seguir progresando</span><span class="warn"><b>3–5</b> Aceptable si a las 24 h vuelve a su nivel</span><span class="bad"><b>&gt; 5</b> Reducir la carga</span></div>
+  ${pts.length >= 2 ? lineChart(pts, { label: "Molestia (0–10)", yMin: 0, yMax: 10, dec: 0 }) : `<p class="tiny muted" style="margin:0">${pts.length ? `Última molestia apuntada: ${ult.molestia_0a10}/10${ult.molestia_zona ? " en " + esc(ult.molestia_zona) : ""} (${esc(fdate(ult.fecha))}).` : "Aún no ha apuntado molestias."} Para seguirlo a diario, activa «Molestias (zona y dolor)» en su cuestionario diario.</p>`}
+  ${l && l.nrs != null ? `<p class="tiny muted" style="margin:4px 0 0">Dolor anotado en la lesión: ${l.nrs}/10.</p>` : ""}</div>`;
+}
+async function raProg(id) {
+  const r = (S.coach.readapt || []).find(x => x.id === id); if (!r) return; const P = PROTOS[r.protocolo]; const f = P.fases[Math.min(r.fase, P.fases.length - 1)]; const lib = await exLib();
+  const ejercicios = f.exs.map((n, i) => { const e = lib.find(x => x.nombre === n) || {}; const m = String(e.params || "").match(/(\d+(?:[–-]\d+)?)\s*[×x]\s*([\d–\-+]+(?:\s*(?:s|reps?))?)/); return { bloque: String.fromCharCode(65 + i) + "1", nombre: n, sxr: m ? `${m[1]}x${m[2].trim()}` : "", rir: "", descanso: "", notas: [e.params, e.claves].filter(Boolean).join(" · ").slice(0, 300), prog: "" }; });
+  openAsig(null, today(), { titulo: `Readaptación · ${f.n}`, contenido: { objetivo: f.obj[0] || "", ejercicios } });
 }
 async function raUpd(id, patch, msg) {
   try { await q(sb.from("readaptaciones").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id)); if (msg) toast(msg); } catch (e) { toast(errMsg(e)); }
@@ -2470,7 +2598,7 @@ async function raNew(f) {
 }
 /* Vista del cliente */
 async function readaptHoy() {
-  if (S.me.role === "coach") return ""; let rs = [];
+  if (S.me.role === "coach") return ""; let rs = []; exLib().catch(() => { });
   try { const { data } = await sb.rpc("mi_readaptacion"); rs = data || []; } catch { return ""; }
   return rs.map(r => { const P = PROTOS[r.protocolo]; if (!P) return ""; const fi = Math.min(r.fase, P.fases.length - 1); const f = P.fases[fi];
     const crit = f.crit.map(cr => ({ cr, ok: ((r.criterios || {})[`${fi}.${cr.id}`] || {}).ok })); const hechos = crit.filter(x => x.ok).length;
@@ -2480,7 +2608,9 @@ async function readaptHoy() {
     ${r.mensaje ? `<p class="small" style="margin:10px 0 0;white-space:pre-line">${esc(r.mensaje)}</p>` : ""}
     <details style="margin-top:8px"><summary class="small"><b>Qué buscamos en esta fase</b></summary><ul class="ra-ul">${f.obj.map(x => `<li>${esc(x)}</li>`).join("")}</ul></details>
     <details style="margin-top:4px"><summary class="small"><b>Para pasar a la siguiente (${hechos}/${crit.length})</b></summary><ul class="ra-ul chk">${crit.map(x => `<li class="${x.ok ? "ok" : ""}">${x.ok ? "✓" : "○"} ${esc(x.cr.tc || x.cr.t)}</li>`).join("")}</ul></details>
-    <p class="tiny muted" style="margin:8px 0 0">Si notas dolor mayor de 4/10 o que no se te pasa al día siguiente, avísale a Adrián.</p></div>`; }).join("");
+    ${f.exs.length ? `<details style="margin-top:4px"><summary class="small"><b>Ejercicios de esta fase</b></summary><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${f.exs.map(n => `<button class="chip lnkchip" data-act="ex-info" data-n="${esc(n)}">ⓘ ${esc(n)}</button>`).join("")}</div></details>` : ""}
+    <div class="semf sm"><span class="ok"><b>0–2</b> Bien, sigue</span><span class="warn"><b>3–5</b> Vale si mañana estás como siempre</span><span class="bad"><b>&gt; 5</b> Para y avisa a Adrián</span></div>
+    <p class="tiny muted" style="margin:6px 0 0">Apunta tus molestias en el cuestionario diario: así Adrián ve cómo responde tu cuerpo a la carga.</p></div>`; }).join("");
 }
 
 /* ---- Carga: ACWR (media móvil y EWMA) ---- */
@@ -2575,9 +2705,9 @@ async function tabPlan(c, pl) {
     <details class="more"><summary class="btn sm" aria-label="Más opciones">Más ▾</summary><div class="menu"><button data-act="prog-asignar">Programar un programa</button><button data-act="prog-desde-cal">Guardar semanas como programa</button><hr><button data-act="copiar-semana">Copiar semana</button><button data-act="borrar-semana">Vaciar semana</button><hr><button data-act="meso-edit">Mesociclos</button></div></details></div></div>
   <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}${calLegend(new Set([...as.map(x => x.tipo), ...(ev.length ? ["evento"] : []), ...(wo.some(w => !w.assignment_id) ? ["workout"] : [])]), ["hecho", "late", ...(as.some(x => !x.visible) ? ["hid"] : [])])}</div>`;
 }
-async function openAsig(id, fecha) {
+async function openAsig(id, fecha, pre) {
   await exLib(); const tpls = await tplLib();
-  const x = id ? (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0] : { tipo: "workout", fecha, titulo: "", contenido: {}, visible: true };
+  const x = id ? (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0] : { tipo: "workout", fecha, titulo: "", contenido: {}, visible: true, ...(pre || {}) };
   if (!x) return; S.sub.asigTipo = x.tipo; S.sub.tpls = tpls;
   const logs = id && x.tipo === "workout" ? await q(sb.from("workouts").select("*").eq("assignment_id", id)) : [];
   const res = (x.resultado && x.resultado.respuestas) || [];
@@ -3662,6 +3792,7 @@ document.addEventListener("click", async ev => {
       case "ex-info": await exLib(); exInfoOpen(a.dataset.n); break;
       case "les-edit": lesForm(a.dataset.id); break;
       case "les-del": if (confirm(a.dataset.confirm)) delLes(a.dataset.id); break;
+      case "ra-prog": raProg(a.dataset.id); break;
       case "ra-next": case "ra-prev": case "ra-alta": case "ra-reabrir": if (!a.dataset.confirm || confirm(a.dataset.confirm)) raAction(a.dataset.act, a); break;
       case "arch-do": archDo(a.dataset.cid, +a.dataset.d); break;
       case "arch-undo": archUndo(a.dataset.cid); break;
@@ -3772,6 +3903,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
   if (el.dataset && el.dataset.actChange === "t-clave") { S.coach.tclave = el.value; const b = $("#t-campos"); if (b) b.innerHTML = tCampos(el.value); }
   if (el.dataset && el.dataset.actChange === "t-ej") { const p = VMT.find(x => x[0] === el.value), m = el.form && el.form.c_vmt; if (p && m && (!m.value || m.dataset.auto)) { m.value = String(p[1]).replace(".", ","); m.dataset.auto = "1"; } tPreview(); }
+  if (el.dataset && el.dataset.actChange === "ra-les") { const l = (((S.coach.c || {}).ficha || {}).lesiones || []).find(x => x.id === el.value); const p = protoDeLesion(l), sl = $("#ra-proto"); if (p && sl) sl.value = p; }
   if (el.dataset && el.dataset.actChange === "les-tipo") { const b = $("#les-sub"); if (b) b.innerHTML = lesSub(el.value); }
   if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
   if (el.dataset && el.dataset.actChange === "copsem-prev") copsemPrev();

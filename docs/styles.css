@@ -1482,3 +1482,20 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .ttab tr:last-child td{border-bottom:0}
 .tsub{margin:8px 0 2px;font-size:12.5px;font-weight:700}
 .tcalc summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--accent);padding:4px 0}
+/* Readaptación: fechas por fase, dolor y prevención */
+.ra-steps li small{display:block;font-size:10.5px;color:var(--muted);font-weight:500;margin-top:1px}
+.ra-pain{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:12px;background:var(--surface-2)}
+.ra-pain h3{font-size:14px}
+.semf{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:11.5px;line-height:1.3}
+.semf span{padding:6px 8px;border-radius:8px;border-left:3px solid var(--line);background:var(--surface)}
+.semf span b{display:block;font-family:var(--display);font-size:13px}
+.semf .ok{border-left-color:var(--ok)}.semf .warn{border-left-color:var(--warn,#a2701a)}.semf .bad{border-left-color:var(--bad)}
+.semf.sm{margin-top:10px}.semf.sm span{background:var(--surface-2)}
+@media (max-width:420px){.semf{grid-template-columns:1fr}}
+.les-l{display:flex;flex-direction:column;gap:8px}
+.les-i{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.les-i>.it{border:0;width:100%;padding:10px 12px}
+.les-prev{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;background:var(--surface-2);border-top:1px solid var(--line)}
+.les-i>.it{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left}
+.les-i>.it>span:first-child{flex:1;min-width:0}
+.ra-pain svg{max-height:190px;width:100%}
