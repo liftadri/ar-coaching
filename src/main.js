@@ -859,9 +859,9 @@ async function pushTest(cid, b) {
 /* ================= Cliente: Hoy ================= */
 async function viewHoy() {
   loading("Hoy");
-  const t = today();
+  const t = today(); const extras = Promise.all([tablonHoy().catch(() => ""), pushCardHoy().catch(() => ""), readaptHoy().catch(() => "")]);
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana,leido_en").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
-  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy(); const habs = await habitosHoy(plan); const pushc = await pushCardHoy(); const rah = await readaptHoy();
+  const w = weekNow(plan); const lastW = wt[0]; const habsP = habitosHoy(plan).catch(() => ""); const [tbh, pushc, rah] = await extras; const habs = await habsP;
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
@@ -1562,6 +1562,8 @@ async function newExercisesFrom(c) { // añade a la librería los ejercicios esc
 async function viewInicio() {
   loading("Inicio"); const t = today(); const sinceTs = new Date(Date.now() - 7 * 864e5).toISOString();
   const WKC = WK.map(([k]) => k).join(",");
+  const t35 = addDays(t, -35);
+  const sysP = sysBanner().catch(() => ""), extraP = Promise.all([q(sb.from("workouts").select("client_id,fecha,rpe_sesion,duracion_min").gte("fecha", t35)).catch(() => []), q(sb.from("assignments").select("client_id,fecha,resultado").eq("tipo", "cardio").eq("hecho", true).gte("fecha", t35)).catch(() => []), q(sb.from("readaptaciones").select("client_id,protocolo").eq("estado", "activa")).catch(() => [])]);
   const [cl, wo, wl, ws, as, asAll, ev, leads, onb, drafts, resp] = await Promise.all([loadClients(),
     q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)),
     q(sb.from("wellness").select(`client_id,fecha,created_at,molestia_zona,molestia_0a10,${WKC}`).gte("created_at", sinceTs)),
@@ -1572,9 +1574,8 @@ async function viewInicio() {
     q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []),
     q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
     q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => [])]);
-  const sysHtml = await sysBanner();
-  const t35 = addDays(t, -35);
-  const [wl35, ca35, raT] = await Promise.all([q(sb.from("workouts").select("client_id,fecha,rpe_sesion,duracion_min").gte("fecha", t35)).catch(() => []), q(sb.from("assignments").select("client_id,fecha,resultado").eq("tipo", "cardio").eq("hecho", true).gte("fecha", t35)).catch(() => []), q(sb.from("readaptaciones").select("client_id,protocolo").eq("estado", "activa")).catch(() => [])]);
+  const sysHtml = await sysP;
+  const [wl35, ca35, raT] = await extraP;
   const loadBy = {}; const addL = (cid, f, v) => { if (!v) return; const o = loadBy[cid] = loadBy[cid] || {}; o[f] = (o[f] || 0) + v; };
   wl35.forEach(w => addL(w.client_id, w.fecha, w.rpe_sesion != null && w.duracion_min ? w.rpe_sesion * w.duracion_min : 0)); ca35.forEach(x => { const r = x.resultado || {}; addL(x.client_id, x.fecha, r.rpe != null && r.min ? r.rpe * r.min : 0); });
   const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
@@ -2000,7 +2001,7 @@ function tCampos(k) {
   const t = TC[k]; const inp = (n, l, ph = "") => `<div class="f"><label>${l}</label><input name="${n}" inputmode="decimal" placeholder="${esc(ph)}"></div>`;
   const lado = `<div class="f"><label>Pierna afectada</label><select name="afectado">${LADOS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>`;
   const ref = `<label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="referencia"> Valor de referencia previo a la lesión</label>`;
-  if (!t) return `<div class="grid2"><div class="f"><label>Nombre del test</label><input name="nombre" required placeholder="1RM sentadilla, test de Cooper…" list="tests-dl"></div><div class="f"><label>Categoría</label><input name="categoria" placeholder="fuerza, resistencia…"></div></div>
+  if (!t) return `<div class="grid2"><div class="f"><label>Nombre del test</label><input name="nombre" required placeholder="Ej.: 1RM sentadilla" list="tests-dl"></div><div class="f"><label>Categoría</label><input name="categoria" placeholder="fuerza, resistencia…"></div></div>
     <div class="grid3"><div class="f"><label>Valor</label><input name="valor" inputmode="decimal"></div><div class="f"><label>Unidad</label><input name="unidad" placeholder="kg, cm, s"></div><label class="small" style="align-self:end"><input type="checkbox" name="menos"> Mejor cuanto menos</label></div>
     <div class="grid2">${inp("izq", "Izquierda")}${inp("der", "Derecha")}</div>`;
   const proto = `<details class="tproto" open><summary>Protocolo</summary><p>${esc(t.proto)}</p></details>`;
@@ -2927,7 +2928,7 @@ async function tabRecup(c) {
   <div class="card"><h2>Carga interna <small>RPE × minutos</small></h2>${multiChart(days, [{ name: "Carga", color: "#f39c12", v: load }], { bars: true, yMin: 0, empty: "Hace falta que registre dureza y minutos al terminar los entrenos" })}<div class="kpis"><div class="kpi"><span>Carga 7 días</span><b>${fmt(sumR(t, 7), 0)}</b><em>UA</em></div><div class="kpi"><span>Media semanal (28 d)</span><b>${fmt(sumR(t, 28) / 4, 0)}</b><em>UA</em></div><div class="kpi"><span>Monotonía</span><b>${mono != null ? fmt(mono, 1) : "—"}</b><em>&gt; 2 = poco variada</em></div><div class="kpi"><span>Strain</span><b>${strain != null ? fmt(strain, 0) : "—"}</b><em>carga × monotonía</em></div></div></div>
   <div class="card"><h2>Ratio agudo:crónico <small>media móvil y EWMA</small></h2>${multiChart(days, [{ name: "Media móvil 7:28", color: "#22242f", v: acwr, dec: 2 }, { name: "EWMA (Impellizzeri)", color: "#e8491a", v: acwrE, dec: 2, w: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Hacen falta 3–4 semanas de entrenos con dureza registrada" })}</div>
   </div>
-  <div class="card"><h2>Cuestionario diario <small>últimos 28 días · 5 = mejor</small></h2>${heat}</div>`;
+  <div class="card"><h2>Cuestionario diario <small>28 días · 5 = mejor</small></h2>${heat}</div>`;
 }
 
 /* ================= Nutrición ================= */

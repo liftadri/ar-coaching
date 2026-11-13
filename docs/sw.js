@@ -1,13 +1,25 @@
 // Service worker mínimo: guarda solo la «carcasa» de la app (código, estilos, iconos) para que abra rápido.
 // Nunca guarda datos de clientes: todas las peticiones a Supabase van siempre a la red.
-const CACHE = "arc-v8";
+const CACHE = "arc-v9";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./logo.jpg", "./logo-blanco.png", "./icon-192.png", "./icon-512.png", "./fonts/archivo.woff2"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
+// Archivos con ?v= (cambian de nombre en cada versión), fuentes, iconos y splash: caché primero (instantáneo).
+// Página (index.html) y el resto: red primero con 3 s de margen y, si no hay red, la copia guardada.
+const fijo = u => u.searchParams.has("v") || /\/(fonts|splash)\/|\.(png|jpg|woff2|webmanifest)$/.test(u.pathname);
+const guardar = (req, r) => { if (r && r.ok && r.type === "basic") { const copy = r.clone(); caches.open(CACHE).then(async c => { const u = new URL(req.url); if (u.searchParams.has("v")) { for (const k of await c.keys()) { const ku = new URL(k.url); if (ku.pathname === u.pathname && ku.search !== u.search) c.delete(k); } } c.put(req, copy); }); } return r; };
 self.addEventListener("fetch", e => {
   const u = new URL(e.request.url);
-  if (e.request.method !== "GET" || u.origin !== self.location.origin) return; // Supabase y fuentes: red directa
-  e.respondWith(fetch(e.request, { cache: "no-cache" }).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request).then(m => m || caches.match("./index.html"))));
+  if (e.request.method !== "GET" || u.origin !== self.location.origin) return; // Supabase y externos: red directa
+  if (fijo(u)) { e.respondWith(caches.match(e.request).then(m => m || fetch(e.request).then(r => guardar(e.request, r)))); return; }
+  const red = fetch(e.request, { cache: "no-cache" }).then(r => guardar(e.request, r));
+  const nav = e.request.mode === "navigate";
+  e.respondWith(new Promise(res => {
+    let hecho = false; const fin = r => { if (!hecho && r) { hecho = true; res(r); } };
+    const copia = () => caches.match(e.request).then(m => m || (nav ? caches.match("./index.html") : null));
+    const t = setTimeout(() => copia().then(fin), 3000);
+    red.then(r => { clearTimeout(t); fin(r); }).catch(() => { clearTimeout(t); copia().then(m => fin(m || Response.error())); });
+  }));
 });
 // Notificaciones push
 self.addEventListener("push", e => {
