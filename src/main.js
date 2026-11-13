@@ -245,6 +245,9 @@ window.addEventListener("focus", checkUpdate);
 window.addEventListener("online", checkUpdate);
 setInterval(checkUpdate, 120000);
 
+/* Sin zoom en la app (iOS ignora user-scalable=no) */
+["gesturestart", "gesturechange", "gestureend"].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+document.addEventListener("touchmove", e => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
 /* ================= Arranque y acceso ================= */
 const LOGO = `<img class="logo" src="./logo.jpg" alt="">`;
 async function init() {

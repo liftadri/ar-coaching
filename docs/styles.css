@@ -1290,3 +1290,6 @@ a.rowcard{text-decoration:none;color:inherit}
 .sysbar.warn i{background:var(--warn,#c98a12)}.sysbar.bad i{background:var(--bad)}
 .alr.warn{color:color-mix(in srgb,var(--warn,#c98a12) 80%,#000)}
 .alr.warn{background:color-mix(in srgb,var(--warn,#c98a12) 10%,transparent);border-radius:10px;padding:8px 10px;margin-top:6px}
+/* Sin zoom: ni pellizco, ni doble toque, ni zoom al escribir en iPhone (campos de 16 px en móvil) */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media (max-width:820px){input,select,textarea{font-size:16px!important}}
