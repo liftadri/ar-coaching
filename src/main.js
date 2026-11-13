@@ -596,7 +596,7 @@ const addMonths = (d, n) => { const x = parseD(d); const day = x.getDate(); x.se
 const eur = v => v == null || v === "" ? "—" : Number(v).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: Number(v) % 1 ? 2 : 0 });
 async function viewCobros() {
   loading("Cobros"); const t = today(); const m0 = t.slice(0, 7) + "-01", m1 = iso(new Date(+t.slice(0, 4), +t.slice(5, 7), 0));
-  const [cl, pays] = await Promise.all([q(sb.from("clients").select("id,nombre,estado,ficha").order("nombre")), q(sb.from("payments").select("*").order("fecha", { ascending: false }).limit(300))]);
+  const [cl, pays] = await Promise.all([q(sb.from("clients").select("id,nombre,estado,ficha").is("archivado_en", null).order("nombre")), q(sb.from("payments").select("*").order("fecha", { ascending: false }).limit(300))]);
   S.coach.cobCl = cl;
   const act = cl.filter(c => c.estado !== "baja");
   const rows = act.map(c => { const p = (c.ficha || {}).pago || {}; const last = pays.find(x => x.client_id === c.id); return { c, p, last, prox: p.proximoCobro || "" }; });
@@ -1406,7 +1406,52 @@ async function tplLib() { return await q(sb.from("workout_templates").select("id
 function exDatalist() { return `<datalist id="dl-ex">${(S.lib.ex || []).map(e => `<option value="${esc(e.nombre)}">`).join("")}</datalist>`; }
 const relTime = ts => { const d = new Date(ts); const mins = Math.round((Date.now() - d) / 6e4); if (mins < 60) return `hace ${Math.max(1, mins)} min`; const h = Math.round(mins / 60); if (h < 24) return `hace ${h} h`; return fdate(iso(d), { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }); };
 const clientName = id => ((S.coach.list.find(c => c.id === id) || {}).nombre || id);
-async function loadClients() { S.coach.list = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha").order("nombre")); return S.coach.list; }
+async function loadClients() { const all = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha,archivado_en,borrar_en").order("nombre")); S.coach.arch = all.filter(c => c.archivado_en); S.coach.list = all.filter(c => !c.archivado_en); return S.coach.list; }
+/* ---- Archivar y borrar clientes ---- */
+const diasHasta = f => Math.max(0, daysBetween(today(), iso(new Date(f))));
+const borraTxt = f => { const d = diasHasta(f); return d <= 0 ? "se elimina hoy" : d === 1 ? "se elimina mañana" : `se elimina en ${d} días`; };
+function archivadosHTML() {
+  const ar = S.coach.arch || []; if (!ar.length) return "";
+  return `<details class="card archs"><summary><span class="hh">${ICON.doc}Archivados <span class="cnt">${ar.length}</span></span><span class="tiny muted">Sin acceso a la app. Se borran del todo al cumplirse el plazo.</span></summary><div class="list">${ar.map(c => `<div class="it" data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}"><span class="feedn">${avatar(c.nombre)}<span><b>${esc(c.nombre)}</b><br><span class="tiny muted">Archivado ${esc(relTime(c.archivado_en))} · ${esc(borraTxt(c.borrar_en))} (${esc(fdate(iso(new Date(c.borrar_en)), { day: "numeric", month: "short" }))})</span></span></span><button class="btn sm" data-act="arch-undo" data-cid="${esc(c.id)}">Recuperar</button></div>`).join("")}</div></details>`;
+}
+function archivarCard(c) {
+  if (c.archivado_en) return "";
+  return `<div class="card"><h2>Archivar cliente</h2><p class="small" style="margin:0 0 10px">Deja de tener acceso a la app al momento y desaparece de tus listas, avisos y cobros. Puedes recuperarlo antes de que termine el plazo; después <b>se borra todo para siempre</b>: entrenos, registros, fotos, revisiones y su cuenta.</p>
+  <div class="row" style="gap:8px;flex-wrap:wrap"><label class="small" for="arch-d">Borrar a los</label><select id="arch-d" style="width:auto">${[[7, "7 días"], [15, "15 días"], [30, "30 días"], [60, "60 días"], [90, "90 días"]].map(([v, l]) => `<option value="${v}" ${v === 30 ? "selected" : ""}>${l}</option>`).join("")}</select><button class="btn" data-act="arch-open" data-cid="${esc(c.id)}">Archivar…</button></div></div>`;
+}
+function archBanner(c) {
+  if (!c.archivado_en) return "";
+  return `<div class="sysal warn archb" role="status"><span class="ricon">🗄️</span><span class="grow"><b>Cliente archivado · ${esc(borraTxt(c.borrar_en))}</b><span>El ${esc(fdate(iso(new Date(c.borrar_en)), { weekday: "long", day: "numeric", month: "long" }))} se borrarán para siempre sus datos, fotos y su cuenta. No tiene acceso a la app.</span></span><span class="row" style="gap:6px"><button class="btn sm" data-act="arch-undo" data-cid="${esc(c.id)}">Recuperar</button><button class="btn sm ghost danger" data-act="arch-now" data-cid="${esc(c.id)}">Borrar ya</button></span></div>`;
+}
+function archOpen(cid) {
+  const c = S.coach.c; const d = +(($("#arch-d") || {}).value || 30); const f = addDays(today(), d);
+  sheet(`<h2>¿Archivar a ${esc(c.nombre)}?</h2><div style="display:flex;flex-direction:column;gap:10px">
+  <p class="small" style="margin:0">Desde ahora no podrá entrar en la app ni recibirá avisos. Lo verás en <b>Clientes › Archivados</b>.</p>
+  <div class="alr warn">⚠ El <b>${esc(fdate(f, { weekday: "long", day: "numeric", month: "long" }))}</b> (en ${d} días) se borrarán para siempre sus entrenos, registros, fotos, revisiones, cobros y su cuenta. Hasta entonces puedes recuperarlo.</div>
+  <p class="tiny muted" style="margin:0">Las copias de seguridad cifradas lo conservan hasta que caducan (máx. un año) por si hubiera un error.</p>
+  <div class="row"><span class="grow"></span><button class="btn ghost" data-act="close">Cancelar</button><button class="btn pri" data-act="arch-do" data-cid="${esc(cid)}" data-d="${d}">Archivar</button></div></div>`);
+}
+async function archDo(cid, d) {
+  const borrar = parseD(addDays(today(), d)); borrar.setHours(4, 0, 0, 0);
+  try { await q(sb.from("clients").update({ archivado_en: new Date().toISOString(), borrar_en: borrar.toISOString() }).eq("id", cid)); sheet(""); toast("Cliente archivado"); await loadClients(); location.hash = "c"; } catch (e) { toast(errMsg(e)); }
+}
+async function archUndo(cid) {
+  try { await q(sb.from("clients").update({ archivado_en: null, borrar_en: null }).eq("id", cid)); toast("Cliente recuperado. Vuelve a tener acceso."); await loadClients(); route(); } catch (e) { toast(errMsg(e)); }
+}
+function archNowOpen(cid) {
+  const c = S.coach.c || (S.coach.arch || []).find(x => x.id === cid) || { nombre: cid };
+  sheet(`<h2>Borrar a ${esc(c.nombre)} ahora</h2><form id="f-archnow" data-cid="${esc(cid)}" style="display:flex;flex-direction:column;gap:10px">
+  <div class="alr bad">🚨 Se borran ya y para siempre sus datos, fotos, revisiones y su cuenta. No se puede deshacer.</div>
+  <div class="f"><label for="an-c">Escribe <b>BORRAR</b> para confirmar</label><input id="an-c" name="conf" autocomplete="off" autocapitalize="characters"></div>
+  <div class="row"><span class="grow"></span><button type="button" class="btn ghost" data-act="close">Cancelar</button><button class="btn pri danger">Borrar para siempre</button></div></form>`);
+}
+async function archNow(f) {
+  if (f.conf.value.trim().toUpperCase() !== "BORRAR") { toast("Escribe BORRAR para confirmar"); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { const { data, error } = await sb.functions.invoke("push", { method: "POST", body: { purgar: f.dataset.cid } }); if (error) throw error; if (!data || !data.ok) throw new Error((data && data.motivo) || "No se pudo borrar");
+    sheet(""); toast("Cliente borrado del todo"); S.coach.cid = null; await loadClients(); location.hash = "c";
+  } catch (e) { toast("No se pudo borrar: " + (e.message || e)); b.disabled = false; }
+}
 
 /* ---- Editor de workout (librería, asignaciones y programas) ---- */
 const PROG = [["", "Carga: sin indicar"], ["=", "Mantener carga"], ["+1.25", "Subir 1,25 kg"], ["+2.5", "Subir 2,5 kg"], ["+5", "Subir 5 kg"], ["+10", "Subir 10 kg"], ["-2.5", "Bajar 2,5 kg"], ["-5", "Bajar 5 kg"], ["-10%", "Bajar 10 %"], ["libre", "Elige tú (por RIR)"]];
@@ -1873,7 +1918,7 @@ async function viewCoachList() {
   const row = c => { const w = wl.filter(x => x.client_id === c.id), o = wo.filter(x => x.client_id === c.id); const wi = avg(w.map(wellIdx).filter(x => x != null)); const hasta = as.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop();
     return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre)}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
   shell("Clientes", `<div class="pghead"><h1 class="ptitle">Mis clientes <span class="cnt">${cl.length}</span></h1><span class="grow"></span><button class="btn dark" data-act="new-client"><span class="plus">+</span>Añadir cliente</button></div><p class="small muted" style="margin:0">Datos de los últimos 7 días</p>
-  <div class="card"><div class="tbl"><table class="ctab"><thead><tr><th>Cliente</th><th class="n">Entrenos</th><th class="n">Cuestionarios</th><th class="n">Bienestar</th><th>Planificado hasta</th><th></th></tr></thead><tbody>${cl.map(row).join("") || `<tr><td colspan="6" class="muted">Sin clientes todavía.</td></tr>`}</tbody></table></div></div>`);
+  <div class="card"><div class="tbl"><table class="ctab"><thead><tr><th>Cliente</th><th class="n">Entrenos</th><th class="n">Cuestionarios</th><th class="n">Bienestar</th><th>Planificado hasta</th><th></th></tr></thead><tbody>${cl.map(row).join("") || `<tr><td colspan="6" class="muted">Sin clientes todavía.</td></tr>`}</tbody></table></div></div>${archivadosHTML()}`);
 }
 function openNewClient() {
   sheet(`<h2>Nuevo cliente</h2><form id="f-newc" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label for="nc-n">Nombre (como lo verá él)</label><input id="nc-n" name="nombre" required></div><div class="f"><label for="nc-e">Email con el que entrará</label><input id="nc-e" name="email" type="email" required></div><div class="f"><label for="nc-o">Objetivo</label><textarea id="nc-o" name="objetivo"></textarea></div><p class="tiny muted" style="margin:0">Al crearla tendrás su código de alta en la pestaña «Cuenta»: se lo das junto con el enlace de la app para que se registre en «Nuevo atleta».</p><button class="btn pri block">Crear</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
@@ -1896,10 +1941,10 @@ async function viewCoachClient(cid) {
   const pl = (await q(sb.from("plans").select("*").eq("client_id", cid).limit(1)))[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
   const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) }));
   S.coach.c = c; S.coach.pl = pl;
-  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id);
+  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
-  <div class="cmain"><div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
+  <div class="cmain">${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
   S.coach.keep = false;
 }
 
@@ -2983,6 +3028,10 @@ document.addEventListener("click", async ev => {
       case "rep-del": if (confirmar(a)) { await q(sb.from("reports").delete().eq("id", id)); sheet(""); toast("Informe borrado"); refreshClient(); } break;
       case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r) sheet(`<h2>Vista del cliente</h2>${reportHTML(r)}<button class="btn" data-act="close">Cerrar</button>`); break; }
       case "nuevo-codigo": await q(sb.from("clients").update({ codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Código nuevo generado"); refreshClient(); break;
+      case "arch-open": archOpen(a.dataset.cid); break;
+      case "arch-do": archDo(a.dataset.cid, +a.dataset.d); break;
+      case "arch-undo": archUndo(a.dataset.cid); break;
+      case "arch-now": archNowOpen(a.dataset.cid); break;
       case "desvincular": if (confirmar(a)) { await q(sb.from("clients").update({ user_id: null, codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Cuenta desvinculada. Tiene un código nuevo."); refreshClient(); } break;
       case "copiar-alta": { const c = S.coach.c; const msg = `¡Hola ${c.nombre.split(" ")[0]}! Ya tienes tu app de entrenamiento: ${location.origin + location.pathname}\n\nEntra en «Nuevo atleta» con tu email (${c.email}), crea una contraseña y pon este código de alta: ${c.codigo_alta}\n\nEn el móvil puedes instalarla: Compartir → «Añadir a pantalla de inicio» (iPhone) o menú ⋮ → «Instalar aplicación» (Android).`; try { await navigator.clipboard.writeText(msg); toast("Mensaje copiado: pégalo en WhatsApp"); } catch { sheet(`<h2>Mensaje para el cliente</h2><textarea style="min-height:200px">${esc(msg)}</textarea><button class="btn" data-act="close">Cerrar</button>`); } break; }
       // librería
@@ -3104,7 +3153,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");

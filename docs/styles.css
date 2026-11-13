@@ -1337,3 +1337,13 @@ h1,h2,h3{font-family:var(--display);font-stretch:116%;font-weight:800;letter-spa
 .hlogo img{border-radius:9px}
 .pday.hoy{border-color:var(--accent)!important}
 .hnav .hme .av,.hnav .av{background:#fff!important;color:#1c1f22!important;box-shadow:0 0 0 2px rgba(255,255,255,.12)}
+/* Archivados */
+.archs summary{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;cursor:pointer;list-style:none}
+.archs summary::-webkit-details-marker{display:none}
+.archs summary .hh{margin:0}
+.archs[open] summary{margin-bottom:10px}
+.archs .it{cursor:pointer}
+.archb{margin:0 0 14px}
+.btn.danger{color:var(--bad)}
+.btn.pri.danger{background:var(--bad);color:#fff}
+.archs summary .hh svg{width:18px;height:18px}.archs summary .hh{display:inline-flex;align-items:center;gap:8px;font-size:17px}
