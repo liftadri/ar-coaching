@@ -1425,3 +1425,25 @@ body::before{content:none!important}
 .exnota textarea{margin-top:6px;min-height:56px;width:100%}
 .exn-nota{margin-top:4px;font-size:12px;font-weight:500;color:var(--ink);background:var(--surface-2);border-radius:8px;padding:5px 8px;white-space:normal}
 .av.lg{display:inline-grid;place-items:center;padding:0;gap:0;border-bottom:0}
+/* Sesión registrada (vista del entrenador) */
+.ses .seshd{flex-direction:column;align-items:stretch}
+.sesk{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.sesk span{background:var(--surface);border-radius:0;padding:10px 12px;min-width:0;align-items:flex-start;gap:2px}
+.sesk b{font-family:var(--display);font-size:19px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.sesk b small{font-family:inherit;font-size:11.5px;font-weight:600;margin-left:1px}
+.sesk em{text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--muted)}
+.stab td.n,.stab th.n{white-space:nowrap}
+.stab td.n b{font-weight:750}
+.exn-nota{margin-top:6px;padding:1px 0 1px 9px;border-left:2px solid var(--accent);background:none;border-radius:0;font-size:12.5px;font-weight:450;line-height:1.4;color:var(--muted)}
+.sescom{background:none;border-left:2px solid var(--accent);border-radius:0;padding:2px 0 2px 12px;font-size:13.5px;line-height:1.45}
+.sescom span{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:2px}
+@media (max-width:600px){.stab .exn{min-width:120px}.stab td,.stab th{padding:7px 8px}}
+/* El aviso no se monta encima del temporizador de descanso */
+.toast{z-index:70}
+body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
+.ses .seshd{flex-wrap:nowrap}
+.sesk{align-content:start;grid-auto-rows:auto}
+.sesk span{justify-content:flex-start;height:auto}
+.stab tr.nrow td{border-top:0;padding-top:0;padding-bottom:10px}
+.exn-nota{margin-top:0;font-size:13px;color:var(--ink)}
+.exn-nota span{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:1px}
