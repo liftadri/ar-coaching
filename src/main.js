@@ -450,7 +450,7 @@ function shell(title, body, opts = {}) {
   if (coach) {
     const cur = v === "c" || v.startsWith("c-") ? "c" : v.startsWith("lib") ? "lib" : v;
     const crumb = opts.crumb || [[null, title]];
-    $("#app").innerHTML = `<header class="hnav"><a class="hlogo" href="#inicio" aria-label="Inicio"><img src="./logo.jpg" alt=""></a>
+    $("#app").innerHTML = `<header class="hnav"><a class="hlogo" href="#inicio" aria-label="Inicio"><img src="./icon-192.png" alt=""></a>
     <nav class="hmenu" aria-label="Secciones">${COACH_TABS.filter(t => t[0] !== "mas").map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
     <span class="grow"></span><button class="hme" data-act="go" data-h="mas" aria-label="Tu perfil" aria-current="${cur === "mas"}">${avatar(S.me.nombre || "A", "dark")}</button></header>
     <div class="crumb"><div class="crumbin">${S.backTo ? `<button class="cback" data-act="go-back" aria-label="Volver">‹</button>` : ""}${crumb.map(([h, l, av], k) => `${k ? `<span class="sep">/</span>` : ""}${h ? `<a href="#${esc(h)}">${esc(l)}</a>` : `<b>${av ? avatar(l, "xs") : ""}${esc(l)}</b>`}`).join("")}${opts.sub ? `<span class="csub">${esc(opts.sub)}</span>` : ""}<span class="grow"></span>${opts.right || ""}</div></div>
