@@ -172,6 +172,7 @@ document.addEventListener("pointerout", ev => { if (ev.target.closest && ev.targ
 const S = { me: null, email: "", view: "hoy", plan: null, sub: {}, coach: { list: [], cid: null, tab: "plan", evo: "actividad" }, lib: { tab: "workouts", ex: null } };
 const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const ICON = {
+  readapt: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5h3v7h7v3h-7v7h-3v-7h-7v-3h7z"/></svg>`,
   t_cardio: svg('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
   t_msg: svg('<path d="M4 5h16v11H9l-5 4z"/>'),
   t_peso: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 9a4 4 0 0 1 8 0M12 9l1.5-2"/>'),
@@ -860,7 +861,7 @@ async function viewHoy() {
   loading("Hoy");
   const t = today();
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana,leido_en").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
-  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy(); const habs = await habitosHoy(plan); const pushc = await pushCardHoy();
+  const w = weekNow(plan); const lastW = wt[0]; const tbh = await tablonHoy(); const habs = await habitosHoy(plan); const pushc = await pushCardHoy(); const rah = await readaptHoy();
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
@@ -868,7 +869,7 @@ async function viewHoy() {
   <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(w.nombre)}</span>${esc(w.bloque)}${w.tipo && w.tipo !== "carga" ? " · " + esc(cap(w.tipo)) : ""}</div>${w.foco ? `<p class="hfoco">${esc(w.foco)}</p>` : ""}` : ""}</section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${rp[0] && !rp[0].leido_en ? `<button class="card revnew" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="pnew">Nueva</span> <span class="tiny">Revisión del ${esc(fdate(rp[0].fecha, { day: "numeric", month: "long" }))}</span><br><b>${esc(rp[0].titular || "Tu revisión semanal")}</b><br><span class="tiny muted">Toca para leerla</span></span><span class="chev">›</span></button>` : ""}
-  ${pushc}${tbh}
+  ${pushc}${rah}${tbh}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>${prox[0] || atras.length ? "Día de descanso" : "Nada programado para hoy"}</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : atras.length ? "Recupera bien" : "Cuando Adrián te programe algo, aparecerá aquí"}</span></span></div>`}
   </div></div>
@@ -1026,7 +1027,7 @@ function exMarks(nombre, wo, prev) {
 }
 async function viewWorkout(id) {
   loading("Entreno");
-  const [ar, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("id", id).limit(1)), q(sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(150))]);
+  const [ar, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("id", id).limit(1)), q(sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(150)), exLib().catch(() => [])]);
   const a = ar[0]; if (!a) { location.hash = "entreno"; return; }
   const c = a.contenido || {}; let draft = {}; try { draft = JSON.parse(localStorage.getItem(draftKey(id)) || "{}"); } catch { }
   const lastSets = name => { for (const w of wo) { const s = (w.sets || []).filter(x => x.ejercicio === name); if (s.length) return { fecha: w.fecha, s }; } return null; };
@@ -1041,7 +1042,7 @@ async function viewWorkout(id) {
   ${exs.map((e, ei) => { const n = seriesOf(e.sxr); const prev = lastSets(e.nombre); if (e.series && e.series.length) return presClient(e, ei, prev, draft, wo);
     const prevKg = prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
     const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev); const rs = restSecs(e.descanso);
-    return `<div class="ex" data-rest="${rs}" data-exn="${esc(e.nombre)}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${restBtn(rs)}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>${n ? mk.html : ""}
+    return `<div class="ex" data-rest="${rs}" data-exn="${esc(e.nombre)}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3>${exHasFicha(e.nombre) ? ` <button type="button" class="btn ghost sm exi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">ⓘ Cómo</button>` : ""} <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}<div class="target">${esc([e.sxr, e.rir && e.rir !== "—" ? "RIR " + e.rir : "", e.descanso && e.descanso !== "—" ? "descanso " + e.descanso : ""].filter(Boolean).join(" · "))}</div>${restBtn(rs)}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>${n ? mk.html : ""}
     ${n ? `<div class="seth"><span>#</span><span>Kg</span><span>Reps</span><span>Te quedaban</span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "kg")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "reps")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "RIR")}"></div>`; }).join("")}</div>`
       : `<label class="small" style="display:flex;gap:10px;align-items:center"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""} style="width:22px;height:22px"> Hecho</label>`}</div>`; }).join("")}
   <div class="card"><h2>Al terminar</h2>
@@ -1096,7 +1097,7 @@ function presClient(e, ei, prev, draft, wo) {
       <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}</div></div>`;
   }).join("");
   const mk = exMarks(e.nombre, wo, prev);
-  return `<div class="ex" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3> <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${restBtn(restSecs(e.descanso))}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
+  return `<div class="ex" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}"><div>${e.bloque ? `<span class="chip">${esc(e.bloque)}</span> ` : ""}<h3 style="display:inline">${esc(e.nombre)}</h3>${exHasFicha(e.nombre) ? ` <button type="button" class="btn ghost sm exi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">ⓘ Cómo</button>` : ""} <button type="button" class="btn ghost sm hist" data-act="ex-hist" data-n="${esc(e.nombre)}">Historial</button>${pg ? `<div class="prog">🎯 ${esc(pg.t)}</div>` : ""}${e.descanso && e.descanso !== "—" ? `<div class="target">Descanso ${esc(e.descanso)}</div>` : ""}${restBtn(restSecs(e.descanso))}${e.notas ? `<div class="tiny muted" style="margin-top:4px">${esc(e.notas)}</div>` : ""}${safeUrl(e.video) ? `<a class="vbtn" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer">▶ Vídeo</a>` : ""}</div>
 ${mk.html}
   <div class="psets">${rows}</div>
   ${eff[0] === "rpe" ? `<p class="tiny muted" style="margin:6px 0 0">RPE: 10 = no podías hacer ni una más · 9 = te quedaba 1 · 8 = te quedaban 2.</p>` : eff[0] === "esf" ? `<p class="tiny muted" style="margin:6px 0 0">Esfuerzo: cómo de dura te ha parecido la serie, de 0 a 10.</p>` : ""}</div>`;
@@ -1325,7 +1326,7 @@ async function viewMas() {
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
 }
 /* ================= Copias de seguridad ================= */
-const BK_ORDEN = ["clients", "plans", "exercises", "foods", "recipes", "workout_templates", "programs", "assignments", "workouts", "wellness", "weights", "measurements", "photos", "meal_logs", "tests", "events", "reports", "reviews", "payments", "leads", "onboarding", "posts", "post_reads", "post_reactions"];
+const BK_ORDEN = ["clients", "plans", "exercises", "foods", "recipes", "workout_templates", "programs", "assignments", "workouts", "wellness", "weights", "measurements", "photos", "meal_logs", "tests", "events", "reports", "reviews", "payments", "leads", "onboarding", "posts", "post_reads", "post_reactions", "consentimientos", "habit_logs", "ajustes", "readaptaciones", "purga_log"];
 const BK_PK = { plans: "client_id", onboarding: "client_id", post_reads: "post_id,client_id", post_reactions: "post_id,client_id,emoji", exercises: "nombre" };
 const kb = n => n > 1048576 ? fmt(n / 1048576, 1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
 async function backupCard() {
@@ -1572,6 +1573,10 @@ async function viewInicio() {
     q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
     q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => [])]);
   const sysHtml = await sysBanner();
+  const t35 = addDays(t, -35);
+  const [wl35, ca35, raT] = await Promise.all([q(sb.from("workouts").select("client_id,fecha,rpe_sesion,duracion_min").gte("fecha", t35)).catch(() => []), q(sb.from("assignments").select("client_id,fecha,resultado").eq("tipo", "cardio").eq("hecho", true).gte("fecha", t35)).catch(() => []), q(sb.from("readaptaciones").select("client_id,protocolo").eq("estado", "activa")).catch(() => [])]);
+  const loadBy = {}; const addL = (cid, f, v) => { if (!v) return; const o = loadBy[cid] = loadBy[cid] || {}; o[f] = (o[f] || 0) + v; };
+  wl35.forEach(w => addL(w.client_id, w.fecha, w.rpe_sesion != null && w.duracion_min ? w.rpe_sesion * w.duracion_min : 0)); ca35.forEach(x => { const r = x.resultado || {}; addL(x.client_id, x.fecha, r.rpe != null && r.min ? r.rpe * r.min : 0); });
   const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
   const hasta = cid => asAll.filter(x => x.client_id === cid).map(x => x.fecha).sort().pop();
@@ -1589,6 +1594,7 @@ async function viewInicio() {
   cl.forEach(c => { const pg = ((c.ficha || {}).pago || {}); if (c.estado !== "baja" && pg.proximoCobro && pg.proximoCobro <= t && num(pg.cuota)) at.push({ p: 2, k: "warn", c: c.id, t: pg.proximoCobro < t ? "Cobro vencido" : "Cobro hoy", s: `${c.nombre} · ${eur(pg.cuota)} · ${fdate(pg.proximoCobro, { day: "numeric", month: "short" })}`, a: `data-act="go" data-h="cobros"`, b: "Cobros" }); });
   activos.forEach(c => { const f = hasta(c.id); const d = f ? daysBetween(t, f) : null; if (d == null || d <= 3) at.push({ p: 4, k: "warn", c: c.id, t: d == null ? "No tiene nada programado" : d < 0 ? `Sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`, s: c.nombre, a: `data-act="go-plan" data-cid="${esc(c.id)}"`, b: "Planificar" }); });
   activos.filter(c => c.user_id && !ultimo(c.id)).forEach(c => at.push({ p: 5, k: "warn", c: c.id, t: "Sin registrar nada en 7 días", s: c.nombre, a: go(c.id, "plan"), b: "Ver" }));
+  Object.entries(loadBy).forEach(([cid, L]) => { if (!activos.some(c => c.id === cid)) return; cargaAlertas(L, t, raT.some(r => r.client_id === cid && r.protocolo === "tendon")).forEach(txt => at.push({ p: 1, k: "warn", c: cid, t: "Pico de carga", s: `${clientName(cid)} · ${txt}`, a: go(cid, "evo"), b: "Ver" })); });
   drafts.forEach(r => at.push({ p: 6, k: "info", c: r.client_id, t: "Informe en borrador", s: `${clientName(r.client_id)} · ${fdate(r.fecha, { day: "numeric", month: "short" })}`, a: go(r.client_id, "informes"), b: "Publicar" }));
   at.sort((a, b) => a.p - b.p);
   // ---- KPIs
@@ -1884,15 +1890,15 @@ async function comFicha(cid) {
 
 /* ---- Tests: agrupados por nombre y comparados en el tiempo ---- */
 const tKey = n => String(n || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-const tMain = x => x.valor != null ? +x.valor : (x.izq != null && x.der != null ? (+x.izq + +x.der) / 2 : x.izq != null ? +x.izq : x.der != null ? +x.der : null);
-const tLsi = x => x.izq && x.der ? Math.round(100 * Math.min(+x.izq, +x.der) / Math.max(+x.izq, +x.der)) : null;
+const tMain = x => x.valor != null ? +x.valor : x.afectado && x[x.afectado] != null ? +x[x.afectado] : (x.izq != null && x.der != null ? (+x.izq + +x.der) / 2 : x.izq != null ? +x.izq : x.der != null ? +x.der : null);
+const tLsi = x => tLsiX(x);
 function tDelta(a, b, menos, u) {
   if (a == null || b == null) return "";
   const d = a - b, pc = b ? 100 * d / Math.abs(b) : null; const good = d === 0 ? null : (d > 0) !== !!menos;
   return `<span class="tdelta ${good == null ? "" : good ? "up" : "down"}">${d > 0 ? "▲" : d < 0 ? "▼" : "="} ${d > 0 ? "+" : ""}${fmt(d, 2)}${u ? " " + esc(u) : ""}${pc != null && d !== 0 ? ` <em>(${d > 0 ? "+" : ""}${fmt(pc, 1)} %)</em>` : ""}</span>`;
 }
 function testsHTML(ts, coach) {
-  const g = {}; ts.forEach(x => { const k = tKey(x.nombre); (g[k] = g[k] || []).push(x); });
+  const g = {}; ts.filter(x => !x.referencia).forEach(x => { const k = tKey(x.nombre); (g[k] = g[k] || []).push(x); }); ts.filter(x => x.referencia && !ts.some(y => !y.referencia && y.clave === x.clave)).forEach(x => { const k = tKey(x.nombre) + "#ref"; (g[k] = g[k] || []).push(x); });
   const grupos = Object.values(g).map(xs => xs.slice().sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.created_at || "").localeCompare(String(b.created_at || ""))))
     .sort((a, b) => String(b[b.length - 1].fecha || "").localeCompare(String(a[a.length - 1].fecha || "")));
   if (!grupos.length) return `<div class="card"><div class="empty">${coach ? "Sin tests todavía. Añade el primero abajo; si repites un test con el mismo nombre, se compara solo." : "Aquí verás tus tests y cómo mejoran cada vez que los repitas."}</div></div>`;
@@ -1902,12 +1908,329 @@ function testsHTML(ts, coach) {
     const best = xs.map(tMain).filter(v => v != null).reduce((m, v) => m == null ? v : menos ? Math.min(m, v) : Math.max(m, v), null);
     const pts = xs.filter(x => x.fecha && tMain(x) != null).map(x => ({ x: x.fecha, y: tMain(x) }));
     return `<div class="card tcard"><div class="thead"><div><h2>${esc(last.nombre)}</h2><span class="tiny muted">${esc(cap(last.categoria || ""))}${xs.length > 1 ? ` · ${xs.length} mediciones` : ""}${menos ? " · mejor cuanto menos" : ""}</span></div>${best != null && lv === best && xs.length > 1 ? `<span class="chip ok">Mejor marca</span>` : ""}</div>
-      <div class="tkpis"><div><span>Último${last.fecha ? " · " + esc(fdate(last.fecha, { day: "numeric", month: "short" })) : ""}</span><b>${lv != null ? fmt(lv, 2) : "—"}<small>${esc(u)}</small></b>${bil ? `<em>I ${fmt(last.izq, 2)} · D ${fmt(last.der, 2)}${tLsi(last) != null ? ` · LSI ${tLsi(last)} %` : ""}</em>` : ""}</div>
+      <div class="tkpis"><div><span>Último${last.afectado && last.valor == null ? " · pierna afectada" : ""}${last.fecha ? " · " + esc(fdate(last.fecha, { day: "numeric", month: "short" })) : ""}</span><b>${lv != null ? fmt(lv, 2) : "—"}<small>${esc(u)}</small></b>${bil ? `<em>I ${fmt(last.izq, 2)} · D ${fmt(last.der, 2)}${tLsi(last) != null ? ` · LSI ${tLsi(last)} %` : ""}</em>` : ""}</div>
       ${prev ? `<div><span>Vs. anterior${prev.fecha ? " · " + esc(fdate(prev.fecha, { day: "numeric", month: "short" })) : ""}</span>${tDelta(lv, tMain(prev), menos, u)}<em>antes ${fmt(tMain(prev), 2)} ${esc(u)}${bil && tLsi(prev) != null ? ` · LSI ${tLsi(prev)} %` : ""}</em></div>` : `<div class="tsolo"><span>Progreso</span><em>Repite este test para compararlo</em></div>`}
       ${xs.length > 2 ? `<div><span>Desde el inicio${first.fecha ? " · " + esc(fdate(first.fecha, { day: "numeric", month: "short", year: "2-digit" })) : ""}</span>${tDelta(lv, tMain(first), menos, u)}<em>al empezar ${fmt(tMain(first), 2)} ${esc(u)}</em></div>` : ""}</div>
-      ${pts.length >= 2 ? lineChart(pts, { label: last.nombre, unit: u, dec: Math.max(...pts.map(p => p.y)) - Math.min(...pts.map(p => p.y)) < 2 ? 2 : 1 }) : ""}
+      ${last.clave ? `<div class="textra">${tExtraHTML(last, coach ? ts : null, coach)}</div>` : ""}${pts.length >= 2 ? lineChart(pts, { label: last.nombre, unit: u, dec: Math.max(...pts.map(p => p.y)) - Math.min(...pts.map(p => p.y)) < 2 ? 2 : 1 }) : ""}
       <details class="thist"><summary>Historial (${xs.length})</summary><table><tbody>${xs.slice().reverse().map((x, i, arr) => { const p = arr[i + 1]; return `<tr><td>${x.fecha ? esc(fdate(x.fecha)) : "—"}</td><td class="n"><b>${tMain(x) != null ? fmt(tMain(x), 2) : "—"}</b> ${esc(x.unidad || "")}${x.izq != null || x.der != null ? `<div class="tiny muted">I ${fmt(x.izq, 2)} · D ${fmt(x.der, 2)}${tLsi(x) != null ? ` · LSI ${tLsi(x)} %` : ""}</div>` : ""}</td><td class="n">${p ? tDelta(tMain(x), tMain(p), x.mejor_es_menos, "") : ""}</td><td class="tiny muted">${esc(x.notas || "")}</td>${coach ? `<td class="n"><button class="btn ghost sm" data-act="test-del" data-id="${esc(x.id)}">Borrar</button></td>` : ""}</tr>`; }).join("")}</tbody></table></details></div>`;
   }).join("")}</div>`;
+}
+
+/* ================= PREVENCIÓN DE LESIONES Y READAPTACIÓN =================
+   Basado en los temas de Prevención de lesiones y readaptación (Dr. E. Carballeira, ULL). */
+
+/* ---- Fichas de ejercicio ---- */
+const FASES_EX = { p: "Prevención", m1: "Muscular · Protección", m2: "Muscular · Carga funcional", m3: "Muscular · Fuerza", m4: "Muscular · Velocidad", t1: "Tendón · Isométrico", t2: "Tendón · HSR", t3: "Tendón · Excéntrico", t4: "Tendón · Elástico", t5: "Tendón · Específico", l0: "LCA · Preoperatorio", l1: "LCA · Fase 1", l2: "LCA · Fase 2", l3: "LCA · Fase 3", l4: "LCA · Fase 4" };
+const ACTIV = { isometrica: "Isométrica", excentrica: "Excéntrica", concentrica: "Concéntrica", cea: "Ciclo estiramiento-acortamiento", mixta: "Concéntrica + excéntrica" };
+const exHasFicha = n => { const e = (S.lib.ex || []).find(x => tKey(x.nombre) === tKey(n)); return !!(e && (e.claves || e.params || e.video_url)); };
+function exFicha(e, full) {
+  if (!e) return "";
+  const row = (l, v, cls = "") => v && v !== "—" ? `<div class="exf-r ${cls}"><b>${l}</b><span>${esc(v)}</span></div>` : "";
+  return `<div class="exf">${(e.fases || []).length || e.activacion ? `<div class="row" style="gap:6px;flex-wrap:wrap">${(e.fases || []).map(f => `<span class="chip">${esc(FASES_EX[f] || f)}</span>`).join("")}${e.activacion ? `<span class="chip acc">${esc(ACTIV[e.activacion] || e.activacion)}</span>` : ""}</div>` : ""}
+  ${row("Dosis", e.params)}${row("Claves técnicas", e.claves)}${full ? row("Progresión", e.progresion) + row("Regresión", e.regresion) : ""}${row("Precauciones", e.contraindicaciones, "warn")}${full ? row("Fuente", e.fuente, "muted") : ""}</div>`;
+}
+function exInfoOpen(nombre) {
+  const e = (S.lib.ex || []).find(x => tKey(x.nombre) === tKey(nombre));
+  if (!e) { toast("Este ejercicio no tiene ficha"); return; }
+  sheet(`<h2>${esc(e.nombre)}</h2><div style="display:flex;flex-direction:column;gap:10px">${e.grupo || e.material ? `<p class="small muted" style="margin:0">${esc([e.grupo, e.material].filter(Boolean).join(" · "))}</p>` : ""}${exFicha(e, S.me.role === "coach")}${e.notas ? `<p class="small" style="margin:0">${esc(e.notas)}</p>` : ""}${e.video_url && safeUrl(e.video_url) ? `<a class="btn" href="${esc(safeUrl(e.video_url))}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : ""}<button class="btn ghost" data-act="close">Cerrar</button></div>`);
+}
+
+/* ---- Catálogo de tests ---- */
+const TCAT_G = [["saltos", "Saltos"], ["hops", "Hop tests"], ["equilibrio", "Equilibrio"], ["iso", "Fuerza isométrica (dinamómetro)"], ["dinamica", "Fuerza dinámica"], ["mov", "Calidad de movimiento"], ["articular", "Articular (rodilla)"], ["cuest", "Cuestionarios"]];
+const LSI_STD = [90, 85], LSI_HOP = [95, 90];
+const OHS_ITEMS = [["talones", "Talones se elevan", "Déficit de dorsiflexión de tobillo"], ["valgo", "Valgo dinámico de rodilla", "Déficit de control del glúteo medio"], ["tronco", "Flexión excesiva de tronco", "Déficit de movilidad de cadera o dorsal"], ["brazos", "Brazos caen hacia delante", "Movilidad escapular / torácica limitada"]];
+const SLS_ITEMS = [["valgo", "Valgo de rodilla"], ["pelvis", "La pelvis cae o rota"], ["tronco", "Inclinación del tronco"], ["equilibrio", "Pierde el equilibrio"]];
+const DROP_ITEMS = [["valgo", "Valgo dinámico de rodilla (↑ riesgo LCA)"], ["cadera", "Hundimiento de cadera (mal frenado excéntrico)"], ["estab", "Tarda en estabilizarse tras el impacto"], ["rigidez", "Rigidez excesiva (contacto muy corto)"], ["alineacion", "Desalineación tronco–rodilla–pie"], ["ruido", "Aterrizaje ruidoso"]];
+const DINA = (k, n, proto) => ({ k, n, g: "iso", u: "N", tipo: "bil", lsi: LSI_STD, proto: proto + " 3 intentos de 3–5 s con 30–60 s de descanso; se anota el mejor. Misma posición, mismo dinamómetro y mismo brazo de palanca en cada medición." });
+const TCAT = [
+  { k: "cmj", n: "CMJ (salto con contramovimiento)", g: "saltos", u: "cm", tipo: "simple", proto: "Manos en la cadera, contramovimiento libre hasta la profundidad que elija y saltar al máximo. 3 intentos con 30–60 s; se anota el mejor. Plataforma de contacto o app (p. ej. My Jump). Observa también el aterrizaje." },
+  { k: "cmj_ul", n: "CMJ a una pierna", g: "saltos", u: "cm", tipo: "bil", lsi: LSI_STD, proto: "Igual que el CMJ, apoyado en una sola pierna. 3 intentos por pierna. Criterio de fase de alta velocidad (lesión muscular): LSI > 90 %." },
+  { k: "drop", n: "Drop jump · recepción", g: "saltos", u: "errores", tipo: "obs", items: DROP_ITEMS, menos: true, extra: [["altura", "Altura del cajón (cm)"]], proto: "Cajón de 20–30 cm. Primero bipodal y luego monopodal. Graba en vídeo de frente y de lado. «Aterriza en silencio»: el sonido del aterrizaje se relaciona con la fuerza de impacto (Wernli 2016)." },
+  { k: "hop_single", n: "Single hop (distancia)", g: "hops", u: "cm", tipo: "bil", lsi: LSI_HOP, proto: "Salto horizontal a una pierna, aterrizando con la misma y manteniendo 2 s. 3 intentos válidos por pierna. Retorno al deporte: LSI > 95 % (con fuerza conservada)." },
+  { k: "hop_triple", n: "Triple hop (distancia)", g: "hops", u: "cm", tipo: "bil", lsi: LSI_HOP, proto: "Tres saltos seguidos a una pierna, aterrizaje estable al final. 3 intentos válidos por pierna. Retorno al deporte: LSI > 95 %." },
+  { k: "hop_side", n: "Side hop (lateral)", g: "hops", u: "saltos", tipo: "bil", lsi: LSI_HOP, proto: "Saltos laterales a una pierna sobre dos líneas separadas 30 cm durante 30 s. Se cuentan los saltos válidos. Retorno al deporte: LSI > 95 %." },
+  { k: "ybal", n: "Y-Balance / SEBT", g: "equilibrio", u: "%", tipo: "ybal", lsi: LSI_STD, proto: "Apoyo monopodal y alcance máximo con el pie libre en dirección anterior, posteromedial y posterolateral. 3 intentos por dirección; se anota el mejor. Longitud de pierna: espina ilíaca anterosuperior – maléolo interno. Diferencia entre piernas > 4 cm = déficit (Gribble 2012)." },
+  DINA("dina_ext90", "Extensión de rodilla isométrica 90° (sentado)", "Sentado, rodilla a 90°, dinamómetro en la tibia distal."),
+  DINA("dina_ext40", "Extensión de rodilla isométrica 40°", "Rodilla a 40° de flexión. En LCA, LSI > 85 % habilita la pliometría baja y > 90 % la Fase 4."),
+  DINA("dina_flex90", "Flexión de rodilla isométrica 90° (prono)", "Prono, rodilla a 90°, dinamómetro en el talón."),
+  DINA("dina_abd", "Abducción de cadera isométrica", "Supino o decúbito lateral, dinamómetro por encima de la rodilla."),
+  DINA("dina_add", "Aducción de cadera isométrica", "Supino, dinamómetro en la cara interna de la rodilla."),
+  DINA("dina_ri", "Rotación interna de cadera isométrica", "Sentado con cadera y rodilla a 90°."),
+  DINA("dina_extc", "Extensión de cadera isométrica (rodilla extendida)", "Prono, rodilla extendida, dinamómetro en el muslo distal."),
+  { k: "hq", n: "Ratio isquios:cuádriceps", g: "iso", u: "ratio", tipo: "hq", proto: "Fuerza de flexores y extensores de rodilla en la misma posición, ángulo y dinamómetro. Ratio isquios:cuádriceps < 0,60 → ↑ riesgo de rotura de isquios (Croisier 2008, valores isocinéticos en Nm; con dinamómetro manual úsalo como orientación y compara siempre con su propio histórico)." },
+  { k: "prensa_ul", n: "Prensa unilateral 45° (× peso corporal)", g: "dinamica", u: "× PC", tipo: "prensa", lsi: LSI_STD, proto: "Prensa a 45°, una pierna. Carga = peso del carro + discos. Se busca la carga máxima con técnica correcta (o 1RM estimado). Criterio Melbourne para pasar a Fase 3 tras LCA: ≥ 1,5 × peso corporal." },
+  { k: "ohs", n: "Overhead squat", g: "mov", u: "errores", tipo: "obs", items: OHS_ITEMS, menos: true, proto: "Barra de PVC por encima de la cabeza, pies al ancho de hombros, 3–5 repeticiones. Vista frontal y lateral. Cada error orienta a una causa probable: úsalo para diseñar el programa, no para predecir lesiones (Bahr 2016)." },
+  { k: "sls", n: "Sentadilla a una pierna (calidad)", g: "mov", u: "errores", tipo: "obs_bil", items: SLS_ITEMS, menos: true, proto: "5 repeticiones por pierna a la profundidad que controle. Criterio para pasar a Fase 3 tras LCA: sin valgo y con la pelvis estable." },
+  { k: "edema", n: "Edema stroke test", g: "articular", u: "grado", tipo: "cat", opts: [[0, "0 · negativo"], [0.5, "Traza"], [1, "1+"], [2, "2+"], [3, "3+"]], menos: true, proto: "Barrer de abajo arriba la cara medial de la rodilla y luego la lateral hacia abajo; observar la onda medial. 0 = sin onda; traza = onda pequeña medial; 1+ = onda pequeña clara; 2+ = la onda aparece sin maniobra previa; 3+ = gran abombamiento. Objetivo en LCA: 0–1+ sin rebote a las 24 h." },
+  { k: "rom_ext", n: "Déficit de extensión de rodilla", g: "articular", u: "°", tipo: "simple", menos: true, proto: "Goniómetro en supino. Anota los grados que faltan hasta 0° (0 = extensión completa). Objetivo precoz tras LCA: 0°." },
+  { k: "rom_flex", n: "Flexión de rodilla (ROM)", g: "articular", u: "°", tipo: "bil", lsi: [95, 90], proto: "Goniómetro en supino, flexión activa máxima. Objetivos tras LCA: 0–90° en Fase 1 y ROM completo bilateral en Fase 2." },
+  { k: "lag", n: "Lag de extensión (SLR)", g: "articular", u: "°", tipo: "simple", menos: true, proto: "Elevación de pierna recta: grados que se dobla la rodilla al subir. < 5° = sin lag (criterio de Fase 1 → 2 tras LCA)." },
+  { k: "visa_p", n: "VISA-P (tendón rotuliano)", g: "cuest", u: "/100", tipo: "score", max: 100, bands: [[80, "ok", "Próximo a asintomático"], [60, "warn", "Leve-moderado: entrena con dolor"], [30, "warn", "Moderado: entrenamiento limitado"], [0, "bad", "Severo: no puede practicar"]], proto: "Cuestionario validado de 8 preguntas (0–100). Rellénalo con el cliente con la versión oficial en español y anota la puntuación total. > 80 = criterio para el retorno." },
+  { k: "visa_a", n: "VISA-A (tendón de Aquiles)", g: "cuest", u: "/100", tipo: "score", max: 100, bands: [[80, "ok", "Próximo a asintomático"], [60, "warn", "Leve-moderado"], [30, "warn", "Moderado"], [0, "bad", "Severo"]], proto: "Equivalente al VISA-P para el tendón de Aquiles (0–100). Versión oficial en español; anota la puntuación total." },
+  { k: "acl_rsi", n: "ACL-RSI (preparación psicológica)", g: "cuest", u: "%", tipo: "score", max: 100, bands: [[90, "ok", "Confianza para volver"], [65, "warn", "Confianza intermedia"], [0, "bad", "Baja confianza / miedo a recaer"]], proto: "12 preguntas sobre emociones, confianza y valoración del riesgo tras LCA (0–100 %). Usa la versión oficial en español. Criterio de alta del tema: > 90 %." },
+  { k: "tsk", n: "Tampa (TSK-11, kinesiofobia)", g: "cuest", u: "pts", tipo: "score", max: 44, menos: true, bands: [[0, "ok", "Kinesiofobia baja"], [19, "warn", "Kinesiofobia moderada"], [28, "bad", "Kinesiofobia alta"]], proto: "11 preguntas (11–44 puntos). Más puntos = más miedo al movimiento. Criterio de alta del tema: ≤ 18." },
+];
+const TC = Object.fromEntries(TCAT.map(t => [t.k, t]));
+const LADOS = [["", "—"], ["izq", "Izquierda"], ["der", "Derecha"]];
+function tLsiX(x) {
+  if (x.izq == null || x.der == null || !+x.izq || !+x.der) return null;
+  const t = TC[x.clave]; const menos = t ? t.menos : x.mejor_es_menos;
+  if (x.afectado) { const a = +x[x.afectado], s = +x[x.afectado === "izq" ? "der" : "izq"]; return Math.round(100 * (menos ? s / a : a / s)); }
+  return Math.round(100 * Math.min(+x.izq, +x.der) / Math.max(+x.izq, +x.der));
+}
+const semaf = (v, [ok, warn]) => v == null ? "" : v >= ok ? "ok" : v >= warn ? "warn" : "bad";
+function tInterp(x) {
+  const t = TC[x.clave]; if (!t) return null; const d = x.datos || {}; const out = [];
+  const lsi = tLsiX(x);
+  if (t.lsi && lsi != null) out.push({ n: semaf(lsi, t.lsi), txt: `LSI ${lsi} %${x.afectado ? ` (afectada: ${x.afectado === "izq" ? "izquierda" : "derecha"})` : ""} · objetivo ≥ ${t.lsi[0]} %` });
+  if (t.tipo === "ybal") { ["ant", "pm", "pl"].forEach(dn => { const a = num(d[dn + "_izq"]), b = num(d[dn + "_der"]); if (a != null && b != null && Math.abs(a - b) > 4) out.push({ n: "bad", txt: `${{ ant: "Anterior", pm: "Posteromedial", pl: "Posterolateral" }[dn]}: ${fmt(Math.abs(a - b), 1)} cm de diferencia (> 4 cm)` }); }); }
+  if (t.tipo === "hq") ["izq", "der"].forEach(l => { const r = x[l]; if (r != null) out.push({ n: r >= 0.6 ? "ok" : "bad", txt: `${l === "izq" ? "Izquierda" : "Derecha"}: ${fmt(r, 2)}${r < 0.6 ? " (< 0,60 → ↑ riesgo de lesión de isquios)" : ""}` }); });
+  if (t.tipo === "prensa") ["izq", "der"].forEach(l => { const r = x[l]; if (r != null) out.push({ n: r >= 1.5 ? "ok" : "warn", txt: `${l === "izq" ? "Izquierda" : "Derecha"}: ${fmt(r, 2)} × peso corporal (objetivo ≥ 1,5)` }); });
+  if (t.tipo === "score" && x.valor != null) { const v = +x.valor; const b = t.menos ? t.bands.slice().reverse().find(([u]) => v >= u) : t.bands.find(([u]) => v >= u); if (b) out.push({ n: b[1], txt: `${fmt(v, 0)} ${t.u}: ${b[2]}` }); }
+  if (t.tipo === "cat" && x.valor != null) out.push({ n: +x.valor <= 1 ? "ok" : +x.valor <= 2 ? "warn" : "bad", txt: (t.opts.find(o => o[0] === +x.valor) || [0, ""])[1] });
+  if (t.tipo === "obs" || t.tipo === "obs_bil") { const err = t.items.filter(([k]) => d[k] || d[k + "_izq"] || d[k + "_der"]); out.push(err.length ? { n: "warn", txt: err.map(([k, l, c]) => `${l}${t.tipo === "obs_bil" ? ` (${[d[k + "_izq"] ? "izq" : "", d[k + "_der"] ? "der" : ""].filter(Boolean).join(" y ")})` : ""}${c ? ` → ${c}` : ""}`).join(" · ") } : { n: "ok", txt: "Sin errores observados" }); }
+  if (t.k === "rom_ext" && x.valor != null) out.push({ n: +x.valor <= 0 ? "ok" : +x.valor <= 5 ? "warn" : "bad", txt: +x.valor <= 0 ? "Extensión completa (0°)" : `Le faltan ${fmt(x.valor, 0)}° para la extensión completa` });
+  if (t.k === "lag" && x.valor != null) out.push({ n: +x.valor < 5 ? "ok" : "bad", txt: +x.valor < 5 ? "Sin lag (< 5°)" : `Lag de ${fmt(x.valor, 0)}° (≥ 5°)` });
+  return out;
+}
+function tCatSelect(sel) {
+  return `<select name="clave" id="t-clave" data-act-change="t-clave"><option value="">Otro test (libre)</option>${TCAT_G.map(([g, l]) => `<optgroup label="${esc(l)}">${TCAT.filter(t => t.g === g).map(t => `<option value="${t.k}" ${sel === t.k ? "selected" : ""}>${esc(t.n)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+}
+function tCampos(k) {
+  const t = TC[k]; const inp = (n, l, ph = "") => `<div class="f"><label>${l}</label><input name="${n}" inputmode="decimal" placeholder="${esc(ph)}"></div>`;
+  const lado = `<div class="f"><label>Pierna afectada</label><select name="afectado">${LADOS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>`;
+  const ref = `<label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="referencia"> Valor de referencia previo a la lesión</label>`;
+  if (!t) return `<div class="grid2"><div class="f"><label>Nombre del test</label><input name="nombre" required placeholder="1RM sentadilla, test de Cooper…" list="tests-dl"></div><div class="f"><label>Categoría</label><input name="categoria" placeholder="fuerza, resistencia…"></div></div>
+    <div class="grid3"><div class="f"><label>Valor</label><input name="valor" inputmode="decimal"></div><div class="f"><label>Unidad</label><input name="unidad" placeholder="kg, cm, s"></div><label class="small" style="align-self:end"><input type="checkbox" name="menos"> Mejor cuanto menos</label></div>
+    <div class="grid2">${inp("izq", "Izquierda")}${inp("der", "Derecha")}</div>`;
+  const proto = `<details class="tproto" open><summary>Protocolo</summary><p>${esc(t.proto)}</p></details>`;
+  let f = "";
+  if (t.tipo === "simple") f = `<div class="grid2">${inp("valor", `Resultado (${t.u})`)}</div>`;
+  if (t.tipo === "bil") f = `<div class="grid3">${inp("izq", `Izquierda (${t.u})`)}${inp("der", `Derecha (${t.u})`)}${lado}</div>${ref}`;
+  if (t.tipo === "ybal") f = `<div class="grid3">${inp("long_izq", "Long. pierna izq. (cm)")}${inp("long_der", "Long. pierna der. (cm)")}${lado}</div>${["ant", "pm", "pl"].map(d => `<div class="grid2">${inp(d + "_izq", { ant: "Anterior", pm: "Posteromedial", pl: "Posterolateral" }[d] + " izq. (cm)")}${inp(d + "_der", { ant: "Anterior", pm: "Posteromedial", pl: "Posterolateral" }[d] + " der. (cm)")}</div>`).join("")}${ref}`;
+  if (t.tipo === "hq") f = `<div class="grid2">${inp("q_izq", "Cuádriceps izq.")}${inp("q_der", "Cuádriceps der.")}</div><div class="grid2">${inp("h_izq", "Isquios izq.")}${inp("h_der", "Isquios der.")}</div><div class="grid2"><div class="f"><label>Unidad</label><input name="u_hq" placeholder="N, kg, Nm" value="N"></div>${inp("angulo", "Ángulo de rodilla (°)", "90")}</div>`;
+  if (t.tipo === "prensa") f = `<div class="grid3">${inp("kg_izq", "Carga izq. (kg)")}${inp("kg_der", "Carga der. (kg)")}${inp("pc", "Peso corporal (kg)")}</div><div class="grid2">${lado}</div>${ref}`;
+  if (t.tipo === "obs") f = `${(t.extra || []).map(([n, l]) => `<div class="grid2">${inp(n, l)}</div>`).join("")}<fieldset class="medpick"><legend>Errores observados</legend>${t.items.map(([k, l, c]) => `<label class="mchk"><input type="checkbox" name="o_${k}"><span><b>${esc(l)}</b>${c ? `<br><span class="tiny muted">Causa probable: ${esc(c)}</span>` : ""}</span></label>`).join("")}</fieldset>`;
+  if (t.tipo === "obs_bil") f = `<fieldset class="medpick"><legend>Errores observados</legend>${t.items.map(([k, l]) => `<div class="obsrow"><span>${esc(l)}</span><label><input type="checkbox" name="o_${k}_izq"> Izq.</label><label><input type="checkbox" name="o_${k}_der"> Der.</label></div>`).join("")}</fieldset><div class="grid2">${lado}</div>`;
+  if (t.tipo === "score") f = `<div class="grid2">${inp("valor", `Puntuación total (${t.u})`)}</div>`;
+  if (t.tipo === "cat") f = `<div class="f"><label>Resultado</label><select name="valor">${t.opts.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></div>`;
+  return proto + f;
+}
+function readTest(f) {
+  const v = n => f[n] ? f[n].value.trim() : ""; const k = v("clave"); const t = TC[k];
+  const base = { client_id: S.coach.cid, fecha: v("fecha") || null, notas: v("notas") };
+  if (!t) return { ...base, nombre: v("nombre"), categoria: v("categoria"), valor: num(v("valor")), unidad: v("unidad"), izq: num(v("izq")), der: num(v("der")), mejor_es_menos: f.menos ? f.menos.checked : false };
+  const row = { ...base, clave: k, nombre: t.n, categoria: (TCAT_G.find(g => g[0] === t.g) || [0, ""])[1], unidad: t.u, mejor_es_menos: !!t.menos, afectado: v("afectado") || null, referencia: f.referencia ? f.referencia.checked : false, datos: {} };
+  if (t.tipo === "simple" || t.tipo === "score" || t.tipo === "cat") row.valor = num(v("valor"));
+  if (t.tipo === "bil") { row.izq = num(v("izq")); row.der = num(v("der")); }
+  if (t.tipo === "ybal") { const d = {}; ["long_izq", "long_der", "ant_izq", "ant_der", "pm_izq", "pm_der", "pl_izq", "pl_der"].forEach(n => d[n] = num(v(n))); row.datos = d;
+    ["izq", "der"].forEach(l => { const L = d["long_" + l], s = ["ant", "pm", "pl"].map(x => d[x + "_" + l]); if (L && s.every(x => x != null)) row[l] = Math.round(1000 * s.reduce((a, b) => a + b, 0) / (3 * L)) / 10; }); }
+  if (t.tipo === "hq") { const d = {}; ["q_izq", "q_der", "h_izq", "h_der", "angulo"].forEach(n => d[n] = num(v(n))); d.u = v("u_hq"); row.datos = d; ["izq", "der"].forEach(l => { if (d["q_" + l] && d["h_" + l] != null) row[l] = Math.round(100 * d["h_" + l] / d["q_" + l]) / 100; }); }
+  if (t.tipo === "prensa") { const d = { kg_izq: num(v("kg_izq")), kg_der: num(v("kg_der")), pc: num(v("pc")) }; row.datos = d; ["izq", "der"].forEach(l => { if (d.pc && d["kg_" + l] != null) row[l] = Math.round(100 * d["kg_" + l] / d.pc) / 100; }); }
+  if (t.tipo === "obs") { const d = {}; t.items.forEach(([key]) => d[key] = !!(f["o_" + key] && f["o_" + key].checked)); (t.extra || []).forEach(([n]) => d[n] = num(v(n))); row.datos = d; row.valor = t.items.filter(([key]) => d[key]).length; }
+  if (t.tipo === "obs_bil") { const d = {}; t.items.forEach(([key]) => { d[key + "_izq"] = !!f["o_" + key + "_izq"].checked; d[key + "_der"] = !!f["o_" + key + "_der"].checked; }); row.datos = d; row.izq = t.items.filter(([key]) => d[key + "_izq"]).length; row.der = t.items.filter(([key]) => d[key + "_der"]).length; }
+  return row;
+}
+function tExtraHTML(x, refs, coach = true) {
+  const t = TC[x.clave]; if (!t) return "";
+  const it = tInterp(x) || [];
+  const ref = refs && x.afectado && !x.referencia ? refs.find(r => r.clave === x.clave && r.referencia) : null;
+  let vsRef = "";
+  if (ref && ref[x.afectado] != null && x[x.afectado] != null && +ref[x.afectado]) { const p = Math.round(100 * (t.menos ? ref[x.afectado] / x[x.afectado] : x[x.afectado] / ref[x.afectado])); vsRef = `<div class="tint ${semaf(p, t.lsi || LSI_STD)}">Pierna afectada al ${p} % de su valor previo a la lesión (${fmt(ref[x.afectado], 2)} ${esc(t.u)} el ${esc(fdate(ref.fecha))})</div>`; }
+  const lsiNote = t.lsi && tLsiX(x) != null ? `<p class="tiny muted" style="margin:2px 0 0">El LSI solo no basta: la pierna sana también pierde rendimiento. Compáralo con su valor previo a la lesión (Simon 2020; Simonsson 2025).</p>` : "";
+  return `${x.referencia ? `<span class="chip">Referencia previa a la lesión</span>` : ""}${it.map(i => `<div class="tint ${i.n}">${esc(i.txt)}</div>`).join("")}${vsRef}${coach ? lsiNote + `<details class="tproto"><summary>Protocolo</summary><p>${esc(t.proto)}</p></details>` : ""}`;
+}
+/* criterio automático: último test de una clave */
+function lastTest(ts, k) { return ts.filter(x => x.clave === k && !x.referencia).sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.created_at || "").localeCompare(String(a.created_at || "")))[0]; }
+
+/* ---- Historial lesional (ficha.lesiones, privado) ---- */
+const REGIONES = ["Isquiosurales", "Cuádriceps", "Aductores", "Gemelo / sóleo", "Tendón rotuliano", "Tendón de Aquiles", "LCA", "Menisco interno", "Menisco externo", "Ligamento colateral", "Tobillo (esguince)", "Hombro", "Codo", "Muñeca / mano", "Lumbar", "Cervical", "Cadera", "Otra"];
+const LTIPOS = { muscular: "Muscular", tendinosa: "Tendinosa", ligamentosa: "Ligamentosa", meniscal: "Meniscal", osea: "Ósea", articular: "Articular / cartílago", otra: "Otra" };
+const LESTADO = { activa: "Activa", readapt: "En readaptación", recuperada: "Recuperada" };
+const MUNICH = ["", "1a · Fatiga", "1b · DOMS", "2a · Neural", "2b · Fascia", "3a · Rotura parcial < 1/3", "3b · Rotura parcial > 1/3", "4 · Rotura completa"];
+function lesTxt(l) { return [l.region, l.lado ? ({ izq: "izq.", der: "der.", ambos: "bilateral" })[l.lado] : "", l.fecha ? String(l.fecha).slice(0, 4) : ""].filter(Boolean).join(" · "); }
+function lesionesCard(c) {
+  const ls = ((c.ficha || {}).lesiones || []).slice().sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  return `<div class="card" style="display:flex;flex-direction:column;gap:8px"><h2>Historial lesional</h2><p class="tiny muted" style="margin:-4px 0 0">La lesión previa es el mayor predictor de una nueva lesión (Meeuwisse 2007). Apunta el diagnóstico tal como lo da el médico o el fisio.</p>
+  ${ls.length ? `<div class="list">${ls.map(l => `<button type="button" class="it" data-act="les-edit" data-id="${esc(l.id)}"><span><b>${esc(lesTxt(l))}</b><br><span class="tiny muted">${esc([LTIPOS[l.tipo], l.detalle, l.episodios > 1 ? l.episodios + " episodios" : "", l.cirugia ? "operada " + fdate(l.cirugia) : ""].filter(Boolean).join(" · "))}</span></span><span class="chip ${l.estado === "recuperada" ? "" : l.estado === "readapt" ? "warn" : "bad"}">${esc(LESTADO[l.estado] || "")}</span></button>`).join("")}</div>` : `<p class="small muted" style="margin:0">Sin lesiones registradas.</p>`}
+  <button type="button" class="btn sm" data-act="les-edit" data-id="">+ Añadir lesión</button></div>`;
+}
+function lesForm(id) {
+  const c = S.coach.c; const ls = (c.ficha || {}).lesiones || []; const l = ls.find(x => x.id === id) || { tipo: "muscular", estado: "activa", episodios: 1 };
+  const sel = (n, opts, v) => `<select name="${n}">${opts.map(([k, t]) => `<option value="${esc(k)}" ${String(v ?? "") === String(k) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+  sheet(`<h2>${id ? "Editar lesión" : "Nueva lesión"}</h2><form id="f-les" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:10px">
+  <div class="grid2"><div class="f"><label>Región</label>${sel("region", REGIONES.map(r => [r, r]), l.region || "Isquiosurales")}</div><div class="f"><label>Lado</label>${sel("lado", [["", "—"], ["izq", "Izquierdo"], ["der", "Derecho"], ["ambos", "Ambos"]], l.lado)}</div></div>
+  <div class="grid3"><div class="f"><label>Tipo</label><select name="tipo" data-act-change="les-tipo">${Object.entries(LTIPOS).map(([k, t]) => `<option value="${k}" ${l.tipo === k ? "selected" : ""}>${t}</option>`).join("")}</select></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(l.fecha || "")}"></div><div class="f"><label>Episodios en esta zona</label><input name="episodios" inputmode="numeric" value="${esc(l.episodios ?? 1)}"></div></div>
+  <div id="les-sub">${lesSub(l.tipo, l)}</div>
+  <div class="grid2"><div class="f"><label>Diagnosticada por</label><input name="diag" value="${esc(l.diag || "")}" placeholder="Traumatólogo, fisio, RM…"></div><div class="f"><label>Estado</label>${sel("estado", Object.entries(LESTADO), l.estado)}</div></div>
+  <div class="grid2"><div class="f"><label>Dolor actual (0–10)</label><input name="nrs" inputmode="numeric" value="${esc(l.nrs ?? "")}"></div><div class="f"><label>Mecanismo</label><input name="mecanismo" value="${esc(l.mecanismo || "")}" placeholder="Sprint, pivote, contacto…"></div></div>
+  <div class="f"><label>Tratamiento y adherencia</label><textarea name="tratamiento" style="min-height:60px">${esc(l.tratamiento || "")}</textarea></div>
+  <div class="f"><label>Notas</label><textarea name="notas" style="min-height:60px">${esc(l.notas || "")}</textarea></div>
+  <div class="row"><button type="button" class="btn ghost" data-act="close">Cancelar</button>${id ? `<button type="button" class="btn ghost danger" data-act="les-del" data-id="${esc(id)}" data-confirm="¿Borrar esta lesión del historial?">Borrar</button>` : ""}<span class="grow"></span><button class="btn pri">Guardar</button></div></form>`);
+}
+function lesSub(tipo, l = {}) {
+  const sel = (n, opts, v) => `<select name="${n}">${opts.map(([k, t]) => `<option value="${esc(k)}" ${String(v ?? "") === String(k) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+  if (tipo === "muscular") return `<div class="grid3"><div class="f"><label>Grado clínico</label>${sel("grado", [["", "—"], ["I", "I · Distensión"], ["II", "II · Rotura parcial"], ["III", "III · Rotura completa"]], l.grado)}</div><div class="f"><label>Munich (2012)</label>${sel("munich", MUNICH.map((m, i) => [i ? m.split(" ")[0] : "", m || "—"]), l.munich)}</div><div class="f"><label>Localización</label>${sel("loc", [["", "—"], ["vientre", "Vientre muscular"], ["umt", "Unión miotendinosa"], ["intratendinosa", "Intratendinosa"]], l.loc)}</div></div>`;
+  if (tipo === "tendinosa") return `<div class="grid3"><div class="f"><label>Fase (Cook y Purdam)</label>${sel("fase_t", [["", "—"], ["reactiva", "Reactiva"], ["desestructurada", "Desestructurada"], ["degenerativa", "Degenerativa"]], l.fase_t)}</div><div class="f"><label>Localización</label>${sel("loc", [["", "—"], ["media", "Porción media"], ["insercional", "Insercional"]], l.loc)}</div><div class="f"><label>Irritabilidad</label>${sel("irrit", [["", "—"], ["baja", "Baja"], ["media", "Media"], ["alta", "Alta"]], l.irrit)}</div></div>`;
+  if (tipo === "ligamentosa" || tipo === "meniscal") return `<div class="grid3"><div class="f"><label>Fecha de cirugía</label><input type="date" name="cirugia" value="${esc(l.cirugia || "")}"></div><div class="f"><label>Injerto / técnica</label><input name="injerto" value="${esc(l.injerto || "")}" placeholder="HTH, isquios, heterólogo…"></div><div class="f"><label>Lesiones asociadas</label><input name="asociadas" value="${esc(l.asociadas || "")}" placeholder="Menisco, cartílago…"></div></div>
+    <div class="row" style="gap:16px;flex-wrap:wrap"><label class="small"><input type="checkbox" name="sutura" ${l.sutura ? "checked" : ""}> Sutura meniscal</label><label class="small"><input type="checkbox" name="plastia" ${l.plastia ? "checked" : ""}> Plastia extraarticular</label></div>`;
+  return `<div class="f"><label>Detalle</label><input name="detalle" value="${esc(l.detalle || "")}"></div>`;
+}
+async function saveLes(f) {
+  const c = S.coach.c; const ficha = { ...(c.ficha || {}) }; const ls = (ficha.lesiones || []).slice(); const v = n => f[n] ? (f[n].type === "checkbox" ? f[n].checked : f[n].value.trim()) : undefined;
+  const l = { id: f.dataset.id || "l" + Date.now().toString(36), region: v("region"), lado: v("lado"), tipo: v("tipo"), fecha: v("fecha"), episodios: num(v("episodios")) || 1, diag: v("diag"), estado: v("estado"), nrs: num(v("nrs")), mecanismo: v("mecanismo"), tratamiento: v("tratamiento"), notas: v("notas") };
+  ["grado", "munich", "loc", "fase_t", "irrit", "cirugia", "injerto", "asociadas", "sutura", "plastia", "detalle"].forEach(k => { const x = v(k); if (x !== undefined && x !== "") l[k] = x; });
+  l.detalle = l.detalle || [l.grado ? "grado " + l.grado : "", l.munich ? "Munich " + l.munich : "", l.fase_t, l.loc === "insercional" ? "insercional" : l.loc === "umt" ? "UMT" : ""].filter(Boolean).join(" · ");
+  const i = ls.findIndex(x => x.id === l.id); if (i >= 0) ls[i] = l; else ls.push(l); ficha.lesiones = ls;
+  try { await q(sb.from("clients").update({ ficha }).eq("id", c.id)); c.ficha = ficha; sheet(""); toast("Lesión guardada"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); }
+}
+async function delLes(id) { const c = S.coach.c; const ficha = { ...(c.ficha || {}), lesiones: ((c.ficha || {}).lesiones || []).filter(x => x.id !== id) }; try { await q(sb.from("clients").update({ ficha }).eq("id", c.id)); sheet(""); toast("Lesión borrada"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); } }
+
+/* ---- Protocolos de readaptación (criterio > calendario) ---- */
+const autoLsi = (ks, thr) => ts => { const xs = ks.map(k => lastTest(ts, k)).filter(Boolean); if (!xs.length) return null; const vals = xs.map(x => ({ x, v: tLsiX(x) })).filter(o => o.v != null); if (!vals.length) return null; const worst = vals.reduce((a, b) => b.v < a.v ? b : a); return { ok: worst.v > thr, txt: `${worst.x.nombre}: LSI ${worst.v} % (${fdate(worst.x.fecha)})` }; };
+const autoVal = (k, test, fmtv) => ts => { const x = lastTest(ts, k); if (!x || x.valor == null) return null; return { ok: test(+x.valor), txt: `${x.nombre}: ${fmtv ? fmtv(+x.valor) : fmt(x.valor, 0) + " " + (x.unidad || "")} (${fdate(x.fecha)})` }; };
+const autoSide = (k, test, lbl) => ts => { const x = lastTest(ts, k); if (!x) return null; const side = x.afectado || (x.izq != null && x.der != null ? (+x.izq <= +x.der ? "izq" : "der") : x.izq != null ? "izq" : "der"); const v = x[side]; if (v == null) return null; return { ok: test(+v), txt: `${x.nombre}: ${lbl(+v)} en la pierna ${side === "izq" ? "izquierda" : "derecha"} (${fdate(x.fecha)})` }; };
+const PROTOS = {
+  muscular: { n: "Lesión muscular", fuente: "Tema 2 · Lesiones musculares", fases: [
+    { n: "Protección", dur: "Gr. I 3–7 días · Gr. II 5–14 días", obj: ["Controlar dolor e inflamación (PEACE & LOVE, sin AINEs masivos)", "Evitar que la lesión se extienda", "Activación muscular suave desde el día 1–3", "Mantener la movilidad articular"], ej: ["Isométricos submáximos", "Movilidad activa sin dolor", "Cardio de bajo impacto (bici)", "Trabajo de zonas no afectadas"], exs: ["Puente de isquios isométrico", "Sentadilla isométrica en pared (wall sit)"],
+      crit: [{ id: "nrs_rep", t: "Dolor en reposo ≤ 3/10", tc: "Dolor en reposo 3 o menos" }, { id: "edema", t: "Sin edema activo", tc: "Sin hinchazón" }, { id: "iso", t: "Tolera el isométrico sin dolor", tc: "Aguantas los isométricos sin dolor" }] },
+    { n: "Carga funcional", dur: "Gr. I 1–3 sem · Gr. II-a 2–5 sem", obj: ["Aumentar la capacidad de carga del tejido", "Recuperar el rango completo", "Recuperar fuerza funcional", "Reintroducir patrones de movimiento"], ej: ["Excéntrico submáximo", "Concéntrico bilateral", "Cadena cinética cerrada", "Propiocepción y equilibrio"], exs: ["Sliding leg curl", "Peso muerto rumano unilateral"],
+      crit: [{ id: "nrs_ej", t: "Dolor en ejercicio ≤ 3/10", tc: "Dolor al entrenar 3 o menos" }, { id: "f60", t: "Fuerza > 60 % del lado sano", tc: "Fuerza por encima del 60 % del otro lado", auto: autoLsi(["dina_flex90", "dina_ext90", "dina_add", "dina_abd", "dina_extc"], 60) }, { id: "rom", t: "Rango completo sin dolor", tc: "Rango completo sin dolor" }] },
+    { n: "Fuerza", dur: "Gr. I 2–4 sem · Gr. II 3–6 sem", obj: ["Recuperar la fuerza máxima bilateral", "Desarrollar resistencia muscular", "Restaurar la longitud fascicular (excéntrico)", "Integrar en el movimiento global"], ej: ["Excéntrico progresivo (Nordic)", "HSR: carga alta, velocidad lenta", "Alta intensidad unilateral del lado sano", "Pliometría de baja intensidad"], exs: ["Nordic hamstring curl", "Sentadilla HSR (3-1-3)", "Copenhagen plank"],
+      crit: [{ id: "lsi85", t: "LSI de fuerza > 85 %", tc: "Fuerza por encima del 85 % del otro lado", auto: autoLsi(["dina_flex90", "dina_ext90", "dina_add", "dina_abd", "dina_extc"], 85) }, { id: "nrs0", t: "Dolor 0/10 en los ejercicios", tc: "Sin dolor al entrenar" }, { id: "asim", t: "Sin asimetría funcional", tc: "Te mueves igual con las dos piernas" }] },
+    { n: "Alta velocidad y especificidad", dur: "Gr. I 1–2 sem · Gr. II 2–4 sem", obj: ["Demandas reales del deporte", "Tolerar sprint y cambios de dirección", "Confianza para volver", "Verificar criterios de retorno"], ej: ["A-skips, B-skips, bounding", "Sprint progresivo 50 → 100 %", "Gestos técnicos del deporte", "Situaciones simuladas de competición"], exs: ["A-skip", "B-skip", "Bounding", "Sprint progresivo (50 → 100 %)"],
+      crit: [{ id: "cmj90", t: "LSI del CMJ a una pierna > 90 %", tc: "Saltas casi igual con las dos piernas", auto: autoLsi(["cmj_ul"], 90) }, { id: "sprint", t: "Sprint al 100 % sin dolor", tc: "Sprint al máximo sin dolor" }, { id: "func", t: "Tests funcionales avanzados superados", tc: "Tests finales superados" }] }] },
+  tendon: { n: "Tendinopatía", fuente: "Tema 3 · Lesiones tendinosas", fases: [
+    { n: "Isométrico · analgesia", dur: "Según irritabilidad", obj: ["Calmar el dolor (efecto analgésico inmediato)", "Activar sin estrés longitudinal", "Reducir la carga sin eliminarla"], ej: ["Isométricos 5 × 30–45 s al 60–70 % (RPE 5–7), descanso 2 min", "Bilateral → unilateral"], exs: ["Sentadilla isométrica en pared (wall sit)", "Isométrico de gemelo (rodilla extendida)", "Isométrico de sóleo (rodilla flexionada)", "Spanish squat"],
+      crit: [{ id: "nrs5", t: "Dolor en reposo < 5/10", tc: "Dolor en reposo por debajo de 5" }, { id: "r24", t: "Regla de 24 h: el dolor vuelve a su nivel habitual", tc: "Al día siguiente el dolor vuelve a lo normal" }] },
+    { n: "Carga alta, velocidad lenta (HSR)", dur: "Semanas, 3 sesiones/semana", obj: ["Remodelar el colágeno", "Ganar fuerza con buena adherencia"], ej: ["Tempo 3-1-3 al 70–85 % 1RM", "Progresión 12RM → 10RM → 8RM → 6RM"], exs: ["Sentadilla HSR (3-1-3)", "Prensa HSR (3-1-3)", "Elevación de gemelos HSR (3-1-3)"],
+      crit: [{ id: "nrs4", t: "Dolor en ejercicio < 4/10", tc: "Dolor al entrenar por debajo de 4" }, { id: "hsr", t: "Tolera el HSR sin síntomas posteriores", tc: "El trabajo lento y pesado no te deja molestias" }] },
+    { n: "Excéntrico", dur: "Ej.: Alfredson 12 semanas", obj: ["Mejorar las propiedades mecánicas del tendón"], ej: ["Alfredson (aquíleo medio) o decline squat (rotuliano)", "3 × 10–15, dolor hasta 5/10 tolerado"], exs: ["Protocolo Alfredson", "Decline squat (25°)"],
+      crit: [{ id: "nrs3", t: "Dolor < 3/10 a las 24 h", tc: "Al día siguiente dolor por debajo de 3" }] },
+    { n: "Carga elástica (CEA)", dur: "Progresión por etapas", obj: ["Preparar el tendón como muelle (contactos < 250 ms)"], ej: ["Etapa 1: saltos bilaterales en superficie blanda", "Etapa 2: pogo jumps", "Etapa 3: drop jumps", "Etapa 4: específico (una pierna, direccional)"], exs: ["Pogo jumps", "Drop jump"],
+      crit: [{ id: "visa80", t: "VISA > 80", tc: "Cuestionario del tendón por encima de 80", auto: ts => autoVal("visa_p", v => v > 80)(ts) || autoVal("visa_a", v => v > 80)(ts) }, { id: "cea24", t: "Saltos sin síntomas a las 24 h", tc: "Los saltos no te dejan molestias al día siguiente" }] },
+    { n: "Específico · retorno", dur: "", obj: ["Retorno funcional: sprint, salto, cambios de dirección"], ej: ["Gestos del deporte con volumen progresivo", "Carga semanal sin subir más de un 5–10 %"], exs: ["Sprint progresivo (50 → 100 %)"],
+      crit: [{ id: "visa80b", t: "VISA > 80 mantenido", tc: "Cuestionario del tendón por encima de 80", auto: ts => autoVal("visa_p", v => v > 80)(ts) || autoVal("visa_a", v => v > 80)(ts) }, { id: "dep", t: "Deporte completo sin reactivación", tc: "Entrenas tu deporte sin que vuelva el dolor" }] }] },
+  lca: { n: "LCA / menisco", fuente: "Tema 4 · Lesiones ligamentosas y meniscales (Melbourne ACL Guide 2.0 / Aspetar 2023)", fases: [
+    { n: "Preoperatorio", dur: "Semanas previas a la cirugía", obj: ["Mantener o aumentar masa muscular", "Fuerza con la pierna sana (cross-education)", "Optimizar el rango y reducir el edema", "BFR / NMES solo si lo pauta el fisio"], ej: ["Trabajo unilateral de la pierna sana", "Isométricos", "ROM y control del edema"], exs: ["Quad sets (isométrico de cuádriceps)"],
+      crit: [{ id: "cir", t: "Cirugía realizada", tc: "Operación hecha" }] },
+    { n: "Fase 1 · Aguda", dur: "0 – 4/6 semanas", obj: ["Controlar dolor y edema", "Extensión 0° precoz", "Reducir la inhibición del cuádriceps (NMES con fisio)", "Marcha sin muletas con buen patrón"], ej: ["Heel prop 5 × 1–2 min", "Quad sets 3–4 × 10 × 5–15 s", "SLR 3–4 × 8–12 (si no hay lag)", "Prensa unilateral 0–60° 3 × 6–8 a RPE 7–8", "Abducción de cadera 3–4 × 12"], exs: ["Heel prop (extensión pasiva de rodilla)", "Quad sets (isométrico de cuádriceps)", "Elevación de pierna recta (SLR)", "Prensa unilateral 0–60°", "Clamshell con banda"],
+      crit: [{ id: "ext0", t: "Extensión pasiva 0° sin dolor > 3/10", tc: "Estiras la rodilla del todo", auto: autoVal("rom_ext", v => v <= 0, v => v <= 0 ? "extensión completa" : `faltan ${fmt(v, 0)}°`) }, { id: "edema1", t: "Edema stroke test 0–1+ (sin rebote a las 24 h)", tc: "Rodilla sin hinchazón", auto: autoVal("edema", v => v <= 1, v => (TC.edema.opts.find(o => o[0] === v) || [0, ""])[1]) }, { id: "lag", t: "Quad sets sin lag (< 5°)", tc: "Subes la pierna recta sin que se doble", auto: autoVal("lag", v => v < 5, v => `${fmt(v, 0)}° de lag`) }, { id: "rom90", t: "ROM 0–90° sin rebote", tc: "Doblas la rodilla hasta 90°", auto: autoSide("rom_flex", v => v >= 90, v => `${fmt(v, 0)}°`) }, { id: "prensa60", t: "Tolera prensa unilateral 0–60° con dolor ≤ 3/10", tc: "Prensa a una pierna sin dolor" }, { id: "marcha", t: "Marcha sin muletas con patrón correcto", tc: "Caminas sin muletas" }] },
+    { n: "Fase 2 · Fuerza base", dur: "6 – 16 semanas", obj: ["Progresar la carga bilateral y unilateral", "Cadena abierta y cerrada con rango controlado", "Acondicionamiento aeróbico (bici, zona 2, sillín alto)"], ej: ["Spanish squat 4 × 8–10 @RIR2", "Prensa unilateral 0–70° 5 × 5 @RIR1–2", "Extensión 0–70/80° 4 × 8+8", "Split squat 4–5 × 8+8 @RIR2–3", "RFESS · RDL → kickstand · gemelo unilateral en prensa"], exs: ["Spanish squat", "Prensa unilateral 0–60°", "Extensión de cuádriceps 0–70° (VMO)", "Rear foot elevated split squat (RFESS)", "RDL kickstand", "Elevación de gemelo unilateral en prensa"],
+      crit: [{ id: "romc", t: "ROM completo bilateral", tc: "Rango completo en las dos rodillas", auto: autoLsi(["rom_flex"], 95) }, { id: "sls", t: "Sentadilla a una pierna con calidad (sin valgo, pelvis estable)", tc: "Sentadilla a una pierna bien hecha", auto: autoSide("sls", v => v === 0, v => v ? `${v} error(es)` : "sin errores") }, { id: "pc15", t: "Prensa unilateral ≥ 1,5 × peso corporal", tc: "Prensa a una pierna con 1,5 veces tu peso", auto: autoSide("prensa_ul", v => v >= 1.5, v => `${fmt(v, 2)} × PC`) }, { id: "ext40", t: "LSI extensión de rodilla a 40° > 85 %", tc: "Fuerza de la rodilla por encima del 85 % del otro lado", auto: autoLsi(["dina_ext40"], 85) }, { id: "sinder", t: "Sin derrame en reposo ni tras la carga", tc: "Sin hinchazón después de entrenar", auto: autoVal("edema", v => v === 0, v => (TC.edema.opts.find(o => o[0] === v) || [0, ""])[1]) }] },
+    { n: "Fase 3 · Funcional", dur: "4 – 6 meses", obj: ["Pliometría baja y aterrizajes", "Trabajo sensoriomotor formal", "Pivotes asistidos", "Inicio de gestos específicos con tareas de decisión (dual-task)"], ej: ["Step-off & stick 4 × 6 @RPE4–5", "Pogo jumps con apoyo de manos", "Lateral shuffle + frenada 45° 4 × 3", "Pivote 90° con TRX @RPE4–5", "Braking step 4 × 3/lado · lateral step-off 3 × 5/lado", "Airbike Z3–Z4 4 × 3 min"], exs: ["Step-off & stick (cajón bajo)", "Lateral step-off & stick", "Pogo jumps", "Lateral shuffle + frenada 45°", "Pivote 90° asistido con TRX", "Braking step (3 pasos + stop)", "Pallof press caminando", "Mini Y-balance", "Bird dog"],
+      crit: [{ id: "ext90", t: "LSI de extensión de rodilla > 90 % en todos los ángulos", tc: "Fuerza de la rodilla por encima del 90 %", auto: autoLsi(["dina_ext90", "dina_ext40"], 90) }, { id: "pogo", t: "Pogo y step-off sin dolor y con aterrizaje controlado", tc: "Saltos y aterrizajes sin dolor" }, { id: "piv90", t: "Pivote 90° asistido sin valgo ni dolor > 3/10", tc: "Giros de 90° sin dolor" }, { id: "z34", t: "Aeróbico Z3–Z4 sin rebote articular a las 48 h", tc: "Cardio intenso sin que se hinche la rodilla" }, { id: "dual", t: "Buena mecánica en tareas con decisión (dual-task)", tc: "Te mueves bien aunque tengas que decidir rápido" }] },
+    { n: "Fase 4 · Retorno deportivo", dur: "6 – 9+ meses", obj: ["Cambios de dirección libres", "Pivote 180° libre", "Contacto progresivo", "Preplanificado → reactivo · lento → rápido · sin → con contacto"], ej: ["COD preplaneado 45° → reactivo", "Pivote 180° libre", "Drop jump · sprint · gestos del deporte", "Programa neuromuscular de mantenimiento ≥ 2 ×/semana"], exs: ["Drop jump", "Sprint progresivo (50 → 100 %)", "Calentamiento neuromuscular preventivo", "Isoinercial · caos controlado"],
+      crit: [{ id: "f90", t: "LSI de fuerza > 90 % (élite 100 %)", tc: "Fuerza igualada entre piernas", auto: autoLsi(["dina_ext90", "dina_ext40", "dina_flex90"], 90) }, { id: "hops", t: "Hop tests (single, triple, side) LSI > 95 %", tc: "Saltos a una pierna igualados", auto: autoLsi(["hop_single", "hop_triple", "hop_side"], 95) }, { id: "cod", t: "Pivote 90–180° y cambios de dirección sin valgo ni dolor", tc: "Giros y cambios de dirección sin dolor" }, { id: "rsi", t: "ACL-RSI > 90 %", tc: "Confianza para volver", auto: autoVal("acl_rsi", v => v > 90) }, { id: "tsk", t: "TSK ≤ 18", tc: "Sin miedo a moverte", auto: autoVal("tsk", v => v <= 18) }, { id: "t9", t: "≥ 9 meses desde la cirugía", tc: "Han pasado 9 meses desde la operación", autoR: r => r.cirugia ? { ok: daysBetween(r.cirugia, today()) >= 274, txt: `${Math.floor(daysBetween(r.cirugia, today()) / 30.4)} meses desde la cirugía (${fdate(r.cirugia)})` } : null }] }] },
+};
+function contraindicaciones(r) {
+  const o = r.opciones || {}; const xs = [];
+  if (r.protocolo === "tendon") {
+    if (o.loc === "insercional") xs.push("Insercional: NO Alfredson con dorsiflexión ni bajar el talón por debajo del escalón; NO estiramientos agresivos de gemelo (comprimen la inserción).");
+    if (o.irrit === "alta") xs.push("Irritabilidad alta: NO excéntrico en fase aguda ni estiramientos agresivos. Reducir la carga, no eliminarla.");
+    if (o.fase_t === "degenerativa") xs.push("Degenerativa: riesgo de rotura. Isométrico al 60–70 % y excéntrico suave (30–50 % 1RM, RIR > 5); no progresar rápido a la carga elástica.");
+    xs.push("Progresar la carga semanal no más de un 10 % (mejor 5 %) y evitar picos (ACWR > 1,5).");
+  }
+  if (r.protocolo === "lca") {
+    if (o.sutura) xs.push("Sutura meniscal: restringir el rango a 0–60/75° las primeras 2–3 semanas y evitar flexión profunda con carga hasta que lo autorice el cirujano.");
+    if (o.plastia) xs.push("Plastia extraarticular: progresión conservadora en pivotes y cambios de dirección.");
+    xs.push("BFR contraindicado en trombosis activa o insuficiencia arterial periférica. NMES y BFR, con el fisio.");
+  }
+  if (r.protocolo === "muscular") xs.push("No progresar por calendario: la biología marca el ritmo. Evitar estiramientos agresivos y sprint antes de la Fase 4.");
+  return xs;
+}
+function critEstado(r, fi, c, ts) {
+  const k = `${fi}.${c.id}`; const man = (r.criterios || {})[k] || {};
+  const au = c.auto ? c.auto(ts) : c.autoR ? c.autoR(r) : null;
+  const ok = man.auto ? !!(au ? au.ok : man.ok) : man.ok === true || (man.ok !== false && au && au.ok);
+  return { k, ok, man, au };
+}
+async function tabReadapt(c) {
+  const [rs, ts] = await Promise.all([q(sb.from("readaptaciones").select("*").eq("client_id", c.id).order("inicio", { ascending: false })), q(sb.from("tests").select("*").eq("client_id", c.id))]);
+  S.coach.readapt = rs; S.coach.tests = ts;
+  // los criterios que ya se cumplen según los tests se guardan, para que el cliente también los vea
+  for (const r of rs.filter(x => x.estado !== "alta")) { const P = PROTOS[r.protocolo]; if (!P) continue; const fi = Math.min(r.fase || 0, P.fases.length - 1); const cr = { ...(r.criterios || {}) }; let ch = false;
+    P.fases[fi].crit.forEach(c => { const k = `${fi}.${c.id}`; const au = c.auto ? c.auto(ts) : c.autoR ? c.autoR(r) : null; const m = cr[k]; if (au && (!m || m.auto) && (!m || m.ok !== au.ok)) { cr[k] = { ok: au.ok, auto: true, fecha: today() }; ch = true; } });
+    if (ch) { r.criterios = cr; q(sb.from("readaptaciones").update({ criterios: cr }).eq("id", r.id)).catch(() => { }); } }
+  const act = rs.filter(r => r.estado !== "alta"), alta = rs.filter(r => r.estado === "alta");
+  const les = ((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada");
+  const nuevo = `<form id="f-readnew" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>${act.length ? "Abrir otro proceso" : "Abrir un proceso de readaptación"}</h2>
+    <div class="grid3"><div class="f"><label>Protocolo</label><select name="protocolo">${Object.entries(PROTOS).map(([k, p]) => `<option value="${k}">${esc(p.n)}</option>`).join("")}</select></div>
+    <div class="f"><label>Lesión del historial</label><select name="lesion"><option value="">—</option>${les.map(l => `<option value="${esc(l.id)}">${esc(lesTxt(l))}</option>`).join("")}</select></div>
+    <div class="f"><label>Inicio</label><input type="date" name="inicio" value="${today()}"></div></div>
+    <p class="tiny muted" style="margin:0">La progresión se basa en criterios funcionales, no en días del calendario. ${les.length ? "" : "Puedes registrar primero la lesión en Información › Historial lesional."}</p>
+    <div class="row"><span class="grow"></span><button class="btn pri">Abrir proceso</button></div></form>`;
+  return `${act.map(r => readaptCard(r, ts, c)).join("")}${nuevo}${alta.length ? `<details class="card"><summary><b>Procesos cerrados (${alta.length})</b></summary><div class="list" style="margin-top:8px">${alta.map(r => `<div class="it" style="cursor:default"><span><b>${esc(r.titulo)}</b><br><span class="tiny muted">${esc(PROTOS[r.protocolo].n)} · ${esc(fdate(r.inicio))} → alta ${esc(fdate((r.historial || []).slice(-1)[0]?.hasta || r.updated_at?.slice(0, 10) || ""))}</span></span><button class="btn sm ghost" data-act="ra-reabrir" data-id="${esc(r.id)}">Reabrir</button></div>`).join("")}</div></details>` : ""}`;
+}
+function readaptCard(r, ts, c) {
+  const P = PROTOS[r.protocolo]; const F = P.fases; const fi = Math.min(r.fase, F.length - 1); const f = F[fi]; const o = r.opciones || {};
+  const est = f.crit.map(cr => ({ cr, ...critEstado(r, fi, cr, ts) })); const pend = est.filter(e => !e.ok).length;
+  const sem = Math.floor(daysBetween(r.inicio, today()) / 7), semF = Math.floor(daysBetween(r.fase_desde || r.inicio, today()) / 7);
+  const ci = contraindicaciones(r);
+  const opts = r.protocolo === "tendon" ? `<div class="grid3"><div class="f"><label>Zona</label><select data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="zona">${[["", "—"], ["rotuliano", "Rotuliano"], ["aquiles", "Aquíleo"], ["otro", "Otro"]].map(([v, l]) => `<option value="${v}" ${o.zona === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Localización</label><select data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="loc">${[["", "—"], ["media", "Porción media"], ["insercional", "Insercional"]].map(([v, l]) => `<option value="${v}" ${o.loc === v ? "selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Irritabilidad</label><select data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="irrit">${[["", "—"], ["baja", "Baja · dolor > 24 h, bien tolerado"], ["media", "Media · dolor ~4/10 al entrenar"], ["alta", "Alta · dolor > 6/10 que persiste"]].map(([v, l]) => `<option value="${v}" ${o.irrit === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>`
+    : r.protocolo === "lca" ? `<div class="grid3"><div class="f"><label>Fecha de cirugía</label><input type="date" value="${esc(r.cirugia || "")}" data-act-change="ra-cir" data-id="${esc(r.id)}"></div><label class="small" style="align-self:end"><input type="checkbox" data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="sutura" ${o.sutura ? "checked" : ""}> Sutura meniscal</label><label class="small" style="align-self:end"><input type="checkbox" data-act-change="ra-opt" data-id="${esc(r.id)}" data-k="plastia" ${o.plastia ? "checked" : ""}> Plastia extraarticular</label></div>` : "";
+  return `<div class="card ra"><div class="ra-h"><div><h2>${esc(r.titulo)}</h2><span class="tiny muted">${esc(P.n)} · desde ${esc(fdate(r.inicio))} (${sem} sem)${r.cirugia ? ` · cirugía ${esc(fdate(r.cirugia))} (${Math.floor(daysBetween(r.cirugia, today()) / 30.4)} meses)` : ""}</span></div><button class="btn sm ghost" data-act="ra-alta" data-id="${esc(r.id)}" data-confirm="¿Dar de alta este proceso? Quedará en «Procesos cerrados».">Dar de alta</button></div>
+  <ol class="ra-steps">${F.map((x, i) => `<li class="${i < fi ? "done" : i === fi ? "now" : ""}"><span>${i + 1}</span><em>${esc(x.n)}</em></li>`).join("")}</ol>
+  ${opts}
+  <div class="ra-now"><div class="ra-col"><h3>Fase actual · ${esc(f.n)}</h3><p class="tiny muted" style="margin:0 0 6px">Orientativo: ${esc(f.dur || "—")} · lleva ${semF} sem en esta fase</p><b class="small">Objetivos</b><ul class="ra-ul">${f.obj.map(x => `<li>${esc(x)}</li>`).join("")}</ul><b class="small">Contenidos</b><ul class="ra-ul">${f.ej.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+  <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${f.exs.map(n => `<button class="chip lnkchip" data-act="ex-info" data-n="${esc(n)}">ⓘ ${esc(n)}</button>`).join("")}</div></div>
+  <div class="ra-col"><h3>Criterios para avanzar <span class="cnt ${pend ? "" : "ok"}">${est.length - pend}/${est.length}</span></h3><div class="ra-crit">${est.map(e => `<label class="ra-c ${e.ok ? "ok" : ""}"><input type="checkbox" data-act-change="ra-crit" data-id="${esc(r.id)}" data-k="${esc(e.k)}" ${e.ok ? "checked" : ""}><span><b>${esc(e.cr.t)}</b>${e.au ? `<small class="${e.au.ok ? "okt" : "badt"}">${e.au.ok ? "✓" : "✗"} Según test · ${esc(e.au.txt)}${e.man.ok === false ? " · desmarcado por ti" : ""}</small>` : e.cr.auto || e.cr.autoR ? `<small class="muted">Se rellena solo al registrar el test en Evolución › Tests</small>` : ""}${e.man.fecha ? `<small class="muted">Marcado el ${esc(fdate(e.man.fecha))}</small>` : ""}</span></label>`).join("")}</div>
+  ${fi < F.length - 1 ? `<button class="btn ${pend ? "" : "pri"}" data-act="ra-next" data-id="${esc(r.id)}" ${pend ? `data-confirm="Faltan ${pend} criterio(s). La progresión se basa en criterios, no en el calendario. ¿Pasar igualmente a «${esc(F[fi + 1].n)}»?"` : ""}>Pasar a ${esc(F[fi + 1].n)}</button>` : `<button class="btn ${pend ? "" : "pri"}" data-act="ra-alta" data-id="${esc(r.id)}" data-confirm="${pend ? `Faltan ${pend} criterio(s) de alta. ` : ""}¿Dar el alta funcional?">Dar el alta funcional</button>`}${fi > 0 ? ` <button class="btn ghost sm" data-act="ra-prev" data-id="${esc(r.id)}">Volver a la fase anterior</button>` : ""}</div></div>
+  ${ci.length ? `<div class="ra-ci"><b>⚠ Precauciones</b>${ci.map(x => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
+  <div class="grid2"><div class="f"><label>Mensaje para el cliente <span class="tiny muted">(lo ve en su app)</span></label><textarea data-act-change="ra-msg" data-id="${esc(r.id)}" style="min-height:70px" placeholder="Qué toca esta fase y cómo debe sentirse…">${esc(r.mensaje || "")}</textarea></div><div class="f"><label>Notas privadas</label><textarea data-act-change="ra-notas" data-id="${esc(r.id)}" style="min-height:70px">${esc(r.notas || "")}</textarea></div></div>
+  <p class="tiny muted" style="margin:0">${esc(P.fuente)}. Las decisiones médicas (diagnóstico, NMES, PRP, cirugía) corresponden al médico o al fisio.</p></div>`;
+}
+async function raUpd(id, patch, msg) {
+  try { await q(sb.from("readaptaciones").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id)); if (msg) toast(msg); } catch (e) { toast(errMsg(e)); }
+}
+async function raAction(act, el) {
+  const id = el.dataset.id; const r = (S.coach.readapt || []).find(x => x.id === id); if (!r && act !== "ra-new") return;
+  const reload = () => { S.coach.keep = true; viewCoachClient(S.coach.cid); };
+  if (act === "ra-crit") { const cr = { ...(r.criterios || {}) }; cr[el.dataset.k] = { ok: el.checked, fecha: today() }; r.criterios = cr; await raUpd(id, { criterios: cr }); reload(); }
+  if (act === "ra-opt") { const o = { ...(r.opciones || {}) }; o[el.dataset.k] = el.type === "checkbox" ? el.checked : el.value; r.opciones = o; await raUpd(id, { opciones: o }, "Guardado"); reload(); }
+  if (act === "ra-cir") { await raUpd(id, { cirugia: el.value || null }, "Guardado"); reload(); }
+  if (act === "ra-msg") { await raUpd(id, { mensaje: el.value.trim() }, "Mensaje guardado"); r.mensaje = el.value.trim(); }
+  if (act === "ra-notas") { await raUpd(id, { notas: el.value.trim() }, "Notas guardadas"); r.notas = el.value.trim(); }
+  if (act === "ra-next" || act === "ra-prev") { const n = r.fase + (act === "ra-next" ? 1 : -1); const h = [...(r.historial || []), { fase: r.fase, desde: r.fase_desde, hasta: today() }]; await raUpd(id, { fase: n, fase_desde: today(), historial: h }, act === "ra-next" ? `Fase: ${PROTOS[r.protocolo].fases[n].n}` : "Fase anterior"); reload(); }
+  if (act === "ra-alta") { const h = [...(r.historial || []), { fase: r.fase, desde: r.fase_desde, hasta: today(), alta: true }]; await raUpd(id, { estado: "alta", historial: h }, "Proceso cerrado"); reload(); }
+  if (act === "ra-reabrir") { await raUpd(id, { estado: "activa" }, "Proceso reabierto"); reload(); }
+}
+async function raNew(f) {
+  const p = f.protocolo.value; const c = S.coach.c; const l = ((c.ficha || {}).lesiones || []).find(x => x.id === f.lesion.value);
+  const opciones = {}; if (l) { if (l.loc) opciones.loc = l.loc; if (l.irrit) opciones.irrit = l.irrit; if (l.fase_t) opciones.fase_t = l.fase_t; if (l.sutura) opciones.sutura = true; if (l.plastia) opciones.plastia = true; if (/rotuliano/i.test(l.region)) opciones.zona = "rotuliano"; if (/aquiles/i.test(l.region)) opciones.zona = "aquiles"; }
+  const titulo = l ? lesTxt(l) : PROTOS[p].n;
+  try { await q(sb.from("readaptaciones").insert({ client_id: c.id, protocolo: p, lesion_id: l ? l.id : null, titulo, inicio: f.inicio.value || today(), fase_desde: f.inicio.value || today(), cirugia: l && l.cirugia ? l.cirugia : null, opciones, estado: "activa", criterios: {}, historial: [], fase: p === "lca" && l && l.cirugia ? 1 : 0 }));
+    if (l && l.estado === "activa") { const ficha = { ...c.ficha, lesiones: c.ficha.lesiones.map(x => x.id === l.id ? { ...x, estado: "readapt" } : x) }; await q(sb.from("clients").update({ ficha }).eq("id", c.id)); }
+    toast("Proceso abierto"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); }
+}
+/* Vista del cliente */
+async function readaptHoy() {
+  if (S.me.role === "coach") return ""; let rs = [];
+  try { const { data } = await sb.rpc("mi_readaptacion"); rs = data || []; } catch { return ""; }
+  return rs.map(r => { const P = PROTOS[r.protocolo]; if (!P) return ""; const fi = Math.min(r.fase, P.fases.length - 1); const f = P.fases[fi];
+    const crit = f.crit.map(cr => ({ cr, ok: ((r.criterios || {})[`${fi}.${cr.id}`] || {}).ok })); const hechos = crit.filter(x => x.ok).length;
+    return `<div class="card rac"><div class="row" style="justify-content:space-between;gap:8px"><h2 class="hh">${ICON.readapt}Tu readaptación</h2><span class="chip">${r.protocolo === "lca" ? (fi === 0 ? "Antes de la operación" : `Fase ${fi} de ${P.fases.length - 1}`) : `Fase ${fi + 1} de ${P.fases.length}`}</span></div>
+    <p class="small" style="margin:2px 0 8px"><b>${esc(f.n)}</b> · ${esc(r.titulo)}</p>
+    <div class="rabar"><i style="width:${Math.round(100 * (fi + hechos / Math.max(1, crit.length)) / P.fases.length)}%"></i></div>
+    ${r.mensaje ? `<p class="small" style="margin:10px 0 0;white-space:pre-line">${esc(r.mensaje)}</p>` : ""}
+    <details style="margin-top:8px"><summary class="small"><b>Qué buscamos en esta fase</b></summary><ul class="ra-ul">${f.obj.map(x => `<li>${esc(x)}</li>`).join("")}</ul></details>
+    <details style="margin-top:4px"><summary class="small"><b>Para pasar a la siguiente (${hechos}/${crit.length})</b></summary><ul class="ra-ul chk">${crit.map(x => `<li class="${x.ok ? "ok" : ""}">${x.ok ? "✓" : "○"} ${esc(x.cr.tc || x.cr.t)}</li>`).join("")}</ul></details>
+    <p class="tiny muted" style="margin:8px 0 0">Si notas dolor mayor de 4/10 o que no se te pasa al día siguiente, avísale a Adrián.</p></div>`; }).join("");
+}
+
+/* ---- Carga: ACWR (media móvil y EWMA) ---- */
+function ewmaSeries(all, load) {
+  const la = 2 / (7 + 1), lc = 2 / (28 + 1); let a = 0, c = 0; const out = {};
+  all.forEach((d, i) => { const L = load[d] || 0; a = la * L + (1 - la) * a; c = lc * L + (1 - lc) * c; if (i >= 21 && c > 0) out[d] = a / c; });
+  return out;
+}
+function cargaAlertas(load, t, tendon) {
+  const sum = (end, n) => { let s = 0; for (let k = 0; k < n; k++) s += load[addDays(end, -k)] || 0; return s; };
+  const has = Object.keys(load).some(d => d <= addDays(t, -21)); if (!has) return [];
+  const a7 = sum(t, 7), p7 = sum(addDays(t, -7), 7), ch = sum(t, 28) / 4; const out = [];
+  if (ch > 0 && a7 / ch > 1.5) out.push(`ACWR ${fmt(a7 / ch, 2)}: subida brusca de carga (> 1,5)`);
+  const lim = tendon ? 5 : 10; if (p7 > 0 && a7 > p7 * (1 + lim / 100) && a7 - p7 > 150) out.push(`Carga semanal +${Math.round(100 * (a7 / p7 - 1))} % respecto a la anterior (límite ${lim} %${tendon ? " por tendinopatía" : ""})`);
+  return out;
 }
 
 /* ================= Entrenador: Clientes ================= */
@@ -1931,7 +2254,7 @@ async function saveNewClient(f) {
 }
 
 /* ================= Entrenador: ficha del cliente ================= */
-const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["inicial", "Cuestionario inicial", "doc"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Revisiones", "doc"], ["cuenta", "Cuenta", "key"]];
+const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["readapt", "Readaptación", "readapt"], ["inicial", "Cuestionario inicial", "doc"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Revisiones", "doc"], ["cuenta", "Cuenta", "key"]];
 async function viewCoachClient(cid) {
   if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; }
   const tab = S.coach.tab || "plan";
@@ -1942,9 +2265,9 @@ async function viewCoachClient(cid) {
   const pl = reuse ? S.coach.pl : pr[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
   if (!reuse) { const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) })); }
   S.coach.c = c; S.coach.pl = pl;
-  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
+  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
-  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}</div>${body}`;
+  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
   const rail = document.querySelector("#app .rail");
   if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
@@ -2254,6 +2577,7 @@ function tabInfo(c, pl) {
    <div class="grid3">${fld("edad", "Edad", f.edad)}${fld("altura", "Altura", f.altura)}${fld("pesoInicial", "Peso inicial (kg)", f.pesoInicial, 'inputmode="decimal"')}</div></div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Objetivo</h2>${ta("objetivo", "Objetivo", f.objetivo, 110)}${ta("ejerciciosClave", "Ejercicios clave (uno por línea)", (f.ejerciciosClave || []).join("\n"), 60)}</div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Salud y limitaciones</h2>${ta("salud", "Una por línea · empieza con «!» las que deben destacarse arriba", (f.salud || []).join("\n"), 120)}</div>
+  ${lesionesCard(c)}
   <a class="card rowcard" href="#cobros"><span class="ricon">${ICON.euro}</span><span class="grow"><b>Cuota y cobros</b><br><span class="tiny muted">${pg.cuota ? esc(eur(pg.cuota) + " · " + (pg.periodicidad || "mensual")) + (pg.proximoCobro ? " · próximo " + esc(fdate(pg.proximoCobro, { day: "numeric", month: "short" })) : "") : "Sin cuota"} · se gestionan en Cobros</span></span><span class="chev">›</span></a>
   </div>
   <div style="display:flex;flex-direction:column;gap:12px">
@@ -2312,14 +2636,14 @@ async function tabEvo(c) {
     body = `<div class="card">${ph.length ? `<div class="photos">${ph.map(p => urls[p.path] ? `<figure style="margin:0"><img src="${esc(urls[p.path])}" alt="${esc(p.vista)} ${esc(fdate(p.fecha))}" loading="lazy"><figcaption class="tiny muted">${esc(fdate(p.fecha))} · ${esc(p.vista)}</figcaption></figure>` : "").join("")}</div>` : `<div class="empty">Sin fotos.</div>`}</div>`;
   } else {
     const ts = await q(sb.from("tests").select("*").eq("client_id", cid).order("fecha", { ascending: false, nullsFirst: false })); S.coach.tests = ts.slice().reverse();
-    body = testsHTML(ts, true) + `<form id="f-test" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Añadir test</h2><p class="tiny muted" style="margin:-4px 0 0">Usa el mismo nombre para repetir un test y se comparará solo con los anteriores.</p><div class="grid2"><div class="f"><label>Test</label><input name="nombre" required placeholder="CMJ, 1RM, salto…" list="tests-dl" data-act-change="test-name"><datalist id="tests-dl">${[...new Map(ts.map(x => [tKey(x.nombre), x])).values()].map(x => `<option value="${esc(x.nombre)}">`).join("")}</datalist></div><div class="f"><label>Categoría</label><select name="categoria">${[["fuerza", "Fuerza"], ["salto", "Salto"], ["velocidad", "Velocidad"], ["resistencia", "Resistencia"], ["movilidad", "Movilidad"], ["composicion", "Composición corporal"], ["otro", "Otro"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div></div>
-    <div class="grid3"><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${today()}"></div><div class="f"><label>Valor</label><input name="valor" inputmode="decimal"></div><div class="f"><label>Unidad</label><input name="unidad" placeholder="kg, cm, s"></div></div>
-    <div class="grid3"><div class="f"><label>Izquierda</label><input name="izq" inputmode="decimal"></div><div class="f"><label>Derecha</label><input name="der" inputmode="decimal"></div><label class="small" style="align-self:end"><input type="checkbox" name="menos"> Mejor cuanto menos</label></div>
-    <div class="f"><label>Notas</label><input name="notas"></div><button class="btn pri">Añadir</button></form>`;
+    body = testsHTML(ts, true) + `<form id="f-test" class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Añadir test</h2>
+    <div class="grid2"><div class="f"><label>Test</label>${tCatSelect(S.coach.tclave || "")}</div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${today()}"></div></div>
+    <div id="t-campos" style="display:flex;flex-direction:column;gap:10px">${tCampos(S.coach.tclave || "")}</div>
+    <div class="f"><label>Notas</label><input name="notas"></div><button class="btn pri">Añadir</button></form><datalist id="tests-dl">${[...new Set(ts.filter(x => !x.clave).map(x => x.nombre))].map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
   }
   return `<div class="seg sub" role="group" aria-label="Evolución">${EVO.map(([k, l]) => `<button data-act="evo" data-t="${k}" aria-pressed="${sub === k}">${l}</button>`).join("")}</div>${body}`;
 }
-async function saveTest(f) { const v = n => f[n].value.trim(); try { await q(sb.from("tests").insert({ client_id: S.coach.cid, nombre: v("nombre"), categoria: v("categoria"), fecha: v("fecha") || null, valor: num(v("valor")), unidad: v("unidad"), izq: num(v("izq")), der: num(v("der")), notas: v("notas"), mejor_es_menos: f.menos.checked })); toast("Test añadido"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } }
+async function saveTest(f) { const row = readTest(f); if (!row.nombre) { toast("Pon el nombre del test"); return; } if (row.valor == null && row.izq == null && row.der == null && !Object.keys(row.datos || {}).length) { toast("Rellena algún resultado"); return; } try { S.coach.tclave = row.clave || ""; await q(sb.from("tests").insert(row)); toast("Test añadido"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } }
 
 /* ---- Nutrición ---- */
 function secRow(s = {}) { return `<div class="card" data-s style="display:flex;flex-direction:column;gap:8px;background:var(--bg)"><div class="row"><input name="s_t" value="${esc(s.titulo || "")}" placeholder="Desayuno, Pautas generales…" class="grow" aria-label="Título de la sección"><button type="button" class="btn ghost sm" data-act="sec-del">Quitar</button></div><textarea name="s_i" placeholder="Una línea por punto" aria-label="Puntos">${esc((s.items || []).join("\n"))}</textarea></div>`; }
@@ -2433,8 +2757,8 @@ async function viewLib() {
   if (tab === "alimentos") body = await libFoodsHTML();
   else if (tab === "recetas") body = await libRecipesHTML();
   else if (tab === "ejercicios") {
-    const ex = await exLib(true); const list = ex.filter(e => !qy || (e.nombre + " " + e.grupo + " " + e.material).toLowerCase().includes(qy));
-    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.notas ? `<div class="tiny muted clamp">${esc(e.notas)}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? `<span class="tag tag-workout">▶ vídeo</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
+    const ex = await exLib(true); const fp = S.lib.prev || ""; const list = ex.filter(e => (!qy || (e.nombre + " " + e.grupo + " " + e.material + " " + (e.claves || "")).toLowerCase().includes(qy)) && (!fp || (fp === "all" ? e.prevencion : (e.fases || []).some(x => x.startsWith(fp)))));
+    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="subtabs exf-f">${[["", "Todos"], ["all", "Prevención y readaptación"], ["p", "Prevención"], ["m", "Muscular"], ["t", "Tendón"], ["l", "LCA / menisco"]].map(([k, l]) => `<button data-act="ex-fp" data-k="${k}" aria-current="${fp === k}">${l}</button>`).join("")}</div><div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.prevencion ? ` <span class="chip acc sm">${esc(ACTIV[e.activacion] || "Prevención")}</span>` : ""}${e.notas || e.claves ? `<div class="tiny muted clamp">${esc(e.notas || e.claves)}</div>` : ""}${(e.fases || []).length ? `<div class="exfases">${e.fases.map(f => `<span>${esc(FASES_EX[f] || f)}</span>`).join("")}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? `<span class="tag tag-workout">▶ vídeo</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
   } else if (tab === "workouts") {
     const ts = await tplLib(); const list = ts.filter(t => !qy || (t.nombre + " " + t.descripcion + " " + desc(t.contenido)).toLowerCase().includes(qy));
     body = head("Workouts", ts.length, "go", "lib-w-new", "Añadir workout") + `<div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Tipo</th><th>Descripción</th><th>Actualizado</th></tr></thead><tbody>${list.map(t => `<tr data-act="go" data-h="lib-w-${esc(t.id)}"><td><span class="lnk">${esc(t.nombre)}</span></td><td><span class="tag tag-${esc(t.tipo)}">${esc(TIPOS[t.tipo])}</span></td><td><div class="tiny muted clamp">${esc(t.descripcion ? t.descripcion + ". " : "")}${esc(desc(t.contenido))}</div></td><td class="tiny muted">${esc(fdate((t.updated_at || "").slice(0, 10)))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin workouts.</td></tr>`}</tbody></table></div></div>`;
@@ -2447,9 +2771,13 @@ async function viewLib() {
 }
 function openEx(id) {
   const e = id ? (S.lib.ex || []).find(x => x.id === id) : {}; if (!e) return;
-  sheet(`<h2>${id ? "Editar" : "Nuevo"} ejercicio</h2><form id="f-ex" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label>Nombre</label><input name="nombre" required value="${esc(e.nombre || "")}"></div><div class="grid2"><div class="f"><label>Grupo muscular / patrón</label><input name="grupo" value="${esc(e.grupo || "")}" placeholder="Cuádriceps, empuje horizontal…"></div><div class="f"><label>Material</label><input name="material" value="${esc(e.material || "")}" placeholder="Barra, polea, máquina…"></div></div><div class="f"><label>Vídeo (enlace de YouTube, Drive…)</label><input name="video_url" type="url" value="${esc(e.video_url || "")}"></div><div class="f"><label>Notas técnicas por defecto</label><textarea name="notas">${esc(e.notas || "")}</textarea></div><button class="btn pri block">Guardar</button>${id ? `<button type="button" class="btn ghost" data-act="ex-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}<button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`);
+  sheet(`<h2>${id ? "Editar" : "Nuevo"} ejercicio</h2><form id="f-ex" data-id="${esc(id || "")}" style="display:flex;flex-direction:column;gap:10px"><div class="f"><label>Nombre</label><input name="nombre" required value="${esc(e.nombre || "")}"></div><div class="grid2"><div class="f"><label>Grupo muscular / patrón</label><input name="grupo" value="${esc(e.grupo || "")}" placeholder="Cuádriceps, empuje horizontal…"></div><div class="f"><label>Material</label><input name="material" value="${esc(e.material || "")}" placeholder="Barra, polea, máquina…"></div></div><div class="f"><label>Vídeo (enlace de YouTube, Drive…)</label><input name="video_url" type="url" value="${esc(e.video_url || "")}"></div><div class="f"><label>Notas técnicas por defecto</label><textarea name="notas">${esc(e.notas || "")}</textarea></div><details class="card flat exfed" ${e.prevencion ? "open" : ""}><summary><b>Ficha de prevención / readaptación</b></summary><div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+  <label class="small"><input type="checkbox" name="prevencion" ${e.prevencion ? "checked" : ""}> Ejercicio de prevención o readaptación</label>
+  <fieldset class="medpick"><legend>Fases en las que se usa</legend>${Object.entries(FASES_EX).map(([kk, l]) => `<label class="mchk"><input type="checkbox" name="fase" value="${kk}" ${(e.fases || []).includes(kk) ? "checked" : ""}><span>${esc(l)}</span></label>`).join("")}</fieldset>
+  <div class="f"><label>Tipo de activación</label><select name="activacion"><option value="">—</option>${Object.entries(ACTIV).map(([kk, l]) => `<option value="${kk}" ${e.activacion === kk ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+  ${[["params", "Dosis por defecto"], ["claves", "Claves técnicas (las ve el cliente)"], ["progresion", "Progresión"], ["regresion", "Regresión"], ["contraindicaciones", "Precauciones / contraindicaciones"], ["fuente", "Fuente"]].map(([n, l]) => `<div class="f"><label>${l}</label><textarea name="${n}" style="min-height:56px">${esc(e[n] || "")}</textarea></div>`).join("")}</div></details><button class="btn pri block">Guardar</button>${id ? `<button type="button" class="btn ghost" data-act="ex-del" data-id="${esc(id)}" style="color:var(--bad)">Borrar</button>` : ""}<button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`);
 }
-async function saveEx(f) { const row = { nombre: f.nombre.value.trim(), grupo: f.grupo.value.trim(), material: f.material.value.trim(), video_url: f.video_url.value.trim(), notas: f.notas.value.trim() }; try { if (f.dataset.id) await q(sb.from("exercises").update(row).eq("id", f.dataset.id)); else await q(sb.from("exercises").insert(row)); sheet(""); toast("Ejercicio guardado"); viewLib(); } catch (e) { toast(/duplicate|unique/i.test(e.message || "") ? "Ya existe un ejercicio con ese nombre" : errMsg(e)); } }
+async function saveEx(f) { const row = { nombre: f.nombre.value.trim(), grupo: f.grupo.value.trim(), material: f.material.value.trim(), video_url: f.video_url.value.trim(), notas: f.notas.value.trim(), prevencion: f.prevencion.checked, fases: [...f.querySelectorAll('[name="fase"]:checked')].map(x => x.value), activacion: f.activacion.value || null, params: f.params.value.trim(), claves: f.claves.value.trim(), progresion: f.progresion.value.trim(), regresion: f.regresion.value.trim(), contraindicaciones: f.contraindicaciones.value.trim(), fuente: f.fuente.value.trim() }; try { if (f.dataset.id) await q(sb.from("exercises").update(row).eq("id", f.dataset.id)); else await q(sb.from("exercises").insert(row)); sheet(""); toast("Ejercicio guardado"); viewLib(); } catch (e) { toast(/duplicate|unique/i.test(e.message || "") ? "Ya existe un ejercicio con ese nombre" : errMsg(e)); } }
 async function viewLibWorkout(id) {
   loading("Workout"); await exLib();
   const t = id === "new" ? { nombre: "", tipo: S.lib.newTipo || "workout", descripcion: "", contenido: {} } : (await q(sb.from("workout_templates").select("*").eq("id", id).limit(1)))[0];
@@ -2568,6 +2896,8 @@ async function tabRecup(c) {
   ca.forEach(x => { const r = x.resultado || {}; if (r.rpe != null && r.min) load[x.fecha] = (load[x.fecha] || 0) + r.rpe * r.min; }); // el cardio también suma carga
   const sumR = (end, n) => { let s = 0; for (let k = 0; k < n; k++) s += load[addDays(end, -k)] || 0; return s; };
   const acwr = {}; all.forEach(d => { const ch = sumR(d, 28) / 4; if (ch > 0 && Object.keys(load).some(x => x <= addDays(d, -21))) acwr[d] = sumR(d, 7) / ch; });
+  const acwrE = Object.keys(load).length ? ewmaSeries(all, load) : {};
+  const tendon = (await q(sb.from("readaptaciones").select("protocolo").eq("client_id", c.id).eq("estado", "activa")).catch(() => [])).some(r => r.protocolo === "tendon");
   const lastW = Array.from({ length: 7 }, (_, k) => load[addDays(t, -k)] || 0), mono = sdOf(lastW) ? meanOf(lastW) / sdOf(lastW) : null, strain = mono ? lastW.reduce((a, b) => a + b, 0) * mono : null;
   // Alertas
   const al = [], ok = [];
@@ -2576,6 +2906,8 @@ async function tabRecup(c) {
   const f7 = lastIn(fc7); if (f7 && fcBase[f7.d]) { if (f7.v > fcBase[f7.d][1]) al.push(`FC en reposo media ${fmt(f7.v)} lpm, más alta de lo habitual (${fmt(fcBase[f7.d][0])}–${fmt(fcBase[f7.d][1])}).`); else ok.push(`FC en reposo normal (${fmt(f7.v)} lpm).`); }
   const w7 = lastIn(wi7); const w28 = meanOf(all.slice(-28).map(d => wi[d]).filter(x => x != null)); if (w7 && w28) { if (w7.v < w28 - 0.4) al.push(`Bienestar de la última semana (${fmt(w7.v, 2)}) por debajo de su media de 4 semanas (${fmt(w28, 2)}).`); else ok.push(`Bienestar estable (${fmt(w7.v, 2)} de 5).`); }
   const s7 = meanOf(all.slice(-7).map(d => sh[d]).filter(x => x != null)); if (s7 != null) (s7 < 7 ? al : ok).push(`Sueño medio de la última semana: ${fmt(s7)} h${s7 < 7 ? " (por debajo de 7 h)" : ""}.`);
+  const acE = lastIn(acwrE); if (acE && acE.v > 1.5) al.push(`ACWR ponderado (EWMA) ${fmt(acE.v, 2)}: subida brusca de carga (> 1,5).`);
+  { const a7 = sumR(t, 7), p7 = sumR(addDays(t, -7), 7), lim = tendon ? 5 : 10; if (Object.keys(load).some(x => x <= addDays(t, -21)) && p7 > 0 && a7 > p7 * (1 + lim / 100) && a7 - p7 > 150) al.push(`La carga de esta semana sube un ${Math.round(100 * (a7 / p7 - 1))} % respecto a la anterior (recomendado ≤ ${lim} %${tendon ? ", tiene una tendinopatía en readaptación" : ""}).`); }
   const ac = lastIn(acwr); if (ac) { if (ac.v > 1.5) al.push(`Ratio de carga aguda:crónica ${fmt(ac.v, 2)}: subida brusca de carga (riesgo por encima de 1,5).`); else if (ac.v < 0.8) al.push(`Ratio de carga aguda:crónica ${fmt(ac.v, 2)}: está entrenando bastante menos de lo habitual.`); else ok.push(`Carga bien progresada (ratio agudo:crónico ${fmt(ac.v, 2)}).`); }
   if (mono != null && mono > 2) al.push(`Monotonía alta (${fmt(mono, 1)}): cargas muy parecidas todos los días; alterna días duros y suaves.`);
   const mol = wl.filter(w => w.molestia_zona && w.fecha >= addDays(t, -14)); if (mol.length) al.push(`Molestias en los últimos 14 días: ${mol.map(m => `${m.molestia_zona} ${m.molestia_0a10 ?? "?"}/10 (${fdate(m.fecha)})`).join(" · ")}.`);
@@ -2593,7 +2925,7 @@ async function tabRecup(c) {
   <div class="card"><h2>Sueño <small>horas</small></h2>${multiChart(days, [{ name: "Horas", color: "#7c5cff", v: sh, dec: 1 }], { bars: true, ref: 7, refName: "7 h", yMin: 0, yMax: Math.max(10, ...Object.values(sh)), barColor: v => v < 6 ? "#e5484d" : v < 7 ? "#f2c94c" : "#7c5cff", dec: 1, empty: "Sin datos de sueño" })}</div>
   <div class="card"><h2>Bienestar general <small>1–5</small></h2>${multiChart(days, [{ name: "Bienestar", color: "#2f9e6e", v: wi, w: 1.4, dots: true, dec: 2 }, { name: "Media 7 días", color: "#16603f", v: wi7, w: 2.6, dec: 2 }], { yMin: 1, yMax: 5, dec: 1, empty: "Sin cuestionarios" })}</div>
   <div class="card"><h2>Carga interna <small>RPE × minutos</small></h2>${multiChart(days, [{ name: "Carga", color: "#f39c12", v: load }], { bars: true, yMin: 0, empty: "Hace falta que registre dureza y minutos al terminar los entrenos" })}<div class="kpis"><div class="kpi"><span>Carga 7 días</span><b>${fmt(sumR(t, 7), 0)}</b><em>UA</em></div><div class="kpi"><span>Media semanal (28 d)</span><b>${fmt(sumR(t, 28) / 4, 0)}</b><em>UA</em></div><div class="kpi"><span>Monotonía</span><b>${mono != null ? fmt(mono, 1) : "—"}</b><em>&gt; 2 = poco variada</em></div><div class="kpi"><span>Strain</span><b>${strain != null ? fmt(strain, 0) : "—"}</b><em>carga × monotonía</em></div></div></div>
-  <div class="card"><h2>Ratio agudo:crónico</h2>${multiChart(days, [{ name: "ACWR", color: "#22242f", v: acwr, dec: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Hacen falta 3–4 semanas de entrenos con dureza registrada" })}</div>
+  <div class="card"><h2>Ratio agudo:crónico <small>media móvil y EWMA</small></h2>${multiChart(days, [{ name: "Media móvil 7:28", color: "#22242f", v: acwr, dec: 2 }, { name: "EWMA (Impellizzeri)", color: "#e8491a", v: acwrE, dec: 2, w: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Hacen falta 3–4 semanas de entrenos con dureza registrada" })}</div>
   </div>
   <div class="card"><h2>Cuestionario diario <small>últimos 28 días · 5 = mejor</small></h2>${heat}</div>`;
 }
@@ -3038,6 +3370,11 @@ document.addEventListener("click", async ev => {
       case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r) sheet(`<h2>Vista del cliente</h2>${reportHTML(r)}<button class="btn" data-act="close">Cerrar</button>`); break; }
       case "nuevo-codigo": await q(sb.from("clients").update({ codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Código nuevo generado"); refreshClient(); break;
       case "arch-open": archOpen(a.dataset.cid); break;
+      case "ex-fp": S.lib.prev = a.dataset.k; viewLib(); break;
+      case "ex-info": await exLib(); exInfoOpen(a.dataset.n); break;
+      case "les-edit": lesForm(a.dataset.id); break;
+      case "les-del": if (confirm(a.dataset.confirm)) delLes(a.dataset.id); break;
+      case "ra-next": case "ra-prev": case "ra-alta": case "ra-reabrir": if (!a.dataset.confirm || confirm(a.dataset.confirm)) raAction(a.dataset.act, a); break;
       case "arch-do": archDo(a.dataset.cid, +a.dataset.d); break;
       case "arch-undo": archUndo(a.dataset.cid); break;
       case "arch-now": archNowOpen(a.dataset.cid); break;
@@ -3143,6 +3480,9 @@ document.addEventListener("change", ev => {
   if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
   if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
+  if (el.dataset && el.dataset.actChange === "t-clave") { S.coach.tclave = el.value; const b = $("#t-campos"); if (b) b.innerHTML = tCampos(el.value); }
+  if (el.dataset && el.dataset.actChange === "les-tipo") { const b = $("#les-sub"); if (b) b.innerHTML = lesSub(el.value); }
+  if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
   if (el.dataset && el.dataset.actChange === "copsem-prev") copsemPrev();
   if (el.dataset && el.dataset.actChange === "copsem-modo") { const b = el.form.querySelector(".copcl"); if (b) b.hidden = el.value !== "otros"; }
   if (el.dataset && el.dataset.actChange === "post-todos") { const b = el.form.querySelector(".post-para"); if (b) b.hidden = el.checked; }
@@ -3162,7 +3502,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
