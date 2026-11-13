@@ -1421,7 +1421,7 @@ async function tplLib() { return await q(sb.from("workout_templates").select("id
 function exDatalist() { return `<datalist id="dl-ex">${(S.lib.ex || []).map(e => `<option value="${esc(e.nombre)}">`).join("")}</datalist>`; }
 const relTime = ts => { const d = new Date(ts); const mins = Math.round((Date.now() - d) / 6e4); if (mins < 60) return `hace ${Math.max(1, mins)} min`; const h = Math.round(mins / 60); if (h < 24) return `hace ${h} h`; return fdate(iso(d), { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }); };
 const clientName = id => ((S.coach.list.find(c => c.id === id) || {}).nombre || id);
-async function loadClients() { const all = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha,archivado_en,borrar_en").order("nombre")); S.coach.arch = all.filter(c => c.archivado_en); S.coach.list = all.filter(c => !c.archivado_en); return S.coach.list; }
+async function loadClients() { const all = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha,archivado_en,borrar_en,created_at").order("nombre")); S.coach.arch = all.filter(c => c.archivado_en); S.coach.list = all.filter(c => !c.archivado_en); return S.coach.list; }
 /* ---- Archivar y borrar clientes ---- */
 const diasHasta = f => Math.max(0, daysBetween(today(), iso(new Date(f))));
 const borraTxt = f => { const d = diasHasta(f); return d <= 0 ? "se elimina hoy" : d === 1 ? "se elimina mañana" : `se elimina en ${d} días`; };
@@ -1586,7 +1586,7 @@ async function viewInicio() {
     q(sb.from("assignments").select("client_id,titulo,tipo,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)),
     q(sb.from("assignments").select("client_id,fecha,hecho,visible").gte("fecha", addDays(monday(t), -28)).lte("fecha", addDays(t, 120))),
     q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha")),
-    q(sb.from("leads").select("id,nombre,objetivo,estado,created_at").order("created_at", { ascending: false }).limit(30)).catch(() => []),
+    q(sb.from("leads").select("id,nombre,objetivo,estado,created_at,estado_en").order("created_at", { ascending: false }).limit(30)).catch(() => []),
     q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
     q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => [])]);
   const sysHtml = await sysP;
@@ -1605,6 +1605,8 @@ async function viewInicio() {
   wl.filter(w => w.molestia_zona && num(w.molestia_0a10) >= 4 && w.fecha >= addDays(t, -3)).forEach(w => at.push({ p: 0, k: "bad", c: w.client_id, t: `Molestia: ${w.molestia_zona} (${w.molestia_0a10}/10)`, s: `${clientName(w.client_id)} · ${fdate(w.fecha, { weekday: "short", day: "numeric" })}`, a: go(w.client_id, "evo"), b: "Ver" }));
   activos.forEach(c => { const v = wl.filter(w => w.client_id === c.id && w.fecha >= addDays(t, -3)).map(wellIdx).filter(x => x != null); if (v.length && avg(v) < 2.5) at.push({ p: 1, k: "bad", c: c.id, t: "Bienestar bajo los últimos días", s: `${c.nombre} · ${fmt(avg(v), 1)} de 5`, a: go(c.id, "evo"), b: "Ver" }); });
   leads.filter(l => l.estado === "nuevo").forEach(l => at.push({ p: 2, k: "acc", c: null, n: l.nombre, t: "Nueva solicitud de contacto", s: `${l.nombre} · ${l.objetivo || "sin objetivo"} · ${relTime(l.created_at)}`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Responder" }));
+  leads.filter(l => l.estado === "contactado" && l.estado_en && daysBetween(iso(new Date(l.estado_en)), t) >= 5).forEach(l => at.push({ p: 3, k: "warn", c: null, n: l.nombre, t: "Contactado y sin cerrar", s: `${l.nombre} · hace ${daysBetween(iso(new Date(l.estado_en)), t)} días`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Ver" }));
+  activos.filter(c => !c.user_id && c.created_at && daysBetween(iso(new Date(c.created_at)), t) >= 3 && daysBetween(iso(new Date(c.created_at)), t) <= 30).forEach(c => at.push({ p: 3, k: "warn", c: c.id, t: "Aún no ha entrado en la app", s: `${c.nombre} · dado de alta hace ${daysBetween(iso(new Date(c.created_at)), t)} días`, a: go(c.id, "cuenta"), b: "Reenviar acceso" }));
   onb.forEach(o => at.push({ p: 3, k: "acc", c: o.client_id, t: "Cuestionario inicial sin revisar", s: `${clientName(o.client_id)} · ${relTime(o.enviado_en)}`, a: `data-act="go-inicial" data-cid="${esc(o.client_id)}"`, b: "Revisar" }));
   resp.forEach(r => at.push({ p: 2, k: "info", c: r.client_id, t: "Ha respondido a su revisión", s: `${clientName(r.client_id)} · ${relTime(r.respondido_en)}`, a: go(r.client_id, "informes"), b: "Leer" }));
   cl.forEach(c => { const pg = ((c.ficha || {}).pago || {}); if (c.estado !== "baja" && pg.proximoCobro && pg.proximoCobro <= t && num(pg.cuota)) at.push({ p: 2, k: "warn", c: c.id, t: pg.proximoCobro < t ? "Cobro vencido" : "Cobro hoy", s: `${c.nombre} · ${eur(pg.cuota)} · ${fdate(pg.proximoCobro, { day: "numeric", month: "short" })}`, a: `data-act="go" data-h="cobros"`, b: "Cobros" }); });
@@ -1892,16 +1894,12 @@ async function tabInicial(c) {
   const o = (await q(sb.from("onboarding").select("*").eq("client_id", c.id).limit(1)))[0];
   if (!o) return `<div class="card"><p class="small" style="margin:0">${c.user_id ? "Aún no ha rellenado el cuestionario inicial. Le aparece nada más entrar en la app." : "Cuando se registre en la app, lo primero que verá es el cuestionario inicial."}</p></div>`;
   const r = o.respuestas || {}; const al = comienzoAlertas(r);
-  return `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="small muted">Enviado ${esc(relTime(o.enviado_en))} · ${o.consentimiento ? "con consentimiento" : "sin consentimiento"}</span><span class="grow"></span><button class="btn sm" data-act="com-ficha" data-cid="${esc(c.id)}">Pasar datos básicos a la ficha</button>${o.revisado ? `<span class="chip ok">Revisado</span>` : `<button class="btn sm pri" data-act="com-rev" data-cid="${esc(c.id)}">Marcar como revisado</button>`}</div>
+  return `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="small muted">Enviado ${esc(relTime(o.enviado_en))} · ${o.consentimiento ? "con consentimiento" : "sin consentimiento"}</span><span class="grow"></span><button class="btn sm" data-act="com-ficha" data-cid="${esc(c.id)}" title="Se hace sola al enviarlo; úsalo si has borrado algo">Volver a pasar a la ficha</button>${o.revisado ? `<span class="chip ok">Revisado</span>` : `<button class="btn sm pri" data-act="com-rev" data-cid="${esc(c.id)}">Marcar como revisado</button>`}</div>
   ${al.length ? `<div class="card"><h2>A tener en cuenta</h2>${al.map(([k, t]) => `<div class="alr ${k}">${k === "bad" ? "⚠️" : "•"} ${esc(t)}</div>`).join("")}</div>` : `<div class="card"><div class="alr ok">✓ Sin avisos de salud en el cuestionario.</div></div>`}
   ${COMIENZO.map(bl => `<div class="card"><h2>${esc(bl.b)}</h2><div class="qa-list">${bl.q.filter(qq => !(qq.if && r[qq.if[0]] !== qq.if[1])).map(qq => `<div class="qa-i"><div class="tiny muted">${esc(qq.t)}</div><div class="small">${esc(comAns(qq, r[qq.k]))}</div></div>`).join("")}</div></div>`).join("")}`;
 }
 async function comFicha(cid) {
-  const o = (await q(sb.from("onboarding").select("respuestas").eq("client_id", cid).limit(1)))[0]; const c = (await q(sb.from("clients").select("ficha").eq("id", cid).limit(1)))[0]; if (!o || !c) return;
-  const r = o.respuestas; const f = { ...(c.ficha || {}) };
-  if (r.edad) f.edad = r.edad; if (r.altura) f.altura = r.altura; if (r.peso) f.pesoInicial = r.peso; if (r.sexo) f.sexo = r.sexo;
-  const salud = (f.salud || []).slice(); comienzoAlertas(r).filter(a => a[0] === "bad").forEach(a => { const t = "!" + a[1]; if (!salud.includes(t)) salud.push(t); }); f.salud = salud;
-  try { await q(sb.from("clients").update({ ficha: f }).eq("id", cid)); toast("Ficha actualizada"); S.coach.keep = true; viewCoachClient(cid); } catch (e) { toast(errMsg(e)); }
+  try { await q(sb.rpc("onboarding_a_ficha", { p_cid: cid })); toast("Ficha completada con el cuestionario"); S.coach.keep = true; viewCoachClient(cid); } catch (e) { toast(errMsg(e)); }
 }
 
 /* ---- Tests: agrupados por nombre y comparados en el tiempo ---- */
