@@ -1669,3 +1669,4 @@ body{font-feature-settings:"ss01" 0;-webkit-font-smoothing:antialiased}
 .rp-msg .rp-from b{font-size:15px}.rp-msg .rp-from span{font-size:12.5px;color:var(--muted)}
 .rp-msg p{margin:0;font-size:15px;line-height:1.55;white-space:pre-wrap}
 .rp-resp textarea{min-height:90px}
+.btn .plus{display:inline-grid!important;place-items:center;width:20px;height:20px;padding:0!important;line-height:0!important;font-size:0!important;border-radius:50%;flex:none}.btn .plus svg{width:12px;height:12px;display:block}
