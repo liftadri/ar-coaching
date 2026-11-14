@@ -450,7 +450,7 @@ async function doNueva(f) {
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
 const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["cobros", "Cobros", "euro"], ["mas", "Perfil", "mas"]];
 const isCoachHash = h => ["inicio", "c", "lib", "tablon", "cobros"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
-function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; let h = t.scrollHeight; if (!t.value && t.placeholder) { t.value = t.placeholder; h = Math.max(h, t.scrollHeight); t.value = ""; } t.style.height = Math.min(Math.max(h + 2, 64), 460) + "px"; }
+function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; let h = t.scrollHeight; if (!t.value && t.placeholder) { t.value = t.placeholder; h = Math.max(h, t.scrollHeight); t.value = ""; } const cap = Math.max(160, Math.min(460, Math.round(window.innerHeight * .5))); t.style.height = Math.min(Math.max(h + 2, 64), cap) + "px"; t.classList.toggle("tscroll", h + 2 > cap); }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
   const v = S.view; document.body.classList.toggle("is-coach", coach);
@@ -540,7 +540,8 @@ document.addEventListener("focusin", ev => {
   let g = null;
   document.addEventListener("touchstart", ev => {
     const sh = ev.target.closest && ev.target.closest("#modal-root .sheet"); if (!sh || ev.touches.length !== 1) return;
-    if (ev.target.closest("input,textarea,select,[data-drag],.scale,.tpick,.prows,.tbl,.heat")) { const r = sh.getBoundingClientRect(); if (ev.touches[0].clientY - r.top > 64) return; }
+    if (ev.target.closest("textarea")) return;
+    if (ev.target.closest("input,select,[data-drag],.scale,.tpick,.prows,.tbl,.heat")) { const r = sh.getBoundingClientRect(); if (ev.touches[0].clientY - r.top > 64) return; }
     const t = ev.touches[0]; g = { sh, y0: t.clientY, x0: t.clientX, t0: Date.now(), dy: 0, on: false, top: sh.scrollTop <= 0, head: t.clientY - sh.getBoundingClientRect().top < 64 };
   }, { passive: true });
   document.addEventListener("touchmove", ev => {
