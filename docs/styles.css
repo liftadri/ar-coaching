@@ -1532,3 +1532,6 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .salt:focus-visible{outline:2px solid var(--accent)}
 .calert[data-act]{cursor:pointer}
 .card.com-cta{background:linear-gradient(135deg,var(--accent),#c2410c);color:#fff;border:0;box-shadow:0 6px 18px rgba(234,88,12,.25)}.card.com-cta b{color:#fff;font-size:16px}.card.com-cta .small{color:#fff;opacity:.92}
+.ov{top:var(--vvt,0);bottom:auto;height:var(--vvh,100%)}
+.sheet{max-height:calc(var(--vvh,100vh) * .92);scroll-padding-bottom:96px;-webkit-overflow-scrolling:touch}
+#f-extra textarea{min-height:64px;resize:none}

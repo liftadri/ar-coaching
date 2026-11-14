@@ -524,6 +524,17 @@ function closeSheet() {
   const ov = sh.parentElement; sh.style.transition = "transform .2s cubic-bezier(.2,.8,.2,1)"; sh.style.transform = "translateY(105%)";
   ov.style.transition = "opacity .2s"; ov.style.opacity = "0"; setTimeout(() => { if (document.querySelector("#modal-root .sheet") === sh) sheet(""); }, 190);
 }
+// Teclado del móvil: la hoja se ajusta a la parte visible y el campo activo queda a la vista
+(() => {
+  const vv = window.visualViewport; if (!vv) return;
+  const set = () => { const r = document.documentElement.style; r.setProperty("--vvh", vv.height + "px"); r.setProperty("--vvt", vv.offsetTop + "px"); };
+  vv.addEventListener("resize", set); vv.addEventListener("scroll", set); set();
+})();
+document.addEventListener("focusin", ev => {
+  const el = ev.target; if (!el || !el.matches || !el.matches("input:not([type=radio]):not([type=checkbox]),textarea,select")) return;
+  const sh = el.closest("#modal-root .sheet"); if (!sh) return;
+  setTimeout(() => { const a = sh.getBoundingClientRect(), b = el.getBoundingClientRect(); const fondo = a.bottom - 84; if (b.bottom > fondo || b.top < a.top + 60) sh.scrollBy({ top: b.bottom > fondo ? b.bottom - fondo + 12 : b.top - a.top - 72, behavior: "smooth" }); }, 320);
+});
 // Arrastrar hacia abajo para cerrar una hoja
 (() => {
   let g = null;
@@ -1187,7 +1198,7 @@ function openExtra() {
   <div class="f"><label>¿Qué hiciste?</label><div class="xchips">${EXTRA.map(([k, l, i]) => `<label><input type="radio" name="act" value="${k}"><span><i>${i}</i>${esc(l)}</span></label>`).join("")}</div></div>
   <div class="grid2"><div class="f"><label for="x-min">Minutos</label><input id="x-min" name="min" inputmode="numeric" placeholder="45"></div><div class="f"><label for="x-f">Día</label><input id="x-f" type="date" name="fecha" value="${today()}" max="${today()}"></div></div>
   <div class="f"><label>¿Qué tan dura fue?</label>${rpePick("rpe", null)}</div>
-  <div class="f"><label for="x-c">Comentario <span class="opt-l">opcional</span></label><input id="x-c" name="com" maxlength="300" placeholder="Ej.: pádel con amigos"></div>
+  <div class="f"><label for="x-c">Comentario <span class="opt-l">opcional</span></label><textarea id="x-c" name="com" rows="2" maxlength="300" placeholder="Ej.: pádel con amigos"></textarea></div>
   <button class="btn pri block">Guardar</button></form>`);
 }
 async function saveExtra(f) {
