@@ -1762,12 +1762,14 @@ const COMIENZO = [
     { k: "algo_mas", t: "¿Hay algo más que quieras contarme y que creas importante para entenderte mejor antes de empezar?", y: "l" }] }];
 const COM_Q = COMIENZO.flatMap(b => b.q);
 // Avisos para Adrián a partir del cuestionario inicial
+// «No», «Noo», «nop», «ninguna», «no que yo recuerde»… cuentan como no (igual que private.es_no en la base de datos)
+const esNo = t => !t || /^\s*(n+o+|nop|nope|nunca|nada|para nada|ningun[oa]?|ningún|-+)([\s,.!]+(que\s+)?(yo\s+)?(lo\s+)?(recuerd[oe]|sepa|tengo|he tenido|nunca|ningun[oa]?|nada))*[\s.!]*$/i.test(String(t));
 function comienzoAlertas(r = {}) {
   const a = [];
   if (r.lesion === "Sí") a.push(["bad", "Lesión o molestia actual: " + (r.lesion_det || "sin detallar") + " → valorar fisioterapeuta antes de cargar la zona"]);
   if (r.enfermedad === "Sí") a.push(["bad", "Condición médica: " + (r.enfermedad_det || "sin detallar") + " → confirmar con su médico si hay limitaciones"]);
   if (r.medicacion === "Sí") a.push(["warn", "Medicación habitual: " + (r.medicacion_det || "sin detallar")]);
-  if (r.cirugias && !/^\s*(no|ninguna|nada)\b/i.test(r.cirugias)) a.push(["warn", "Cirugías: " + r.cirugias]);
+  if (r.cirugias && !esNo(r.cirugias)) a.push(["warn", "Cirugías: " + r.cirugias]);
   if (r.sueno_h === "Menos de 5 horas") a.push(["warn", "Duerme menos de 5 h"]);
   if (/^Muy alto/.test(r.estres || "")) a.push(["warn", "Estrés muy alto"]);
   if (/^Desanimado/.test(r.animo || "")) a.push(["warn", "Ánimo bajo el último mes: tenerlo en cuenta y preguntar con tacto"]);
@@ -2710,7 +2712,7 @@ async function viewCoachClient(cid) {
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? await tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
-  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
+  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" role="button" tabindex="0" data-act="salud-edit" title="Editar salud y alertas"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
   const rail = document.querySelector("#app .rail");
   if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
@@ -3038,7 +3040,7 @@ async function tabInfo(c, pl) {
    <div class="grid2">${fld("fechaInicio", "Cliente desde", f.fechaInicio, 'type="date"')}${fld("telefono", "Teléfono", f.telefono, 'inputmode="tel"')}</div>
    <div class="grid3">${fld("edad", "Edad", f.edad)}${fld("altura", "Altura", f.altura)}${fld("pesoInicial", "Peso inicial (kg)", f.pesoInicial, 'inputmode="decimal"')}</div></div>
   <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Objetivo</h2>${ta("objetivo", "Objetivo", f.objetivo, 110)}${ta("ejerciciosClave", "Ejercicios clave (uno por línea)", (f.ejerciciosClave || []).join("\n"), 60)}</div>
-  <div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Salud y limitaciones</h2>${ta("salud", "Una por línea · empieza con «!» las que deben destacarse arriba", (f.salud || []).join("\n"), 120)}</div>
+  <div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Salud y limitaciones</h2><button type="button" class="btn sm" data-act="salud-edit">Editar</button></div>${saludLista(f.salud)}</div>
   ${lesionesCard(c)}
   <a class="card rowcard" href="#cobros"><span class="ricon">${ICON.euro}</span><span class="grow"><b>Cuota y cobros</b><br><span class="tiny muted">${pg.cuota ? esc(eur(pg.cuota) + " · " + (pg.periodicidad || "mensual")) + (pg.proximoCobro ? " · próximo " + esc(fdate(pg.proximoCobro, { day: "numeric", month: "short" })) : "") : "Sin cuota"} · se gestionan en Cobros</span></span><span class="chev">›</span></a>
   </div>
@@ -3050,9 +3052,24 @@ async function tabInfo(c, pl) {
   </div>
   <div class="savebar"><button class="btn pri">Guardar información</button></div></form>${exDatalist()}`;
 }
+// Salud y alertas: lista editable (⚠ = alerta destacada en la cabecera del cliente)
+function saludLista(sal) { const xs = (sal || []).map(String).filter(x => x.replace(/^!/, "").trim()); return xs.length ? `<ul class="slist">${xs.map(x => `<li class="${x.startsWith("!") ? "al" : ""}">${x.startsWith("!") ? "<b>⚠</b>" : "<i>•</i>"}<span>${esc(x.replace(/^!/, ""))}</span></li>`).join("")}</ul>` : `<p class="small muted" style="margin:0">Sin datos de salud.</p>`; }
+const saludRow = (x = "") => { const al = String(x).startsWith("!"); return `<div class="srow" data-s><button type="button" class="salt" data-act="salud-al" aria-pressed="${al}" title="Marcar como alerta">⚠</button><input name="s_t" value="${esc(String(x).replace(/^!/, ""))}" placeholder="Lesión, patología, limitación…" aria-label="Línea de salud"><button type="button" class="btn ghost sm" data-act="row-del" aria-label="Quitar">✕</button></div>`; };
+function openSalud() {
+  const c = S.coach.c; if (!c) return; const sal = (c.ficha || {}).salud || [];
+  sheet(`<h2>Salud y alertas</h2><p class="small muted" style="margin:0">Toca ⚠ para que una línea salga como alerta en la cabecera del cliente. Las demás se quedan como información. El cliente no ve nada de esto.</p>
+  <form id="f-salud" style="display:flex;flex-direction:column;gap:8px"><div id="srows" style="display:flex;flex-direction:column;gap:6px">${(sal.length ? sal : [""]).map(saludRow).join("")}</div>
+  <button type="button" class="btn sm" data-act="salud-add" style="align-self:flex-start">+ Añadir línea</button>
+  <div class="row"><button type="button" class="btn ghost" data-act="close">Cancelar</button><span class="grow"></span><button class="btn pri">Guardar</button></div></form>`);
+}
+async function saveSalud(f) {
+  const c = S.coach.c; const salud = [...f.querySelectorAll("[data-s]")].map(r => { const t = r.querySelector('[name="s_t"]').value.trim(); return t ? (r.querySelector(".salt").getAttribute("aria-pressed") === "true" ? "!" : "") + t : ""; }).filter(Boolean);
+  const ficha = { ...(c.ficha || {}), salud };
+  try { await q(sb.from("clients").update({ ficha }).eq("id", c.id)); c.ficha = ficha; sheet(""); toast("Salud guardada"); S.coach.keep = true; viewCoachClient(c.id); } catch (e) { toast(errMsg(e)); }
+}
 async function saveInfo(f) {
   const c = S.coach.c; const old = c.ficha || {}; const v = n => f[n].value.trim();
-  const ficha = { ...old, perfil: v("perfil"), fechaInicio: v("fechaInicio"), telefono: v("telefono"), edad: v("edad"), altura: v("altura"), pesoInicial: num(v("pesoInicial")), objetivo: v("objetivo"), ejerciciosClave: lines(v("ejerciciosClave")), salud: lines(v("salud")),
+  const ficha = { ...old, perfil: v("perfil"), fechaInicio: v("fechaInicio"), telefono: v("telefono"), edad: v("edad"), altura: v("altura"), pesoInicial: num(v("pesoInicial")), objetivo: v("objetivo"), ejerciciosClave: lines(v("ejerciciosClave")),
     disponibilidad: v("disponibilidad"), material: v("material"), preferencias: v("preferencias"), habitos: v("habitos"), notas: v("notas"),
     pendientes: [...f.querySelectorAll("[data-p]")].map(r => { const t = r.querySelector('[name="p_t"]').value.trim(), d = r.querySelector('[name="p_d"]').checked, o = (old.pendientes || []).find(p => p.t === t) || {}; return { ...o, t, done: d }; }).filter(p => p.t),
     actualizado: new Date().toISOString() };
@@ -3767,6 +3784,9 @@ document.addEventListener("click", async ev => {
       case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "peso": openPeso(); break;
       case "extra-open": openExtra(); break;
+      case "salud-edit": openSalud(); break;
+      case "salud-add": { $("#srows").insertAdjacentHTML("beforeend", saludRow()); const r = $("#srows").lastElementChild; r && r.querySelector("input").focus(); break; }
+      case "salud-al": a.setAttribute("aria-pressed", String(a.getAttribute("aria-pressed") !== "true")); break;
       case "av-pick": { const i = document.querySelector('[data-act-change="av-file"]'); if (i) i.click(); break; }
       case "av-del": if (confirm("¿Quitar tu foto de perfil?")) avQuitar(); break;
       case "medidas": openMedidas(); break;
@@ -3824,7 +3844,7 @@ document.addEventListener("click", async ev => {
       // información y nutrición
       case "pend-add": $("#pends").insertAdjacentHTML("beforeend", pendRow()); break;
       case "marca-add": $("#marcas").insertAdjacentHTML("beforeend", marcaRow({ fecha: today() })); break;
-      case "row-del": a.closest("[data-p],[data-m]").remove(); break;
+      case "row-del": a.closest("[data-p],[data-m],[data-s]").remove(); break;
       case "sec-add": $("#secs").insertAdjacentHTML("beforeend", secRow()); break;
       case "sec-del": a.closest("[data-s]").remove(); break;
       case "test-del": if (confirmar(a)) { await q(sb.from("tests").delete().eq("id", id)); refreshClient(); } break;
@@ -3977,13 +3997,13 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
   if (map[f.id]) map[f.id](f);
 });
-document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeSheet(); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeSheet(); if ((ev.key === "Enter" || ev.key === " ") && ev.target && ev.target.matches && ev.target.matches('[role="button"][data-act]')) { ev.preventDefault(); ev.target.click(); } });
 
 // Pantalla de carga: se queda un mínimo para que no parpadee y sale con un fundido
 const SPLASH_T0 = performance.now();
