@@ -1638,3 +1638,4 @@ body{font-feature-settings:"ss01" 0;-webkit-font-smoothing:antialiased}
 .wbr.ok em{background:var(--ok)}.wbr.low em{background:var(--accent)}
 .wbr b{text-align:right;font-variant-numeric:tabular-nums}
 .wbx{margin:0;font-size:14px;color:var(--muted)}.wbx b{color:var(--ink);font-weight:650}
+.repbar{position:sticky;bottom:0;background:var(--surface);padding-top:10px;gap:8px}

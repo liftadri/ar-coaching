@@ -1459,7 +1459,7 @@ function reportHTML(r) {
   `;
 }
 async function viewInforme(id) {
-  loading("Informe"); const rows = await q(sb.from("reports").select("*").eq("id", id).limit(1)); const r = rows[0];
+  loading("Informe"); const rows = await q(sb.from("reports").select("id,fecha,semana,titular,kpis,logros,mejorar,tener_en_cuenta,foco,mensaje,mostrar_peso,adjuntos,video_url,leido_en,respuesta,respondido_en").eq("id", id).limit(1)); const r = rows[0];
   if (!r) { shell("Informe", `<div class="empty">Este informe no está disponible.</div>`, { back: "informes" }); return; }
   const adj = r.adjuntos || []; let urls = {};
   if (adj.length) { try { const { data } = await sb.storage.from("revisiones").createSignedUrls(adj.map(a => a.path), 3600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); } catch { } }
@@ -3273,7 +3273,7 @@ async function openReportEditor(id, auto) {
   <div><div class="small" style="font-weight:700;margin-bottom:6px">Datos destacados</div>${kp.map(([k, v]) => `<div class="kprow" data-kp><input name="k_l" value="${esc(k)}" placeholder="Etiqueta (Entrenos)"><input name="k_v" value="${esc(v && v.valor != null ? v.valor : v || "")}" placeholder="Valor (4/4)"><input name="k_n" value="${esc((v && v.nota) || "")}" placeholder="Nota (100 %)"></div>`).join("")}</div>
   <p class="tiny muted" style="margin:0">Una línea por punto. Formato: <b>frase corta | explicación sencilla</b> (la explicación es opcional).</p>
   <div class="grid2"><div class="f"><label>Lo que ha hecho bien</label><textarea name="logros">${esc(repLines(r.logros))}</textarea></div><div class="f"><label>A mejorar</label><textarea name="mejorar">${esc(repLines(r.mejorar))}</textarea></div><div class="f"><label>A tener en cuenta</label><textarea name="tener">${esc(repLines(r.tener_en_cuenta))}</textarea></div><div class="f"><label>Foco para la semana que viene</label><textarea name="foco">${esc(repLines(r.foco))}</textarea></div></div>
-  <div class="f"><label>Mensaje</label><textarea name="mensaje" style="min-height:90px">${esc(r.mensaje || "")}</textarea></div>
+  <div class="f"><label>Mensaje de Adrián <span class="opt-l">el cliente lo lee al final de la revisión</span></label><textarea name="mensaje" style="min-height:120px">${esc(r.mensaje || "")}</textarea></div>
   <div class="f"><label>Vídeo de la revisión <span class="opt-l">enlace opcional (YouTube, Loom, Drive…)</span></label><input name="video_url" type="url" inputmode="url" value="${esc(r.video_url || "")}" placeholder="https://…"></div>
   <div class="f"><label>Archivos <span class="opt-l">PDF, fotos, vídeo o audio · máx. 50 MB cada uno</span></label><div class="adjl" id="rep-adj">${(r.adjuntos || []).map(a => `<div class="adji" data-path="${esc(a.path)}" data-nombre="${esc(a.nombre)}" data-tipo="${esc(a.tipo)}" data-size="${esc(a.size || 0)}"><span>${adjIco(a.tipo)}</span><b>${esc(a.nombre)}</b><button type="button" class="btn ghost sm" data-act="adj-del" aria-label="Quitar">✕</button></div>`).join("")}</div><input type="file" name="archivos" multiple accept="application/pdf,image/*,video/*,audio/*"></div>
   <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="mostrar_peso" ${r.mostrar_peso !== false ? "checked" : ""}> Mostrar el peso al cliente</label>
@@ -3946,7 +3946,7 @@ document.addEventListener("click", async ev => {
       case "sec-add": $("#secs").insertAdjacentHTML("beforeend", secRow()); break;
       case "sec-del": a.closest("[data-s]").remove(); break;
       case "test-del": if (confirmar(a)) { await q(sb.from("tests").delete().eq("id", id)); refreshClient(); } break;
-      case "publicar": await q(sb.from("reports").update({ publicado: a.dataset.v === "1", publicado_en: a.dataset.v === "1" ? new Date().toISOString() : null }).eq("id", id)); toast(a.dataset.v === "1" ? "Publicado: ya lo ve el cliente" : "Ocultado"); refreshClient(); break;
+      case "publicar": if (a.closest("#modal-root")) sheet(""); await q(sb.from("reports").update({ publicado: a.dataset.v === "1", publicado_en: a.dataset.v === "1" ? new Date().toISOString() : null }).eq("id", id)); toast(a.dataset.v === "1" ? "Publicado: ya lo ve el cliente" : "Ocultado"); refreshClient(); break;
       case "ex-hist": openHist(a.dataset.n); break;
       case "rec-w": S.coach.recW = +a.dataset.n; refreshClient(); break;
       case "rep-new": openReportEditor(null, a.dataset.auto === "1"); break;
@@ -3954,7 +3954,7 @@ document.addEventListener("click", async ev => {
       case "rev-resp": { const ta = $("#rev-r"); try { await q(sb.rpc("revision_responder", { p_id: a.dataset.id, p_texto: ta.value })); toast(ta.value.trim() ? "Respuesta enviada a Adrián" : "Respuesta borrada"); route(); } catch (e) { toast(errMsg(e)); } break; }
       case "rep-edit": openReportEditor(id, false); break;
       case "rep-del": if (confirmar(a)) { await q(sb.from("reports").delete().eq("id", id)); sheet(""); toast("Informe borrado"); refreshClient(); } break;
-      case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r) sheet(`<h2>Vista del cliente</h2>${reportHTML(r)}<button class="btn" data-act="close">Cerrar</button>`); break; }
+      case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r) sheet(`<h2>Vista del cliente</h2><p class="tiny muted" style="margin:-4px 0 0">Así la verá el cliente. ${r.publicado ? "Ya está publicada." : "Todavía es un borrador: no la ve."}</p>${reportHTML(r)}<div class="row repbar"><button type="button" class="btn" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button>${r.publicado ? "" : `<button type="button" class="btn pri grow" data-act="publicar" data-id="${esc(r.id)}" data-v="1">Publicar</button>`}<button type="button" class="btn ghost" data-act="close">Cerrar</button></div>`, true); break; }
       case "nuevo-codigo": await q(sb.from("clients").update({ codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Código nuevo generado"); refreshClient(); break;
       case "arch-open": archOpen(a.dataset.cid); break;
       case "ex-fp": S.lib.prev = a.dataset.k; viewLib(); break;
