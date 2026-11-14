@@ -1510,3 +1510,13 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .xchips input:checked+span{background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-color:var(--accent);color:var(--ink)}
 .xchips input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .qlog{flex-wrap:wrap}
+/* Foto de perfil */
+.av.img{padding:0;overflow:hidden;background:var(--surface-2)}
+.av.img img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+.avedit{position:relative;cursor:pointer;flex:none;display:inline-block;border-radius:50%}
+.avedit .av{width:64px;height:64px;font-size:22px}
+.avcam{position:absolute;right:-2px;bottom:-2px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;box-shadow:0 0 0 3px var(--surface)}
+.avedit:focus-within{outline:2px solid var(--accent);outline-offset:3px}
+.avopts{display:flex;gap:14px;margin-top:6px}
+.lnkb{all:unset;cursor:pointer;font-size:13px;font-weight:700;color:var(--accent)}.lnkb.muted{color:var(--muted)}
+.lnkb:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}

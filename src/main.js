@@ -197,7 +197,14 @@ const ICON = {
   plan: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h6"/>')
 };
 const initials = n => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
-const avatar = (n, cls = "") => `<span class="av ${cls}" aria-hidden="true">${esc(initials(n))}</span>`;
+// Foto de perfil del cliente (bucket privado «avatares», URL firmada de 1 h en memoria)
+const avatar = (n, cls = "", cid) => { const u = cid && S.av && S.av[cid] && S.av[cid].url; return u ? `<span class="av ${cls} img" aria-hidden="true"><img src="${esc(u)}" alt="" loading="lazy" decoding="async"></span>` : `<span class="av ${cls}" aria-hidden="true">${esc(initials(n))}</span>`; };
+async function avLoad(rows) {
+  S.av = S.av || {}; const now = Date.now(); const need = (rows || []).filter(r => r && r.id && r.avatar_path && !(S.av[r.id] && S.av[r.id].path === r.avatar_path && S.av[r.id].exp > now + 6e4));
+  (rows || []).forEach(r => { if (r && r.id && !r.avatar_path) delete S.av[r.id]; });
+  if (!need.length) return;
+  try { const { data } = await sb.storage.from("avatares").createSignedUrls(need.map(r => r.avatar_path), 3600); (data || []).forEach(d => { const r = need.find(x => x.avatar_path === d.path); if (r && d.signedUrl) S.av[r.id] = { path: r.avatar_path, url: d.signedUrl, exp: now + 3500e3 }; }); } catch { }
+}
 const TIPOS = { workout: "Workout", cardio: "Cardio", formulario: "Formulario", nota: "Mensaje", peso: "Peso", fotos: "Fotos", medidas: "Medidas", tarea: "Tarea" };
 // Abanico de medidas que Adrián puede pedir (cm)
 const MEDIDAS = [["cuello", "Cuello", "Justo debajo de la nuez"], ["hombros", "Hombros", "Contorno a la altura de los deltoides"], ["pecho", "Pecho", "A la altura de los pezones, tras soltar el aire"], ["brazo_rel", "Brazo relajado", "Parte media del brazo, colgando"], ["brazo", "Brazo contraído", "Parte más gruesa del bíceps en tensión"], ["antebrazo", "Antebrazo", "Parte más gruesa"], ["cintura", "Cintura", "A la altura del ombligo, tras soltar el aire"], ["abdomen", "Abdomen", "Parte más ancha de la barriga"], ["cadera", "Cadera", "Parte más ancha del glúteo"], ["muslo", "Muslo", "Parte más ancha, de pie"], ["gemelo", "Gemelo", "Parte más gruesa, de pie"]];
@@ -269,7 +276,8 @@ function clearLocal() { try { Object.keys(localStorage).filter(k => k.startsWith
 async function afterLogin() {
   try { const rows = await q(sb.rpc("my_profile")); const p = (rows || []).find(r => r.es_entrenador) || (rows || [])[0];
     if (!p) return renderNoAccess();
-    S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre }; S.plan = null;
+    S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre, avatar: p.avatar_path || null }; S.plan = null;
+    if (!p.es_entrenador && p.avatar_path) await avLoad([{ id: p.id, avatar_path: p.avatar_path }]);
     const hc = isCoachHash(location.hash.slice(1));
     if (!location.hash || (S.me.role === "coach") !== hc) location.hash = S.me.role === "coach" ? "inicio" : "hoy";
     S.gate = S.me.role === "client" && await needConsent();
@@ -452,12 +460,12 @@ function shell(title, body, opts = {}) {
     const crumb = opts.crumb || [[null, title]];
     $("#app").innerHTML = `<header class="hnav"><a class="hlogo" href="#inicio" aria-label="Inicio"><img src="./icon-192.png" alt=""></a>
     <nav class="hmenu" aria-label="Secciones">${COACH_TABS.filter(t => t[0] !== "mas").map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
-    <span class="grow"></span><button class="hme" data-act="go" data-h="mas" aria-label="Tu perfil" aria-current="${cur === "mas"}">${avatar(S.me.nombre || "A", "dark")}</button></header>
+    <span class="grow"></span><button class="hme" data-act="go" data-h="mas" aria-label="Tu perfil" aria-current="${cur === "mas"}">${avatar(S.me.nombre || "A", "dark", S.me.role === "client" ? S.me.cid : null)}</button></header>
     <div class="crumb"><div class="crumbin">${S.backTo ? `<button class="cback" data-act="go-back" aria-label="Volver">‹</button>` : ""}${crumb.map(([h, l, av], k) => `${k ? `<span class="sep">/</span>` : ""}${h ? `<a href="#${esc(h)}">${esc(l)}</a>` : `<b>${av ? avatar(l, "xs") : ""}${esc(l)}</b>`}`).join("")}${opts.sub ? `<span class="csub">${esc(opts.sub)}</span>` : ""}<span class="grow"></span>${opts.right || ""}</div></div>
     <main class="wide" id="main">${body}</main>`;
   } else {
     const tabs = CLIENT_TABS; const cur = v.split("-")[0];
-    const nb = (S.tab && S.tab.n) || 0; const right = !opts.back ? `<span class="tright"><button class="bell" data-act="go" data-h="tablon" aria-label="Comunidad${nb ? ", " + nb + " publicaciones nuevas" : ""}">${ICON.bell}${nb ? `<i>${nb > 9 ? "9+" : nb}</i>` : ""}</button><button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre)}</button></span>` : (opts.right || "");
+    const nb = (S.tab && S.tab.n) || 0; const right = !opts.back ? `<span class="tright"><button class="bell" data-act="go" data-h="tablon" aria-label="Comunidad${nb ? ", " + nb + " publicaciones nuevas" : ""}">${ICON.bell}${nb ? `<i>${nb > 9 ? "9+" : nb}</i>` : ""}</button><button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre, "", S.me.role === "client" ? S.me.cid : null)}</button></span>` : (opts.right || "");
     $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
     <main id="main">${body}</main>
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
@@ -610,7 +618,7 @@ async function viewCobros() {
   shell("Cobros", `<div class="pghead"><h1 class="ptitle">Cobros</h1><button class="btn pri" data-act="pay-new">+ Registrar pago</button></div>
   <div class="kpis cob"><div class="ktile"><span>Cobrado este mes</span><b>${eur(cobradoMes)}</b><em>${(n => n === 1 ? "1 pago" : n + " pagos")(pays.filter(x => x.fecha >= m0).length)}</em></div><div class="ktile"><span>Pendiente este mes</span><b>${eur(pendMes)}</b><em>${(n => n === 1 ? "1 cobro" : n + " cobros")(rows.filter(r => r.prox && r.prox <= m1 && num(r.p.cuota)).length)}</em></div><div class="ktile ${venc.length ? "hot" : ""}"><span>Vencidos</span><b>${venc.length}</b><em>${venc.length ? eur(venc.reduce((a, r) => a + num(r.p.cuota), 0)) : "Todo al día"}</em></div><div class="ktile"><span>Ingreso mensual</span><b>${eur(Math.round(mrr))}</b><em>estimado con las cuotas</em></div></div>
   <div class="card flat"><h2 class="hh" style="padding:16px 20px 12px;margin:0">${ICON.clientes}Clientes y próximos cobros <span class="cnt">${act.length}</span></h2><div class="tbl"><table class="htable cobt"><thead><tr><th>Cliente</th><th class="n">Cuota</th><th>Periodicidad</th><th>Método</th><th>Próximo cobro</th><th>Último pago</th><th></th></tr></thead><tbody>
-  ${orden.map(r => `<tr><td><span class="feedn">${avatar(r.c.nombre, "sm")}<a class="lnk" href="#c-${esc(encodeURIComponent(r.c.id))}">${esc(r.c.nombre)}</a></span></td><td class="n"><b>${num(r.p.cuota) ? eur(r.p.cuota) : "—"}</b></td><td>${esc(cap(r.p.periodicidad || "mensual"))}</td><td>${esc(r.p.metodo || "—")}</td><td>${st(r)}</td><td class="tiny muted">${r.last ? `${esc(fdate(r.last.fecha, { day: "numeric", month: "short" }))} · ${eur(r.last.importe)}` : "—"}</td><td class="n"><div class="row" style="flex-wrap:nowrap;gap:6px;justify-content:flex-end"><button class="btn sm ${r.prox && r.prox <= addDays(t, 7) ? "pri" : ""}" data-act="pay-new" data-cid="${esc(r.c.id)}">Cobrado</button><button class="btn sm ghost" data-act="pay-cfg" data-cid="${esc(r.c.id)}">Editar</button></div></td></tr>`).join("") || `<tr><td colspan="7" class="muted">Sin clientes activos.</td></tr>`}</tbody></table></div></div>
+  ${orden.map(r => `<tr><td><span class="feedn">${avatar(r.c.nombre, "sm", r.c.id)}<a class="lnk" href="#c-${esc(encodeURIComponent(r.c.id))}">${esc(r.c.nombre)}</a></span></td><td class="n"><b>${num(r.p.cuota) ? eur(r.p.cuota) : "—"}</b></td><td>${esc(cap(r.p.periodicidad || "mensual"))}</td><td>${esc(r.p.metodo || "—")}</td><td>${st(r)}</td><td class="tiny muted">${r.last ? `${esc(fdate(r.last.fecha, { day: "numeric", month: "short" }))} · ${eur(r.last.importe)}` : "—"}</td><td class="n"><div class="row" style="flex-wrap:nowrap;gap:6px;justify-content:flex-end"><button class="btn sm ${r.prox && r.prox <= addDays(t, 7) ? "pri" : ""}" data-act="pay-new" data-cid="${esc(r.c.id)}">Cobrado</button><button class="btn sm ghost" data-act="pay-cfg" data-cid="${esc(r.c.id)}">Editar</button></div></td></tr>`).join("") || `<tr><td colspan="7" class="muted">Sin clientes activos.</td></tr>`}</tbody></table></div></div>
   <div class="card flat"><h2 class="hh" style="padding:16px 20px 12px;margin:0">${ICON.doc}Historial de pagos <span class="cnt">${pays.length}</span></h2><div class="tbl"><table class="htable payh"><thead><tr><th>Fecha</th><th>Cliente</th><th>Concepto</th><th>Método</th><th class="n">Importe</th><th></th></tr></thead><tbody>
   ${pays.slice(0, 80).map(x => `<tr><td>${esc(fdate(x.fecha, { day: "numeric", month: "short", year: "numeric" }))}</td><td>${esc(clientName(x.client_id))}</td><td>${esc(x.concepto || "—")}</td><td>${esc(x.metodo || "—")}</td><td class="n"><b>${eur(x.importe)}</b></td><td class="n"><button class="btn ghost sm" data-act="pay-del" data-id="${esc(x.id)}" aria-label="Borrar pago">✕</button></td></tr>`).join("") || `<tr><td colspan="6" class="muted">Aún no has registrado pagos.</td></tr>`}</tbody></table></div></div>`, { crumb: [[null, "Cobros"]] });
 }
@@ -1299,6 +1307,26 @@ function openFotos(c) {
   <button class="btn pri block">Subir</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 // Reduce la foto antes de subirla: lado largo máx. 1600 px, JPEG ~80 % (≈200–400 KB en vez de 3–5 MB)
+// Recorte cuadrado centrado para la foto de perfil
+async function squareImg(file, size = 512) {
+  let img; try { img = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch { img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = URL.createObjectURL(file); }); }
+  const m = Math.min(img.width, img.height), sx = (img.width - m) / 2, sy = (img.height - m) / 2, o = Math.min(size, m);
+  const c = document.createElement("canvas"); c.width = c.height = o; const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high"; ctx.drawImage(img, sx, sy, m, m, 0, 0, o, o); if (img.close) img.close();
+  return await new Promise(ok => c.toBlob(ok, "image/jpeg", 0.85));
+}
+async function avSubir(file) {
+  if (!file) return; if (!/^image\//.test(file.type)) { toast("Elige una imagen"); return; }
+  toast("Subiendo foto…");
+  try { const blob = await squareImg(file); const path = `${S.me.cid}/foto-${Date.now().toString(36)}.jpg`;
+    const { error } = await sb.storage.from("avatares").upload(path, blob, { contentType: "image/jpeg", upsert: false }); if (error) throw error;
+    const old = await q(sb.rpc("mi_avatar", { p_path: path })); if (old && old !== path) sb.storage.from("avatares").remove([old]).catch(() => { });
+    S.me.avatar = path; if (S.av) delete S.av[S.me.cid]; await avLoad([{ id: S.me.cid, avatar_path: path }]); toast("¡Foto actualizada!"); route();
+  } catch (e) { toast(errMsg(e)); }
+}
+async function avQuitar() {
+  try { const old = await q(sb.rpc("mi_avatar", { p_path: null })); if (old) sb.storage.from("avatares").remove([old]).catch(() => { }); S.me.avatar = null; if (S.av) delete S.av[S.me.cid]; toast("Foto quitada"); route(); } catch (e) { toast(errMsg(e)); }
+}
 async function shrink(file, max = 1600, calidad = 0.8) {
   try {
     let img; try { img = await createImageBitmap(file, { imageOrientation: "from-image" }); }
@@ -1353,7 +1381,7 @@ async function viewInforme(id) {
 async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
   const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await sysCard() + await pushCardPerfil() + await pushCoachCard() + await backupCard() + await legalCard() : await pushCardPerfil();
-  shell("Perfil", `<div class="card pcard">${avatar(S.me.nombre || "?")}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p></div></div>
+  shell("Perfil", `<div class="card pcard">${coach ? avatar(S.me.nombre || "?") : `<label class="avedit" title="Cambiar foto de perfil">${avatar(S.me.nombre || "?", "", S.me.cid)}<input type="file" accept="image/*" data-act-change="av-file" hidden><span class="avcam" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span></label>`}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p>${coach ? "" : `<div class="avopts"><button type="button" class="lnkb" data-act="av-pick">${S.me.avatar ? "Cambiar foto" : "Poner foto de perfil"}</button>${S.me.avatar ? `<button type="button" class="lnkb muted" data-act="av-del">Quitar</button>` : ""}</div>`}</div></div>
   <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
   <p class="tiny muted foot"><a href="#legal">Aviso legal</a> · <a href="#privacidad">Política de privacidad</a></p>
@@ -1440,13 +1468,13 @@ async function tplLib() { return await q(sb.from("workout_templates").select("id
 function exDatalist() { return `<datalist id="dl-ex">${(S.lib.ex || []).map(e => `<option value="${esc(e.nombre)}">`).join("")}</datalist>`; }
 const relTime = ts => { const d = new Date(ts); const mins = Math.round((Date.now() - d) / 6e4); if (mins < 60) return `hace ${Math.max(1, mins)} min`; const h = Math.round(mins / 60); if (h < 24) return `hace ${h} h`; return fdate(iso(d), { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }); };
 const clientName = id => ((S.coach.list.find(c => c.id === id) || {}).nombre || id);
-async function loadClients() { const all = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha,archivado_en,borrar_en,created_at").order("nombre")); S.coach.arch = all.filter(c => c.archivado_en); S.coach.list = all.filter(c => !c.archivado_en); return S.coach.list; }
+async function loadClients() { const all = await q(sb.from("clients").select("id,nombre,email,estado,user_id,ficha,archivado_en,borrar_en,created_at,avatar_path,avatar_en").order("nombre")); await avLoad(all); S.coach.arch = all.filter(c => c.archivado_en); S.coach.list = all.filter(c => !c.archivado_en); return S.coach.list; }
 /* ---- Archivar y borrar clientes ---- */
 const diasHasta = f => Math.max(0, daysBetween(today(), iso(new Date(f))));
 const borraTxt = f => { const d = diasHasta(f); return d <= 0 ? "se elimina hoy" : d === 1 ? "se elimina mañana" : `se elimina en ${d} días`; };
 function archivadosHTML() {
   const ar = S.coach.arch || []; if (!ar.length) return "";
-  return `<details class="card archs"><summary><span class="hh">${ICON.doc}Archivados <span class="cnt">${ar.length}</span></span><span class="tiny muted">Sin acceso a la app. Se borran del todo al cumplirse el plazo.</span></summary><div class="list">${ar.map(c => `<div class="it" data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}"><span class="feedn">${avatar(c.nombre)}<span><b>${esc(c.nombre)}</b><br><span class="tiny muted">Archivado ${esc(relTime(c.archivado_en))} · ${esc(borraTxt(c.borrar_en))} (${esc(fdate(iso(new Date(c.borrar_en)), { day: "numeric", month: "short" }))})</span></span></span><button class="btn sm" data-act="arch-undo" data-cid="${esc(c.id)}">Recuperar</button></div>`).join("")}</div></details>`;
+  return `<details class="card archs"><summary><span class="hh">${ICON.doc}Archivados <span class="cnt">${ar.length}</span></span><span class="tiny muted">Sin acceso a la app. Se borran del todo al cumplirse el plazo.</span></summary><div class="list">${ar.map(c => `<div class="it" data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}"><span class="feedn">${avatar(c.nombre, "", c.id)}<span><b>${esc(c.nombre)}</b><br><span class="tiny muted">Archivado ${esc(relTime(c.archivado_en))} · ${esc(borraTxt(c.borrar_en))} (${esc(fdate(iso(new Date(c.borrar_en)), { day: "numeric", month: "short" }))})</span></span></span><button class="btn sm" data-act="arch-undo" data-cid="${esc(c.id)}">Recuperar</button></div>`).join("")}</div></details>`;
 }
 function archivarCard(c) {
   if (c.archivado_en) return "";
@@ -1625,6 +1653,7 @@ async function viewInicio() {
   activos.forEach(c => { const v = wl.filter(w => w.client_id === c.id && w.fecha >= addDays(t, -3)).map(wellIdx).filter(x => x != null); if (v.length && avg(v) < 2.5) at.push({ p: 1, k: "bad", c: c.id, t: "Bienestar bajo los últimos días", s: `${c.nombre} · ${fmt(avg(v), 1)} de 5`, a: go(c.id, "evo"), b: "Ver" }); });
   leads.filter(l => l.estado === "nuevo").forEach(l => at.push({ p: 2, k: "acc", c: null, n: l.nombre, t: "Nueva solicitud de contacto", s: `${l.nombre} · ${l.objetivo || "sin objetivo"} · ${relTime(l.created_at)}`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Responder" }));
   leads.filter(l => l.estado === "contactado" && l.estado_en && daysBetween(iso(new Date(l.estado_en)), t) >= 5).forEach(l => at.push({ p: 3, k: "warn", c: null, n: l.nombre, t: "Contactado y sin cerrar", s: `${l.nombre} · hace ${daysBetween(iso(new Date(l.estado_en)), t)} días`, a: `data-act="lead" data-id="${esc(l.id)}"`, b: "Ver" }));
+  cl.filter(c => c.avatar_en && daysBetween(iso(new Date(c.avatar_en)), t) <= 3).forEach(c => at.push({ p: 6, k: "info", c: c.id, t: "Ha cambiado su foto de perfil", s: `${c.nombre} · ${relTime(c.avatar_en)}`, a: go(c.id, "info"), b: "Ver" }));
   activos.filter(c => !c.user_id && c.created_at && daysBetween(iso(new Date(c.created_at)), t) >= 3 && daysBetween(iso(new Date(c.created_at)), t) <= 30).forEach(c => at.push({ p: 3, k: "warn", c: c.id, t: "Aún no ha entrado en la app", s: `${c.nombre} · dado de alta hace ${daysBetween(iso(new Date(c.created_at)), t)} días`, a: go(c.id, "cuenta"), b: "Reenviar acceso" }));
   onb.forEach(o => at.push({ p: 3, k: "acc", c: o.client_id, t: "Cuestionario inicial sin revisar", s: `${clientName(o.client_id)} · ${relTime(o.enviado_en)}`, a: `data-act="go-inicial" data-cid="${esc(o.client_id)}"`, b: "Revisar" }));
   resp.forEach(r => at.push({ p: 2, k: "info", c: r.client_id, t: "Ha respondido a su revisión", s: `${clientName(r.client_id)} · ${relTime(r.respondido_en)}`, a: go(r.client_id, "informes"), b: "Leer" }));
@@ -1657,10 +1686,10 @@ async function viewInicio() {
   </div>
   <div class="hgrid"><div class="hmain">
     <section class="card"><h2 class="hh">${ICON.progreso}Requiere tu atención <span class="cnt">${at.length}</span></h2>
-      ${at.length ? `<div class="att">${at.map(x => `<button class="ai ${x.k}" ${x.a}><i class="ab"></i>${avatar(x.c ? clientName(x.c) : x.n || "?", "sm")}<span class="grow"><b>${esc(x.t)}</b><br><span class="tiny muted">${esc(x.s)}</span></span><span class="chip ${x.k === "bad" ? "bad" : x.k === "acc" ? "acc" : x.k === "warn" ? "warn" : ""}">${esc(x.b)}</span></button>`).join("")}</div>` : `<div class="allok">✓ Todo al día. Nada pendiente.</div>`}</section>
+      ${at.length ? `<div class="att">${at.map(x => `<button class="ai ${x.k}" ${x.a}><i class="ab"></i>${avatar(x.c ? clientName(x.c) : x.n || "?", "sm", x.c)}<span class="grow"><b>${esc(x.t)}</b><br><span class="tiny muted">${esc(x.s)}</span></span><span class="chip ${x.k === "bad" ? "bad" : x.k === "acc" ? "acc" : x.k === "warn" ? "warn" : ""}">${esc(x.b)}</span></button>`).join("")}</div>` : `<div class="allok">✓ Todo al día. Nada pendiente.</div>`}</section>
     <section class="card"><h2 class="hh">${ICON.clientes}Mis clientes <span class="cnt">${activos.length}</span></h2>
       ${activos.length ? `<div class="tbl"><table class="ctab"><thead><tr><th>Cliente</th><th>Esta semana</th><th class="n c-b">Bienestar</th><th class="c-u">Último registro</th><th>Plan hasta</th></tr></thead><tbody>${activos.map(c => { const s = pct(c.id, mon), w = well7(c.id), u = ultimo(c.id), f = hasta(c.id), d = f ? daysBetween(t, f) : null;
-        return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}"><td><span class="feedn">${avatar(c.nombre, "sm")}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td>
+        return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}"><td><span class="feedn">${avatar(c.nombre, "sm", c.id)}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td>
         <td><div class="mbar2"><div class="kbar"><i class="${kc(s)}" style="width:${s || 0}%"></i></div><span class="tiny">${s == null ? "—" : s + " %"}</span></div></td>
         <td class="n c-b">${w == null ? `<span class="tiny muted">—</span>` : `<span class="chip ${w >= 3.5 ? "ok" : w >= 2.5 ? "warn" : "bad"}">${fmt(w, 1)}</span>`}</td>
         <td class="tiny c-u ${u ? "" : "muted"}">${u ? esc(relTime(u)) : "Nada en 7 días"}</td>
@@ -1842,7 +1871,7 @@ function inicioEmbudo(leads, onb) {
   if (!ls.length && !os.length) return `<div class="card embudo"><h2 class="hh">${ICON.clientes}Embudo</h2><p class="small muted" style="margin:0">Sin solicitudes nuevas. Tu enlace para Instagram: <b class="sel">${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar</b> <button class="btn ghost sm" data-act="copy-txt" data-t="${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar">Copiar</button></p></div>`;
   return `<div class="card embudo"><h2 class="hh">${ICON.clientes}Embudo <span class="cnt">${ls.length + os.length}</span></h2><div class="list">
   ${ls.map(l => `<button class="it feed" data-act="lead" data-id="${esc(l.id)}">${avatar(l.nombre)}<span class="grow"><span class="lnk">${esc(l.nombre)}</span> <span class="chip ${l.estado === "nuevo" ? "acc" : ""}">${esc(LEAD_EST[l.estado])}</span><br><span class="tiny muted">${esc(l.objetivo || "Solicitud de contacto")} · ${esc(relTime(l.created_at))}</span></span></button>`).join("")}
-  ${os.map(o => `<button class="it feed" data-act="go-inicial" data-cid="${esc(o.client_id)}">${avatar(clientName(o.client_id))}<span class="grow"><span class="lnk">${esc(clientName(o.client_id))}</span> <span class="chip ok">Cuestionario inicial</span><br><span class="tiny muted">Rellenado ${esc(relTime(o.enviado_en))} · sin revisar</span></span></button>`).join("")}
+  ${os.map(o => `<button class="it feed" data-act="go-inicial" data-cid="${esc(o.client_id)}">${avatar(clientName(o.client_id), "", o.client_id)}<span class="grow"><span class="lnk">${esc(clientName(o.client_id))}</span> <span class="chip ok">Cuestionario inicial</span><br><span class="tiny muted">Rellenado ${esc(relTime(o.enviado_en))} · sin revisar</span></span></button>`).join("")}
   </div><p class="tiny muted" style="margin:8px 0 0">Enlace para Instagram: <b class="sel">${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar</b></p></div>`;
 }
 
@@ -2652,7 +2681,7 @@ async function viewCoachList() {
   loading("Clientes"); const since = addDays(today(), -7);
   const [cl, wl, wo, as] = await Promise.all([loadClients(), q(sb.from("wellness").select("client_id,fecha,sueno,fatiga,dolor,estres,animo,motivacion,articular").gte("fecha", since)), q(sb.from("workouts").select("client_id,fecha").gte("fecha", since)), q(sb.from("assignments").select("client_id,fecha").gte("fecha", since))]);
   const row = c => { const w = wl.filter(x => x.client_id === c.id), o = wo.filter(x => x.client_id === c.id); const wi = avg(w.map(wellIdx).filter(x => x != null)); const hasta = as.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop();
-    return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre)}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
+    return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre, "", c.id)}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
   shell("Clientes", `<div class="pghead"><h1 class="ptitle">Mis clientes <span class="cnt">${cl.length}</span></h1><span class="grow"></span><button class="btn dark" data-act="new-client"><span class="plus">+</span>Añadir cliente</button></div><p class="small muted" style="margin:0">Datos de los últimos 7 días</p>
   <div class="card"><div class="tbl"><table class="ctab"><thead><tr><th>Cliente</th><th class="n">Entrenos</th><th class="n">Cuestionarios</th><th class="n">Bienestar</th><th>Planificado hasta</th><th></th></tr></thead><tbody>${cl.map(row).join("") || `<tr><td colspan="6" class="muted">Sin clientes todavía.</td></tr>`}</tbody></table></div></div>${archivadosHTML()}`);
 }
@@ -2681,7 +2710,7 @@ async function viewCoachClient(cid) {
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? await tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
-  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg")}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
+  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" title="Salud y limitaciones (pestaña Información)"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
   const rail = document.querySelector("#app .rail");
   if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
@@ -3738,6 +3767,8 @@ document.addEventListener("click", async ev => {
       case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "peso": openPeso(); break;
       case "extra-open": openExtra(); break;
+      case "av-pick": { const i = document.querySelector('[data-act-change="av-file"]'); if (i) i.click(); break; }
+      case "av-del": if (confirm("¿Quitar tu foto de perfil?")) avQuitar(); break;
       case "medidas": openMedidas(); break;
       case "med-all": a.closest("fieldset").querySelectorAll("input[name=med]").forEach(i => { i.checked = a.dataset.v === "1"; }); break;
       case "fotos": openFotos(); break;
@@ -3923,6 +3954,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
   if (el.dataset && el.dataset.actChange === "t-clave") { S.coach.tclave = el.value; const b = $("#t-campos"); if (b) b.innerHTML = tCampos(el.value); }
   if (el.dataset && el.dataset.actChange === "t-ej") { const p = VMT.find(x => x[0] === el.value), m = el.form && el.form.c_vmt; if (p && m && (!m.value || m.dataset.auto)) { m.value = String(p[1]).replace(".", ","); m.dataset.auto = "1"; } tPreview(); }
+  if (el.dataset && el.dataset.actChange === "av-file") { avSubir(el.files && el.files[0]); el.value = ""; }
   if (el.dataset && el.dataset.actChange === "ra-les") { const l = (((S.coach.c || {}).ficha || {}).lesiones || []).find(x => x.id === el.value); const p = protoDeLesion(l), sl = $("#ra-proto"); if (p && sl) sl.value = p; }
   if (el.dataset && el.dataset.actChange === "les-tipo") { const b = $("#les-sub"); if (b) b.innerHTML = lesSub(el.value); }
   if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
