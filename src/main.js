@@ -984,8 +984,7 @@ async function viewCal2() {
     }
     rows += `</div>`;
   }
-  const w = weekNow(plan, sel);
-  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${x.actividad ? `Actividad extra${x.duracion_min ? " · " + esc(x.duracion_min) + " min" : ""}${x.rpe_sesion != null ? " · dureza " + esc(x.rpe_sesion) + "/10" : ""}` : "Entreno registrado"}</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
+  S.sub.calData = { plan, asig, libres, evOn };
   const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long" })), yr = first.slice(0, 4);
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   const inM = asig.filter(x => x.fecha >= g0 && x.fecha <= g1); const tps = new Set(inM.map(x => x.tipo)); if (ev.some(e => (e.fin || e.fecha) >= g0 && e.fecha <= g1)) tps.add("evento"); if (libres.length) tps.add("workout");
@@ -993,7 +992,16 @@ async function viewCal2() {
   shell("Calendario", `<div class="card c2"><div class="c2head"><button class="cnav" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(mName)} <span>${yr}</span></h2><button class="cnav" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn sm" data-act="cal-m" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
   <div class="c2dh">${["L", "M", "X", "J", "V", "S", "D"].map(x => `<span>${x}</span>`).join("")}</div>${rows}
   ${calLegend(tps, est)}</div>
-  <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}</h2>${w ? `<p class="tiny muted" style="margin:-4px 0 6px">${esc(w.bloque)} · ${esc(w.nombre)}${w.foco ? " · " + esc(w.foco) : ""}</p>` : ""}${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
+  <p class="tiny muted c2hint">Toca un día para ver lo que tienes.</p>`);
+}
+function calDia(d) {
+  const D = S.sub.calData; if (!D) return; const t = today();
+  const w = weekNow(D.plan, d);
+  const items = [...D.asig.filter(x => x.fecha === d).map(asigRow), ...D.libres.filter(x => x.fecha === d).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${x.actividad ? `Actividad extra${x.duracion_min ? " · " + esc(x.duracion_min) + " min" : ""}${x.rpe_sesion != null ? " · dureza " + esc(x.rpe_sesion) + "/10" : ""}` : "Entreno registrado"}</span></span><span class="done">Hecho ✓</span></div>`), ...D.evOn(d).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
+  const rel = d === t ? "Hoy" : d === addDays(t, 1) ? "Mañana" : d === addDays(t, -1) ? "Ayer" : "";
+  sheet(`<h2>${esc(cap(fdate(d, { weekday: "long", day: "numeric", month: "long" })))}${rel ? ` <span class="c2rel">${rel}</span>` : ""}</h2>${w ? `<p class="tiny muted" style="margin:-6px 0 0">${esc(w.bloque)} · ${esc(w.nombre)}${w.foco ? " · " + esc(w.foco) : ""}</p>` : ""}
+  ${items.length ? `<div class="list caldia">${items.join("")}</div>` : `<div class="empty" style="padding:22px 0">Nada previsto este día.</div>`}
+  <button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
 }
 
 /* ================= Cliente: Entreno ================= */
@@ -3752,7 +3760,7 @@ document.addEventListener("click", async ev => {
   if (act === "close-bg") { if (ev.target === a) closeSheet(); return; }
   try {
     switch (act) {
-      case "go": if (location.hash === "#" + a.dataset.h) route(); else location.hash = a.dataset.h; break;
+      case "go": if (a.closest("#modal-root")) sheet(""); if (location.hash === "#" + a.dataset.h) route(); else location.hash = a.dataset.h; break;
       case "reload": location.reload(); break;
       case "lead": openLead(id); break;
       case "lead-alta": await leadAlta(id); break;
@@ -3807,7 +3815,7 @@ document.addEventListener("click", async ev => {
       case "fotos": openFotos(); break;
       case "prog": S.sub.prog = a.dataset.t; viewProgreso(); break;
       case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; viewCal2(); break;
-      case "cal-d": S.sub.calD = a.dataset.d; S.sub.calM = a.dataset.d.slice(0, 7); viewCal2(); break;
+      case "cal-d": { const d = a.dataset.d; if (S.sub.calData && d.slice(0, 7) === (S.sub.calM || today().slice(0, 7))) { S.sub.calD = d; document.querySelectorAll('.c2d[aria-pressed="true"]').forEach(b => b.setAttribute("aria-pressed", "false")); a.setAttribute("aria-pressed", "true"); calDia(d); } else { S.sub.calD = d; S.sub.calM = d.slice(0, 7); await viewCal2(); calDia(d); } break; }
       case "item": openItem(id); break;
       case "item-undo": await q(sb.rpc("completar_asignacion", { p_id: id, p_hecho: false, p_respuesta: ($("#it-r") || {}).value || "" })); sheet(""); route(); break;
       // entrenador: navegación

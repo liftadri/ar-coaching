@@ -1535,3 +1535,6 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .ov{top:var(--vvt,0);bottom:auto;height:var(--vvh,100%)}
 .sheet{max-height:calc(var(--vvh,100vh) * .92);scroll-padding-bottom:96px;-webkit-overflow-scrolling:touch}
 #f-extra textarea{min-height:64px;resize:none}
+.c2hint{text-align:center;margin:-4px 0 0}
+.c2rel{display:inline-block;vertical-align:middle;margin-left:6px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);font-size:12px;font-weight:700;letter-spacing:0}
+.caldia{margin-top:2px}
