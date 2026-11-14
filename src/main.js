@@ -878,7 +878,7 @@ async function viewHoy() {
   ${prox.length ? `<div class="card"><h2>Próximos días <small><a href="#cal">Ver calendario</a></small></h2><div class="list">${prox.map(asigRow).join("")}</div></div>` : ""}
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
   ${rp[0] && rp[0].leido_en ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="tiny muted">Tu última revisión · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Revisión semanal")}</b></span><span class="chev">›</span></button>` : ""}
-  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button><button class="btn sm" data-act="wellness">Cómo estoy hoy${wl[0] ? " ✓" : ""}</button></div>`);
+  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button></div>`);
   offPrefetch(asig);
 }
 async function openItem(id) {
