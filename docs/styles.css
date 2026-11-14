@@ -1538,3 +1538,79 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .c2hint{text-align:center;margin:-4px 0 0}
 .c2rel{display:inline-block;vertical-align:middle;margin-left:6px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);font-size:12px;font-weight:700;letter-spacing:0}
 .caldia{margin-top:2px}
+/* ===== Entreno del cliente: minimalista ===== */
+.wkhero{background:var(--ink);color:#fff;border-radius:20px;padding:20px 20px 18px;display:flex;flex-direction:column;gap:6px}
+.wkhero .wkd{margin:0;font-size:13px;color:rgba(255,255,255,.62)}
+.wkhero h2{margin:0;font-size:28px;line-height:1.1;letter-spacing:-.03em;color:#fff}
+.wkst{display:flex;gap:18px;margin-top:8px}
+.wkst span{font-size:13px;color:rgba(255,255,255,.62)}
+.wkst b{display:block;font-size:20px;color:#fff;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.wko{margin:10px 0 0;padding-top:12px;border-top:1px solid rgba(255,255,255,.12);font-size:14.5px;line-height:1.45;color:rgba(255,255,255,.88)}
+.wkdone{font-size:13.5px;color:var(--ok);background:var(--ok-soft);border-radius:12px;padding:10px 14px}
+.wkc h2{font-size:15px;margin:0 0 6px}
+.wkc p{margin:0;font-size:14.5px;line-height:1.5;white-space:pre-wrap;color:var(--ink)}
+.wkl{list-style:none;margin:0;padding:0;counter-reset:wk}
+.wkl li{counter-increment:wk;display:grid;grid-template-columns:26px 1fr;column-gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.wkl li:first-child{border-top:0;padding-top:4px}
+.wkl li::before{content:counter(wk);grid-row:span 2;font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:1px}
+.wkl b{font-size:15px;font-weight:650}
+.wkl span{font-size:13px;color:var(--muted)}
+.wkgo{position:sticky;bottom:0;z-index:5;margin:4px -16px 0;padding:12px 16px calc(12px + var(--safe-b));background:linear-gradient(to top,var(--bg) 70%,transparent)}
+.wkgo .btn{min-height:54px;font-size:16.5px}
+.wkclock{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.wkclock i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:wkp 1.6s ease-in-out infinite}
+.wkclock b{font-size:15px;font-weight:700;min-width:38px;text-align:right}
+@keyframes wkp{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.wkclock i{animation:none}}
+.wkinfo{padding:0}
+.wkinfo summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:650;font-size:14.5px;display:flex;justify-content:space-between;align-items:center}
+.wkinfo summary::-webkit-details-marker{display:none}
+.wkinfo summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+.wkinfo[open] summary::after{transform:rotate(-135deg)}
+.wkinfo p{margin:0;padding:0 16px 14px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+.wkform{display:flex;flex-direction:column;gap:12px}
+.wkhelp{margin:4px 2px 0;font-size:12.5px;line-height:1.45;color:var(--muted);text-align:center}
+.ex.wx{padding:16px;gap:12px;border-radius:18px}
+.wxh{display:flex;gap:10px;align-items:flex-start}
+.wxt{flex:1;min-width:0}
+.wxb{display:block;font-size:12px;font-weight:650;color:var(--accent);margin-bottom:2px}
+.ex.wx h3{font-size:17.5px;line-height:1.25;letter-spacing:-.015em;margin:0}
+.wxm{margin:4px 0 0;font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.wxa{display:flex;gap:4px;flex:none}
+.wxi{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;border:0;background:var(--surface-2);color:var(--muted);cursor:pointer;padding:0}
+.wxi svg{width:17px;height:17px}
+.wxi:active{transform:scale(.94)}
+.wxp{font-size:13.5px;font-weight:600;color:var(--accent)}
+.wxn{margin:0;font-size:13.5px;line-height:1.45;color:var(--ink);opacity:.8}
+.ex.wx .mk-prev{padding:6px 10px;background:transparent;border:0;border-left:2px solid var(--line);border-radius:0}
+.ex.wx .seth{grid-template-columns:22px 1fr 1fr 1fr 40px;text-transform:none;font-size:12px;font-weight:600;letter-spacing:0;margin-bottom:-4px}
+.ex.wx .set{grid-template-columns:22px 1fr 1fr 1fr 40px;gap:6px}
+.ex.wx .set .n{font-size:13px;font-weight:700}
+.ex.wx .set input,.ex.wx .pin input{height:42px;padding:6px 4px;font-size:16px;font-weight:600;border-radius:10px;background:var(--surface-2);border:1px solid transparent;font-variant-numeric:tabular-nums}
+.ex.wx .set input::placeholder,.ex.wx .pin input::placeholder{color:#a3a7ab;font-weight:500}
+.ex.wx .set input:focus,.ex.wx .pin input:focus{background:var(--surface);border-color:var(--ink);outline:none}
+.sok{width:40px;height:42px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--line);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .15s,color .15s,border-color .15s}
+.sok svg{width:18px;height:18px}
+.sok[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.set.done input,.pset.done .pin input{background:var(--ok-soft);color:var(--ok)}
+.set.done .n{color:var(--ok)}
+.ex.wx .pset{background:transparent;box-shadow:none;border:0;border-top:1px solid var(--line);border-radius:0;padding:10px 0 0}
+.ex.wx .pset:first-child{border-top:0;padding-top:0}
+.ex.wx .pset.t-top{box-shadow:none}
+.ex.wx .pin{grid-template-columns:repeat(auto-fit,minmax(56px,1fr));align-items:end}
+.ex.wx .pin label span{text-transform:none;font-size:12px;font-weight:600}
+.ex.wx .pin .sok{align-self:end}
+.wxdone{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.wxdone input{width:24px;height:24px;accent-color:var(--ok)}
+.ex.wx .exnota{border-top:0;padding-top:0;margin-top:-2px}
+.ex.wx .exnota summary{font-size:13px;color:var(--muted);font-weight:600}
+.finst{display:flex;gap:10px}
+.finst div{flex:1;background:var(--surface-2);border-radius:14px;padding:12px;text-align:center}
+.finst b{display:block;font-size:18px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.finst span{font-size:12px;color:var(--muted)}
+#f-fin{display:flex;flex-direction:column;gap:16px}
+.wkend{margin-top:6px}.wkend .btn{min-height:54px;font-size:16.5px}
+.ex.wx .pset .ptag{text-transform:none;letter-spacing:0;font-size:12px;font-weight:650;padding:2px 9px}
+.ex.wx .pset .pt{font-size:13.5px;color:var(--muted);font-weight:500}
+.ex.wx .pset.done .pt{color:var(--ok)}
+#rest .rl{text-transform:none;letter-spacing:0}
