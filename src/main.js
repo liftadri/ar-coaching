@@ -464,8 +464,9 @@ function shell(title, body, opts = {}) {
     <div class="crumb"><div class="crumbin">${S.backTo ? `<button class="cback" data-act="go-back" aria-label="Volver">‹</button>` : ""}${crumb.map(([h, l, av], k) => `${k ? `<span class="sep">/</span>` : ""}${h ? `<a href="#${esc(h)}">${esc(l)}</a>` : `<b>${av ? avatar(l, "xs") : ""}${esc(l)}</b>`}`).join("")}${opts.sub ? `<span class="csub">${esc(opts.sub)}</span>` : ""}<span class="grow"></span>${opts.right || ""}</div></div>
     <main class="wide" id="main">${body}</main>`;
   } else {
+    if (S.needCom && v === "comienzo") { opts = { ...opts, noTabs: true, lock: true, right: `<span class="tright"><button class="lnkb" data-act="logout">Salir</button></span>` }; }
     const tabs = CLIENT_TABS; const cur = v.split("-")[0];
-    const nb = (S.tab && S.tab.n) || 0; const right = !opts.back ? `<span class="tright"><button class="bell" data-act="go" data-h="tablon" aria-label="Comunidad${nb ? ", " + nb + " publicaciones nuevas" : ""}">${ICON.bell}${nb ? `<i>${nb > 9 ? "9+" : nb}</i>` : ""}</button><button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre, "", S.me.role === "client" ? S.me.cid : null)}</button></span>` : (opts.right || "");
+    const nb = (S.tab && S.tab.n) || 0; const right = opts.lock ? opts.right : !opts.back ? `<span class="tright"><button class="bell" data-act="go" data-h="tablon" aria-label="Comunidad${nb ? ", " + nb + " publicaciones nuevas" : ""}">${ICON.bell}${nb ? `<i>${nb > 9 ? "9+" : nb}</i>` : ""}</button><button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre, "", S.me.role === "client" ? S.me.cid : null)}</button></span>` : (opts.right || "");
     $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
     <main id="main">${body}</main>
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
@@ -501,6 +502,7 @@ async function route() {
       if (h === "cobros") return await viewCobros();
       return await viewInicio();
     }
+    if (S.needCom && h !== "comienzo") { location.hash = "comienzo"; return; }
     if (h !== "tablon") await tablonUnread();
     if (h === "tablon") return await viewTablon();
     if (h === "comienzo") return await viewComienzo();
@@ -1935,7 +1937,7 @@ async function comEnviar(f) {
     await q(sb.from("onboarding").upsert({ client_id: S.me.cid, respuestas: d, consentimiento: true, revisado: false, enviado_en: new Date().toISOString() }, { onConflict: "client_id" }));
     const kg = num(d.peso); if (kg && kg >= 25 && kg <= 350) await q(sb.from("weights").upsert({ client_id: S.me.cid, fecha: today(), kg }, { onConflict: "client_id,fecha" })).catch(() => { });
     try { localStorage.removeItem(COM_KEY()); } catch { }
-    toast("¡Enviado! Gracias 🙌"); location.hash = "hoy";
+    S.needCom = false; toast("¡Enviado! Gracias 🙌"); location.hash = "hoy";
   } catch (e) { toast(errMsg(e)); b.disabled = false; b.textContent = "Enviar a Adrián"; }
 }
 
