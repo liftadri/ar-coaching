@@ -467,7 +467,7 @@ function shell(title, body, opts = {}) {
     if (S.needCom && v === "comienzo") { opts = { ...opts, noTabs: true, lock: true, right: `<span class="tright"><button class="lnkb" data-act="logout">Salir</button></span>` }; }
     const tabs = CLIENT_TABS; const cur = v.split("-")[0];
     const nb = (S.tab && S.tab.n) || 0; const right = opts.lock ? opts.right : !opts.back ? `<span class="tright"><button class="bell" data-act="go" data-h="tablon" aria-label="Comunidad${nb ? ", " + nb + " publicaciones nuevas" : ""}">${ICON.bell}${nb ? `<i>${nb > 9 ? "9+" : nb}</i>` : ""}</button><button class="back" data-act="go" data-h="mas" aria-label="Tu perfil">${avatar(S.me.nombre, "", S.me.role === "client" ? S.me.cid : null)}</button></span>` : (opts.right || "");
-    $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>${right}</header>
+    $("#app").innerHTML = `<header class="top">${opts.back ? `<button class="back" data-act="go" data-h="${esc(opts.back)}" aria-label="Volver">←</button>` : `<img src="./logo.jpg" alt="">`}${opts.brand ? `<div class="brand"><b>Adrián Rodríguez</b><span>Coaching</span></div>` : `<h1>${esc(title)}${opts.sub ? `<div class="sub">${esc(opts.sub)}</div>` : ""}</h1>`}${right}</header>
     <main id="main">${body}</main>
     ${opts.noTabs ? "" : `<nav class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)" aria-label="Secciones">${tabs.map(([k, l, i]) => `<button data-act="go" data-h="${k}" aria-current="${cur === k}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>`}`;
   }
@@ -899,7 +899,7 @@ async function viewHoy() {
   ${prox.length ? `<div class="card"><h2>Próximos días <small><a href="#cal">Ver calendario</a></small></h2><div class="list">${prox.map(asigRow).join("")}</div></div>` : ""}
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
   ${rp[0] && rp[0].leido_en ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="tiny muted">Tu última revisión · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Revisión semanal")}</b></span><span class="chev">›</span></button>` : ""}
-  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="extra-open">Actividad extra</button><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button></div>`);
+  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="extra-open">Actividad extra</button><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button></div>`, { brand: true });
   offPrefetch(asig);
 }
 async function openItem(id) {

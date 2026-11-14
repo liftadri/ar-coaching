@@ -1614,3 +1614,8 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .ex.wx .pset .pt{font-size:13.5px;color:var(--muted);font-weight:500}
 .ex.wx .pset.done .pt{color:var(--ok)}
 #rest .rl{text-transform:none;letter-spacing:0}
+.top .brand{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.1}
+.top .brand b{font-family:var(--display);font-size:16px;font-weight:700;letter-spacing:-.02em;color:var(--ink);white-space:nowrap}
+.top .brand span{font-size:12px;font-weight:500;color:var(--muted);letter-spacing:.01em}
+.top .tright .bell,.top .tright .back{width:38px;height:38px;padding:0;display:grid;place-items:center}
+.top .tright .back .av{width:36px;height:36px;font-size:13px}
