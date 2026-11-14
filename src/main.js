@@ -878,7 +878,7 @@ async function viewHoy() {
   ${prox.length ? `<div class="card"><h2>Próximos días <small><a href="#cal">Ver calendario</a></small></h2><div class="list">${prox.map(asigRow).join("")}</div></div>` : ""}
   ${ev.length ? `<div class="card"><h2>Fechas importantes</h2><div class="evl">${ev.map(e => `<div class="evi"><span class="evd"><b>${esc(fdate(e.fecha, { day: "numeric" }))}</b><span>${esc(fdate(e.fecha, { month: "short" }))}</span></span><span class="grow"><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>`).join("")}</div></div>` : ""}
   ${rp[0] && rp[0].leido_en ? `<button class="card rowcard" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="tiny muted">Tu última revisión · ${esc(fdate(rp[0].fecha))}</span><br><b>${esc(rp[0].titular || rp[0].semana || "Revisión semanal")}</b></span><span class="chev">›</span></button>` : ""}
-  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button></div>`);
+  <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="extra-open">Actividad extra</button><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button></div>`);
   offPrefetch(asig);
 }
 async function openItem(id) {
@@ -918,7 +918,7 @@ async function viewCal() {
   loading("Calendario");
   const t = today(); const m = S.sub.calM || t.slice(0, 7); const sel = S.sub.calD && S.sub.calD.startsWith(m) ? S.sub.calD : (t.startsWith(m) ? t : m + "-01");
   const first = m + "-01"; const last = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 0));
-  const [plan, asig, ev, wo] = await Promise.all([getPlan(), getAsig(first, last), q(sb.from("events").select("*").lte("fecha", last).order("fecha")), q(sb.from("workouts").select("fecha,dia,assignment_id").gte("fecha", first).lte("fecha", last))]);
+  const [plan, asig, ev, wo] = await Promise.all([getPlan(), getAsig(first, last), q(sb.from("events").select("*").lte("fecha", last).order("fecha")), q(sb.from("workouts").select("fecha,dia,assignment_id,actividad,duracion_min,rpe_sesion").gte("fecha", first).lte("fecha", last))]);
   const evOn = d => ev.filter(e => e.fecha <= d && d <= (e.fin || e.fecha));
   const libres = wo.filter(w => !w.assignment_id);
   let cells = Array.from({ length: dow(first) - 1 }, () => `<span></span>`).join("");
@@ -928,7 +928,7 @@ async function viewCal() {
     cells += `<button class="cd${d === t ? " hoy" : ""}" data-act="cal-d" data-d="${d}" aria-pressed="${d === sel}" aria-label="${esc(fdate(d, { weekday: "long", day: "numeric", month: "long" }))}"><span>${k}</span><span class="dots">${dots}</span></button>`;
   }
   const w = weekNow(plan, sel);
-  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">Entreno registrado</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}${e.notas ? " · " + esc(e.notas) : ""}</span></span></span></div>`)];
+  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${x.actividad ? `Actividad extra${x.duracion_min ? " · " + esc(x.duracion_min) + " min" : ""}${x.rpe_sesion != null ? " · dureza " + esc(x.rpe_sesion) + "/10" : ""}` : "Entreno registrado"}</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}${e.notas ? " · " + esc(e.notas) : ""}</span></span></span></div>`)];
   const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long", year: "numeric" }));
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   shell("Calendario", `<div class="card"><div class="row"><button class="btn ghost sm" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2 class="grow" style="text-align:center;margin:0;display:block">${esc(mName)}</h2><button class="btn ghost sm" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button></div>
@@ -949,7 +949,7 @@ async function viewCal2() {
   const t = today(); const m = S.sub.calM || t.slice(0, 7); const sel = S.sub.calD && S.sub.calD.startsWith(m) ? S.sub.calD : (t.startsWith(m) ? t : m + "-01");
   const first = m + "-01"; const last = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 0));
   const g0 = monday(first), g1 = addDays(monday(last), 6);
-  const [plan, asig, ev, wo] = await Promise.all([getPlan(), getAsig(g0, g1), q(sb.from("events").select("*").lte("fecha", g1).order("fecha")), q(sb.from("workouts").select("fecha,dia,assignment_id").gte("fecha", g0).lte("fecha", g1))]);
+  const [plan, asig, ev, wo] = await Promise.all([getPlan(), getAsig(g0, g1), q(sb.from("events").select("*").lte("fecha", g1).order("fecha")), q(sb.from("workouts").select("fecha,dia,assignment_id,actividad,duracion_min,rpe_sesion").gte("fecha", g0).lte("fecha", g1))]);
   const evOn = d => ev.filter(e => e.fecha <= d && d <= (e.fin || e.fecha));
   const libres = wo.filter(w => !w.assignment_id);
   let rows = "";
@@ -964,7 +964,7 @@ async function viewCal2() {
     rows += `</div>`;
   }
   const w = weekNow(plan, sel);
-  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">Entreno registrado</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
+  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${x.actividad ? `Actividad extra${x.duracion_min ? " · " + esc(x.duracion_min) + " min" : ""}${x.rpe_sesion != null ? " · dureza " + esc(x.rpe_sesion) + "/10" : ""}` : "Entreno registrado"}</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
   const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long" })), yr = first.slice(0, 4);
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   const inM = asig.filter(x => x.fecha >= g0 && x.fecha <= g1); const tps = new Set(inM.map(x => x.tipo)); if (ev.some(e => (e.fin || e.fecha) >= g0 && e.fecha <= g1)) tps.add("evento"); if (libres.length) tps.add("workout");
@@ -1167,6 +1167,25 @@ async function saveWellness(f) {
     try { const xs = await q(sb.from("assignments").select("id,contenido").eq("tipo", "formulario").eq("hecho", false).lte("fecha", today()).gte("fecha", addDays(today(), -14)));
       for (const x of xs.filter(x => (x.contenido || {}).wellness)) await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: x.id, p_hecho: true, p_respuesta: "", p_resultado: null } }); } catch { }
     sheet(""); toast(savedMsg("Guardado. ¡Gracias!")); route(); } catch (e) { toast(errMsg(e)); }
+}
+// Actividad extra que el cliente hace por su cuenta: rápida (tipo + minutos + dureza). Cuenta para la carga (dureza × minutos).
+const EXTRA = [["caminar", "Caminar / senderismo", "🚶"], ["correr", "Correr", "🏃"], ["bici", "Bici", "🚴"], ["deporte", "Deporte", "⚽"], ["clase", "Clase / combate", "🥋"], ["gimnasio", "Gimnasio", "🏋️"], ["otra", "Otra", "✨"]];
+const extraLbl = k => (EXTRA.find(e => e[0] === k) || [k, "Actividad"])[1];
+function openExtra() {
+  sheet(`<h2>Actividad extra</h2><p class="small muted" style="margin:0">Si has hecho algo por tu cuenta, apúntalo aquí para que Adrián lo tenga en cuenta.</p>
+  <form id="f-extra" style="display:flex;flex-direction:column;gap:12px">
+  <div class="f"><label>¿Qué hiciste?</label><div class="xchips">${EXTRA.map(([k, l, i]) => `<label><input type="radio" name="act" value="${k}"><span><i>${i}</i>${esc(l)}</span></label>`).join("")}</div></div>
+  <div class="grid2"><div class="f"><label for="x-min">Minutos</label><input id="x-min" name="min" inputmode="numeric" placeholder="45"></div><div class="f"><label for="x-f">Día</label><input id="x-f" type="date" name="fecha" value="${today()}" max="${today()}"></div></div>
+  <div class="f"><label>¿Qué tan dura fue?</label>${rpePick("rpe", null)}</div>
+  <div class="f"><label for="x-c">Comentario <span class="opt-l">opcional</span></label><input id="x-c" name="com" maxlength="300" placeholder="Ej.: pádel con amigos"></div>
+  <button class="btn pri block">Guardar</button></form>`);
+}
+async function saveExtra(f) {
+  const act = (f.querySelector('[name="act"]:checked') || {}).value, min = num(f.min.value), fecha = f.fecha.value || today();
+  if (!act) { toast("Elige qué hiciste"); return; } if (!min || min < 1 || min > 600) { toast("Pon los minutos"); f.min.focus(); return; } if (rpeMissing(f, "rpe")) return;
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { await q(sb.from("workouts").insert({ client_id: S.me.cid, fecha: fecha > today() ? today() : fecha, dia: extraLbl(act), actividad: act, sets: [], rpe_sesion: num(f.rpe.value), duracion_min: Math.round(min), comentario: f.com.value.trim() })); sheet(""); toast(savedMsg("¡Apuntado!")); route(); }
+  catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 function openPeso(c = {}) {
   const mom = { ayunas: "Por la mañana, en ayunas y después de ir al baño.", libre: "Cuando puedas, pero intenta que sea siempre a la misma hora.", noche: "Por la noche, antes de dormir." }[c.momento || "ayunas"];
@@ -3024,8 +3043,8 @@ async function tabEvo(c) {
   } else if (sub === "entrenos") {
     const wo = await q(sb.from("workouts").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40));
     body = wo.length ? wo.map(w => { const st = sesStats(w); return `<div class="card ses"><div class="seshd"><div><h2>${esc(w.dia || "Entreno")}</h2><span class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</span></div>
-      <div class="sesk">${w.rpe_sesion != null ? `<span><b>${esc(w.rpe_sesion)}<small>/10</small></b><em>Dureza</em></span>` : ""}${w.duracion_min ? `<span><b>${esc(w.duracion_min)}<small> min</small></b><em>Duración</em></span>` : ""}<span><b>${st.ej}</b><em>Ejercicios</em></span><span><b>${st.series}</b><em>Series</em></span>${st.vol ? `<span><b>${fmt(st.vol, 0)}<small> kg</small></b><em>Volumen</em></span>` : ""}${w.rpe_sesion != null && w.duracion_min ? `<span><b>${w.rpe_sesion * w.duracion_min}<small> UA</small></b><em>Carga interna</em></span>` : ""}</div></div>
-      ${sessionTable(w.sets, w.notas_ej)}${(() => { const sn = new Set(groupSets(w.sets).map(e => e.n)); const o = Object.entries(w.notas_ej || {}).filter(([k]) => !sn.has(k)); return o.length ? o.map(([k, v]) => `<div class="sescom"><span>${esc(k)}</span>${esc(v)}</div>`).join("") : ""; })()}${w.comentario ? `<div class="sescom"><span>Comentario de la sesión</span>${esc(w.comentario)}</div>` : ""}</div>`; }).join("") : `<div class="empty">Aún no ha registrado ningún entreno.</div>`;
+      <div class="sesk">${w.rpe_sesion != null ? `<span><b>${esc(w.rpe_sesion)}<small>/10</small></b><em>Dureza</em></span>` : ""}${w.duracion_min ? `<span><b>${esc(w.duracion_min)}<small> min</small></b><em>Duración</em></span>` : ""}${w.actividad ? "" : `<span><b>${st.ej}</b><em>Ejercicios</em></span><span><b>${st.series}</b><em>Series</em></span>`}${st.vol ? `<span><b>${fmt(st.vol, 0)}<small> kg</small></b><em>Volumen</em></span>` : ""}${w.rpe_sesion != null && w.duracion_min ? `<span><b>${w.rpe_sesion * w.duracion_min}<small> UA</small></b><em>Carga interna</em></span>` : ""}</div></div>
+      ${w.actividad ? `<p class="small muted" style="margin:0">Actividad extra apuntada por el cliente</p>` : sessionTable(w.sets, w.notas_ej)}${(() => { const sn = new Set(groupSets(w.sets).map(e => e.n)); const o = Object.entries(w.notas_ej || {}).filter(([k]) => !sn.has(k)); return o.length ? o.map(([k, v]) => `<div class="sescom"><span>${esc(k)}</span>${esc(v)}</div>`).join("") : ""; })()}${w.comentario ? `<div class="sescom"><span>Comentario de la sesión</span>${esc(w.comentario)}</div>` : ""}</div>`; }).join("") : `<div class="empty">Aún no ha registrado ningún entreno.</div>`;
   } else if (sub === "fuerza") {
     const wo = await q(sb.from("workouts").select("fecha,sets").eq("client_id", cid).order("fecha", { ascending: true }).limit(400));
     const exs = [...new Set(wo.flatMap(w => (w.sets || []).filter(s => s.kg != null).map(s => s.ejercicio)))]; const sel = exs.includes(S.sub.cex) ? S.sub.cex : exs[0];
@@ -3718,6 +3737,7 @@ document.addEventListener("click", async ev => {
       case "qscale": { const h = $("#q" + a.dataset.q); if (h) h.value = a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "peso": openPeso(); break;
+      case "extra-open": openExtra(); break;
       case "medidas": openMedidas(); break;
       case "med-all": a.closest("fieldset").querySelectorAll("input[name=med]").forEach(i => { i.checked = a.dataset.v === "1"; }); break;
       case "fotos": openFotos(); break;
@@ -3821,7 +3841,7 @@ document.addEventListener("click", async ev => {
 /* Día ampliado del calendario del entrenador */
 async function openDay(day) {
   const cid = S.coach.cid; const pl = S.coach.pl || {}; const t = today();
-  const [as, ev, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("client_id", cid).eq("fecha", day).order("orden")), q(sb.from("events").select("*").eq("client_id", cid).lte("fecha", day).order("fecha")), q(sb.from("workouts").select("id,dia,assignment_id,rpe_sesion,duracion_min").eq("client_id", cid).eq("fecha", day))]);
+  const [as, ev, wo] = await Promise.all([q(sb.from("assignments").select("*").eq("client_id", cid).eq("fecha", day).order("orden")), q(sb.from("events").select("*").eq("client_id", cid).lte("fecha", day).order("fecha")), q(sb.from("workouts").select("id,dia,assignment_id,rpe_sesion,duracion_min,actividad,comentario").eq("client_id", cid).eq("fecha", day))]);
   const evs = ev.filter(e => (e.fin || e.fecha) >= day); const libres = wo.filter(w => !w.assignment_id);
   let wk = null; for (const b of pl.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= day && day <= s.fin); if (w) { wk = { b: b.nombre, ...w }; break; } }
   const sub = x => { const c = x.contenido || {}; const p = [TIPOS[x.tipo] || x.tipo];
@@ -3837,7 +3857,7 @@ async function openDay(day) {
   const prev = addDays(day, -1), next = addDays(day, 1);
   sheet(`<div class="dayhd"><button class="cnav" data-act="day-open" data-d="${prev}" aria-label="Día anterior">‹</button><div class="grow"><h2>${esc(cap(fdate(day, { weekday: "long", day: "numeric", month: "long" })))}</h2><span class="tiny muted">${day === t ? "Hoy · " : ""}${wk ? `${esc(wk.b)} · ${esc(wk.nombre)}${wk.foco ? " · " + esc(wk.foco) : ""}` : (as.length ? as.length + " programadas" : "Sin nada programado")}</span></div><button class="cnav" data-act="day-open" data-d="${next}" aria-label="Día siguiente">›</button></div>
   ${evs.map(e => `<button class="dit tp-evento" data-act="ev-edit" data-id="${esc(e.id)}"><i></i><div class="grow"><b>★ ${esc(e.titulo)}</b><span>${esc(EV_TIPOS[e.tipo] || "Evento")}${e.fin && e.fin !== e.fecha ? ` · hasta el ${esc(fdate(e.fin, { day: "numeric", month: "short" }))}` : ""}</span></div></button>`).join("")}
-  ${as.length || libres.length ? `<div class="dlist">${as.map(x => `<button class="dit tp-${esc(x.tipo)}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}"><i></i><div class="grow"><b>${esc(x.titulo)}</b><span>${esc(sub(x))}${x.visible ? "" : " · oculto al cliente"}</span>${det(x)}${x.respuesta ? `<p class="ddet">«${esc(x.respuesta.slice(0, 160))}»</p>` : ""}</div>${st(x)}</button>`).join("")}${libres.map(w => `<div class="dit tp-workout"><i></i><div class="grow"><b>${esc(w.dia || "Entreno libre")}</b><span>Entreno registrado por el cliente${w.rpe_sesion != null ? " · dureza " + esc(w.rpe_sesion) + "/10" : ""}${w.duracion_min ? " · " + esc(w.duracion_min) + " min" : ""}</span></div><span class="chip ok">Hecho ✓</span></div>`).join("")}</div>` : `<div class="empty">Nada programado este día.</div>`}
+  ${as.length || libres.length ? `<div class="dlist">${as.map(x => `<button class="dit tp-${esc(x.tipo)}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}"><i></i><div class="grow"><b>${esc(x.titulo)}</b><span>${esc(sub(x))}${x.visible ? "" : " · oculto al cliente"}</span>${det(x)}${x.respuesta ? `<p class="ddet">«${esc(x.respuesta.slice(0, 160))}»</p>` : ""}</div>${st(x)}</button>`).join("")}${libres.map(w => `<div class="dit tp-workout"><i></i><div class="grow"><b>${esc(w.dia || "Entreno libre")}</b><span>${w.actividad ? "Actividad extra apuntada por el cliente" : "Entreno registrado por el cliente"}${w.rpe_sesion != null ? " · dureza " + esc(w.rpe_sesion) + "/10" : ""}${w.duracion_min ? " · " + esc(w.duracion_min) + " min" : ""}</span></div><span class="chip ok">Hecho ✓</span></div>`).join("")}</div>` : `<div class="empty">Nada programado este día.</div>`}
   <div class="row dayft"><button class="btn ghost" data-act="close">Cerrar</button><span class="grow"></span><button class="btn pri" data-act="asig-new" data-d="${day}">+ Añadir este día</button></div>`, "wide");
 }
 
@@ -3925,7 +3945,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");

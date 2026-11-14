@@ -1501,3 +1501,12 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .ra-pain svg{max-height:190px;width:100%}
 /* Barras de pestañas deslizables: solo se mueven a los lados (sin arrastrar la página arriba y abajo) */
 .seg,.rail{touch-action:pan-x;overscroll-behavior-x:contain}
+/* Actividad extra (cliente) */
+.xchips{display:flex;flex-wrap:wrap;gap:6px}
+.xchips label{position:relative;cursor:pointer}
+.xchips input{position:absolute;opacity:0;inset:0;margin:0;pointer-events:none}
+.xchips span{display:inline-flex;align-items:center;gap:6px;padding:9px 12px;border-radius:999px;background:var(--surface-2);font-size:14px;font-weight:600;border:1.5px solid transparent;transition:background .15s,border-color .15s}
+.xchips span i{font-style:normal}
+.xchips input:checked+span{background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-color:var(--accent);color:var(--ink)}
+.xchips input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.qlog{flex-wrap:wrap}
