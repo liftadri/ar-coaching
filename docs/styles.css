@@ -1531,3 +1531,4 @@ body:has(#rest) .toast{bottom:calc(100px + var(--safe-b))}
 .salt[aria-pressed="true"]{background:color-mix(in srgb,var(--warn,#a2701a) 16%,var(--surface));color:var(--warn,#a2701a);filter:none;opacity:1}
 .salt:focus-visible{outline:2px solid var(--accent)}
 .calert[data-act]{cursor:pointer}
+.card.com-cta{background:linear-gradient(135deg,var(--accent),#c2410c);color:#fff;border:0;box-shadow:0 6px 18px rgba(234,88,12,.25)}.card.com-cta b{color:#fff;font-size:16px}.card.com-cta .small{color:#fff;opacity:.92}
