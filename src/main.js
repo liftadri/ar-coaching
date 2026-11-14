@@ -1325,8 +1325,9 @@ function logrosHTML(L, max) {
   if (!L.length) return `<div class="card empty">Tus logros aparecerán aquí: récords, constancia y hábitos. ¡A por el primero!</div>`;
   return `<div class="card logros"><div class="lglist">${L.slice(0, max || 99).map(x => `<div class="lg k-${x.k}"><span class="lgi">${LOGO_ICO[x.k]}</span><span class="grow"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></span><em>${esc(fdate(x.f, { day: "numeric", month: "short" }))}</em></div>`).join("")}</div></div>`;
 }
-async function viewProgreso() {
-  loading("Progreso"); const plan = await getPlan();
+async function viewProgreso(keep) {
+  const sg0 = document.querySelector("#main .seg"); const segX = keep && sg0 ? sg0.scrollLeft : 0, winY = keep ? window.scrollY : 0;
+  if (!keep) loading("Progreso"); else if (sg0) sg0.style.opacity = ".6"; const plan = await getPlan();
   const vis = Array.isArray(plan.progreso_visible) ? plan.progreso_visible : ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"];
   const segs = [["logros", "Logros"], ...[["fuerza", "Cargas"], ["peso", "Peso"], ["bienestar", "Bienestar"], ["medidas", "Medidas"], ["tests", "Tests"], ["fotos", "Fotos"]].filter(([k]) => vis.includes(k))];
   if (!segs.length) { shell("Tu progreso", `<div class="empty">Adrián te enseñará aquí tu progreso.</div>`); return; }
@@ -1337,8 +1338,17 @@ async function viewProgreso() {
     const wl = await q(sb.from("wellness").select("*").order("fecha", { ascending: true }).limit(400));
     const byW = {}; wl.forEach(w => { const d = parseD(w.fecha); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); const k = iso(d); (byW[k] = byW[k] || []).push(w); });
     const wk = Object.entries(byW);
-    body = `<div class="card"><h2>Bienestar medio semanal <small>1–5</small></h2>${lineChart(wk.map(([x, v]) => ({ x, y: avg(v.map(wellIdx).filter(z => z != null)) })), { label: "Bienestar medio semanal", yMin: 1, yMax: 5, dec: 2, empty: "Rellena el cuestionario diario para ver tu evolución" })}<p class="tiny muted">Media de tus respuestas del cuestionario diario (5 = mejor). Una semana mala suelta es normal; lo importante es la tendencia.</p></div>
-    <div class="card"><h2>Horas de sueño <small>media semanal</small></h2>${lineChart(wk.map(([x, v]) => ({ x, y: avg(v.map(z => num(z.sueno_h)).filter(z => z != null)) })), { label: "Horas de sueño", empty: "Apunta las horas que duermes en el cuestionario" })}</div>`;
+    const last = wl[wl.length - 1]; const wi = last ? wellIdx(last) : null;
+    const daily = wl.filter(w => w.fecha >= addDays(today(), -60));
+    const tono = v => v >= 4 ? "ok" : v <= 2 ? "low" : "mid";
+    body = last ? `<div class="card wb"><div class="wbh"><div><h2>Tu último registro</h2><p class="tiny muted">${esc(cap(fdate(last.fecha, { weekday: "long", day: "numeric", month: "long" })))}</p></div>${wi != null ? `<div class="wbi ${tono(wi)}"><b>${fmt(wi, 1)}</b><span>de 5</span></div>` : ""}</div>
+      <div class="wbl">${WK.filter(([k]) => num(last[k]) != null).map(([k, l]) => `<div class="wbr ${tono(num(last[k]))}"><span>${esc(l)}</span><i><em style="width:${num(last[k]) * 20}%"></em></i><b>${num(last[k])}</b></div>`).join("")}</div>
+      ${[last.sueno_h != null ? `Dormiste <b>${esc(fmt(last.sueno_h))} h</b>` : "", last.fc != null ? `Pulso en reposo <b>${esc(last.fc)} lpm</b>` : "", last.hrv != null ? `HRV <b>${esc(last.hrv)} ms</b>` : ""].filter(Boolean).map(x => `<p class="wbx">${x}</p>`).join("")}
+      <p class="tiny muted" style="margin:4px 0 0">5 es siempre lo mejor.</p></div>
+    <div class="card"><h2>Bienestar día a día <small>1–5</small></h2>${lineChart(daily.map(w => ({ x: w.fecha, y: wellIdx(w) })), { label: "Bienestar", yMin: 1, yMax: 5, dec: 1, empty: "Con dos días o más verás aquí tu evolución" })}</div>
+    ${wk.length >= 2 ? `<div class="card"><h2>Media semanal <small>1–5</small></h2>${lineChart(wk.map(([x, v]) => ({ x, y: avg(v.map(wellIdx).filter(z => z != null)) })), { label: "Bienestar medio semanal", yMin: 1, yMax: 5, dec: 2 })}<p class="tiny muted">Una semana mala suelta es normal; lo importante es la tendencia.</p></div>` : ""}
+    ${daily.filter(w => num(w.sueno_h) != null).length >= 2 ? `<div class="card"><h2>Horas de sueño</h2>${lineChart(daily.map(w => ({ x: w.fecha, y: num(w.sueno_h) })), { label: "Horas de sueño", unit: "h", dec: 1 })}</div>` : ""}`
+      : `<div class="card"><div class="empty">Cuando rellenes tu cuestionario de bienestar verás aquí cómo estás y tu evolución.</div></div>`;
   } else if (tab === "tests") {
     const ts = await q(sb.from("tests").select("*").order("fecha", { ascending: false, nullsFirst: false }).limit(100));
     body = testsHTML(ts, false);
@@ -1362,7 +1372,9 @@ async function viewProgreso() {
     let urls = {}; if (ph.length) { const { data } = await sb.storage.from("fotos").createSignedUrls(ph.map(p => p.path), 600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); }
     body = `<div class="card"><h2>Fotos de progreso</h2><p class="tiny muted" style="margin-top:0">Solo las ves tú y Adrián. Misma luz, misma ropa y misma hora para poder comparar.</p>${ph.length ? `<div class="photos">${ph.map(p => urls[p.path] ? `<figure style="margin:0"><img src="${esc(urls[p.path])}" alt="Foto de ${esc(p.vista)} del ${esc(fdate(p.fecha))}" loading="lazy"><figcaption class="tiny muted">${esc(fdate(p.fecha))} · ${esc(p.vista)}</figcaption></figure>` : "").join("")}</div>` : `<div class="empty">Aún no has subido fotos.</div>`}<button class="btn pri block" style="margin-top:10px" data-act="fotos">Subir fotos</button></div>`;
   }
-  shell("Tu progreso", `<div class="seg" role="group" aria-label="Apartado">${segs.map(([k, l]) => `<button data-act="prog" data-t="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`);
+  shell("Tu progreso", `<div class="seg" role="group" aria-label="Apartado">${segs.map(([k, l]) => `<button data-act="prog" data-t="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`, { keepScroll: !!keep });
+  const sg = document.querySelector("#main .seg"); if (sg) { if (keep) sg.scrollLeft = segX; const on = sg.querySelector('[aria-pressed="true"]'); if (on) { const a = sg.getBoundingClientRect(), b = on.getBoundingClientRect(); if (b.left < a.left) sg.scrollLeft += b.left - a.left - 12; else if (b.right > a.right) sg.scrollLeft += b.right - a.right + 12; } }
+  if (keep) { const top = sg ? sg.getBoundingClientRect().top + window.scrollY - 70 : 0; window.scrollTo(0, Math.min(winY, Math.max(0, top))); }
 }
 // Tabla con solo las medidas que tienen algún dato
 function medTable(ms) {
@@ -3878,7 +3890,7 @@ document.addEventListener("click", async ev => {
       case "medidas": openMedidas(); break;
       case "med-all": a.closest("fieldset").querySelectorAll("input[name=med]").forEach(i => { i.checked = a.dataset.v === "1"; }); break;
       case "fotos": openFotos(); break;
-      case "prog": S.sub.prog = a.dataset.t; viewProgreso(); break;
+      case "prog": S.sub.prog = a.dataset.t; viewProgreso(true); break;
       case "cal-m": S.sub.calM = a.dataset.m; S.sub.calD = null; viewCal2(); break;
       case "cal-d": { const d = a.dataset.d; if (S.sub.calData && d.slice(0, 7) === (S.sub.calM || today().slice(0, 7))) { S.sub.calD = d; document.querySelectorAll('.c2d[aria-pressed="true"]').forEach(b => b.setAttribute("aria-pressed", "false")); a.setAttribute("aria-pressed", "true"); calDia(d); } else { S.sub.calD = d; S.sub.calM = d.slice(0, 7); await viewCal2(); calDia(d); } break; }
       case "item": openItem(id); break;
@@ -4076,7 +4088,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && el.dataset.actChange === "f-preset") { const fm = el.form; fm.querySelector(".f-well").hidden = el.value !== "wellness"; fm.querySelector(".f-q").hidden = el.value === "wellness"; const ta = fm.querySelector('[name="preguntas"]'); if (el.value === "revision" && ta && !ta.value.trim()) ta.value = REV_SEMANAL.join("\n"); }
   if (el.dataset && el.dataset.actChange === "msg-plant" && el.value) { const ta = el.form.querySelector('[name="detalle"]'); if (ta) ta.value = el.value; el.value = ""; }
   if (el.dataset && el.dataset.actChange === "pi-src") { const ed = $("#pi-ed"); if (ed) ed.hidden = !!el.value; }
-  if (el.id === "ex-sel") { S.sub.ex = el.value; viewProgreso(); }
+  if (el.id === "ex-sel") { S.sub.ex = el.value; viewProgreso(true); }
   if (el.id === "cex-sel") { S.sub.cex = el.value; refreshClient(); }
   if (el.id === "wt-tipo") { $("#wt-ed").innerHTML = wEditor({}, el.value); }
   if (el.dataset && el.dataset.prog === "semanas" && S.sub.prog) renderProgram($("#f-prog").dataset.id);
