@@ -40,7 +40,7 @@ const WK = [
 const wellIdx = w => { const v = WK.map(([k]) => num(w && w[k])).filter(x => x != null); return v.length ? avg(v) : null; };
 
 function toast(t) { const r = $("#toast-root"); r.innerHTML = `<div class="toast" role="status">${esc(t)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => r.innerHTML = "", 3000); }
-function sheet(html, cls = "") { $("#modal-root").innerHTML = html ? `<div class="ov" data-act="close-bg"><div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div></div>` : ""; }
+function sheet(html, cls = "") { $("#modal-root").innerHTML = html ? `<div class="ov" data-act="close-bg"><div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div></div>` : ""; if (html) requestAnimationFrame(() => document.querySelectorAll("#modal-root textarea").forEach(grow)); }
 function errMsg(e) {
   const m = (e && (e.message || e.error_description)) || "";
   if (/rate limit|too many/i.test(m)) return "Demasiados intentos. Espera unos minutos y vuelve a probar.";
@@ -48,7 +48,11 @@ function errMsg(e) {
   if (/row-level security/i.test(m)) return "No tienes permiso para guardar esto.";
   if (/Failed to fetch|NetworkError/i.test(m)) return "Sin conexión. Revisa tu internet y vuelve a intentarlo.";
   if (/Demasiados registros/i.test(m)) return "Has llegado al límite de registros de hoy.";
-  return "No se pudo completar: " + (m || "error desconocido");
+  if (/JWT|session|not authenticated|refresh token/i.test(m)) return "Tu sesión ha caducado. Vuelve a entrar.";
+  // Mensajes escritos a propósito por la base de datos (en español) sí se enseñan; el resto, nunca: solo a la consola
+  if (e && e.code === "P0001" && m && m.length < 160 && !/[_{}()]|select|insert|update|relation|column/i.test(m)) return m;
+  try { console.error("[ARC]", e); } catch { }
+  return "Algo ha fallado. Inténtalo de nuevo en un momento.";
 }
 /* ================= Modo sin conexión ================= */
 // Lectura: guarda en el móvil solo la planificación (tareas, plan, entrenos registrados, eventos) y la identidad.
@@ -274,7 +278,8 @@ async function init() {
 }
 function clearLocal() { try { Object.keys(localStorage).filter(k => k.startsWith("arc-")).forEach(k => localStorage.removeItem(k)); } catch { } }
 async function afterLogin() {
-  try { const rows = await q(sb.rpc("my_profile")); const p = (rows || []).find(r => r.es_entrenador) || (rows || [])[0];
+  try {
+    if (await mfaPendiente()) { renderMfa(); return; } const rows = await q(sb.rpc("my_profile")); const p = (rows || []).find(r => r.es_entrenador) || (rows || [])[0];
     if (!p) return renderNoAccess();
     S.me = { role: p.es_entrenador ? "coach" : "client", cid: p.id, nombre: p.nombre, avatar: p.avatar_path || null }; S.plan = null;
     if (!p.es_entrenador && p.avatar_path) await avLoad([{ id: p.id, avatar_path: p.avatar_path }]);
@@ -355,14 +360,14 @@ function renderNoAccess() {
 }
 const EYE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>`;
-const pwField = (id, label, ac) => `<div class="f"><label for="${id}">${label}</label><div class="pw"><input id="${id}" name="${id}" type="password" autocomplete="${ac}" minlength="8" maxlength="72" required><button type="button" class="eye" data-act="ver-pw" aria-label="Mostrar contraseña" title="Mostrar contraseña">${EYE}</button></div></div>`;
+const pwField = (id, label, ac) => `<div class="f"><label for="${id}">${label}</label><div class="pw"><input id="${id}" name="${id}" type="password" autocomplete="${ac}" ${ac === "new-password" ? 'minlength="10"' : ""} maxlength="72" required><button type="button" class="eye" data-act="ver-pw" aria-label="Mostrar contraseña" title="Mostrar contraseña">${EYE}</button></div></div>`;
 function renderLogin(stage) {
   const head = `${LOGO}<h1>${esc(CFG.nombre || "Adrián Rodríguez Coaching")}</h1>`;
   const tabs = cur => `<div class="seg" role="group" aria-label="Acceso"><button type="button" data-act="login-tab" data-t="" aria-pressed="${cur === "entrar"}">Entrar</button><button type="button" data-act="login-tab" data-t="alta" aria-pressed="${cur === "alta"}">Nuevo atleta</button></div>`;
   if (stage === "alta") {
     $("#app").innerHTML = `<form class="login" id="f-alta">${head}${tabs("alta")}<p>¿Es tu primera vez? Crea tu cuenta con el email que le diste a Adrián y el código de alta que te ha enviado.</p>
     <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
-    ${pwField("pw", "Crea una contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repite la contraseña", "new-password")}
+    ${pwField("pw", "Crea una contraseña (mínimo 10, con letras y números)", "new-password")}${pwField("pw2", "Repite la contraseña", "new-password")}
     <div class="f"><label for="codigo">Código de alta</label><input id="codigo" name="codigo" autocomplete="off" autocapitalize="characters" required maxlength="12" placeholder="8 caracteres"></div>
     <button class="btn pri block">Crear mi cuenta</button><p class="tiny muted" style="margin:0">Al crear tu cuenta aceptas el <a href="#legal">Aviso legal</a> y la <a href="#privacidad">Política de privacidad</a>.</p></form>`; return;
   }
@@ -374,36 +379,74 @@ function renderLogin(stage) {
   if (stage === "codigo") {
     $("#app").innerHTML = `<form class="login" id="f-rcod">${head}<p>Te hemos enviado un email a <b>${esc(S.recEmail || "")}</b>. Escribe aquí el código que aparece (mira también en spam) y tu nueva contraseña.</p>
     <div class="f"><label for="otp">Código del email</label><input id="otp" name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="123456" style="letter-spacing:.3em;font-size:20px;text-align:center"></div>
-    ${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}
+    ${pwField("pw", "Nueva contraseña (mínimo 10, con letras y números)", "new-password")}${pwField("pw2", "Repítela", "new-password")}
     <button class="btn pri block">Guardar contraseña</button><button type="button" class="btn ghost" data-act="login-tab" data-t="olvido">No me ha llegado: reenviar</button><button type="button" class="btn ghost" data-act="login-tab" data-t="">Volver</button></form>`; return;
   }
   if (stage === "nueva") {
-    $("#app").innerHTML = `<form class="login" id="f-nueva">${head}<p>Escribe tu nueva contraseña.</p>${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar contraseña</button></form>`; return;
+    $("#app").innerHTML = `<form class="login" id="f-nueva">${head}<p>Escribe tu nueva contraseña.</p>${pwField("pw", "Nueva contraseña (mínimo 10, con letras y números)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar contraseña</button></form>`; return;
   }
   $("#app").innerHTML = `<form class="login" id="f-login">${head}${tabs("entrar")}
   <div class="f"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required></div>
   ${pwField("pw", "Contraseña", "current-password")}
   <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="login-tab" data-t="olvido">He olvidado mi contraseña</button><p class="tiny muted" style="text-align:center;margin:6px 0 0">¿Aún no eres cliente? <a href="#empezar">Quiero empezar</a></p></form>`;
 }
+const PW_TXT = "Usa al menos 10 caracteres, con letras y números.";
+const pwDebil = pw => !pw || pw.length < 10 || !/[A-Za-zÀ-ÿ]/.test(pw) || !/\d/.test(pw);
 function authMsg(e) {
   const m = (e && e.message) || "";
   if (/^El código/.test(m)) return m;
   if (/code verifier|flow state|auth code/i.test(m)) return "Abre el enlace en el mismo navegador donde lo pediste, o usa el código del email.";
   if (/invalid login credentials/i.test(m)) return "Email o contraseña incorrectos.";
   if (/already registered|already exists/i.test(m)) return "Ese email ya tiene cuenta. Entra desde «Entrar».";
-  if (/password/i.test(m) && /(short|least|weak|characters)/i.test(m)) return "La contraseña es demasiado débil: usa al menos 8 caracteres, mezclando letras y números.";
+  if (/password/i.test(m) && /(short|least|weak|characters)/i.test(m)) return "La contraseña es demasiado débil. " + PW_TXT;
   if (/email not confirmed/i.test(m)) return "Tienes que confirmar tu email antes de entrar.";
   return errMsg(e);
 }
-async function doLogin(f) {
+/* ===== Verificación en dos pasos (TOTP) del entrenador ===== */
+async function mfaFactors() { try { const { data } = await sb.auth.mfa.listFactors(); return ((data && data.totp) || []).filter(f => f.status === "verified"); } catch { return []; } }
+async function mfaPendiente() { try { const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel(); return !!(data && data.nextLevel === "aal2" && data.currentLevel !== "aal2"); } catch { return false; } }
+function renderMfa() {
+  $("#app").innerHTML = `<form class="login" id="f-mfa">${LOGO}<h1>Verificación en dos pasos</h1><p>Abre tu app de autenticación y escribe el código de 6 cifras de «Adrián Rodríguez Coaching».</p>
+  <div class="f"><label for="mfa-c">Código</label><input id="mfa-c" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="mfa-in" autofocus></div>
+  <button class="btn pri block">Entrar</button><button type="button" class="btn ghost" data-act="logout">Cerrar sesión</button></form>`;
+  setTimeout(() => { const i = $("#mfa-c"); if (i) i.focus(); }, 50);
+}
+async function doMfa(f) {
   const b = f.querySelector("button.pri"); b.disabled = true;
-  try { const email = f.email.value.trim().toLowerCase(); await q(sb.auth.signInWithPassword({ email, password: f.pw.value })); S.email = email; await afterLogin(); }
-  catch (e) { toast(authMsg(e)); b.disabled = false; }
+  try { const fs = await mfaFactors(); if (!fs.length) throw new Error("sin factor"); const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: fs[0].id, code: f.code.value.trim() }); if (error) throw error; await afterLogin(); }
+  catch (e) { toast(/invalid|expired|code/i.test((e && e.message) || "") ? "Código incorrecto o caducado. Prueba con el siguiente." : errMsg(e)); b.disabled = false; f.code.value = ""; f.code.focus(); }
+}
+async function openMfa() {
+  const fs = await mfaFactors();
+  if (fs.length) { sheet(`<h2>Verificación en dos pasos</h2><p class="small" style="margin:0">Está <b>activada</b>. Cada vez que entres desde un dispositivo nuevo te pedirá el código de tu app de autenticación.</p><p class="tiny muted" style="margin:0">Si pierdes el móvil con la app de códigos no podrás entrar: guarda la clave de respaldo que te dio al activarla.</p><button type="button" class="btn ghost bad block" data-act="mfa-off" data-id="${esc(fs[0].id)}">Desactivar</button><button type="button" class="btn block" data-act="close">Cerrar</button>`); return; }
+  try {
+    const { data: l } = await sb.auth.mfa.listFactors(); for (const x of ((l && l.all) || []).filter(x => x.status !== "verified")) await sb.auth.mfa.unenroll({ factorId: x.id });
+    const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "ARC " + new Date().toISOString().slice(0, 10) }); if (error) throw error;
+    sheet(`<h2>Activar verificación en dos pasos</h2>
+    <ol class="mfa-steps"><li>Instala una app de códigos en tu móvil: Google Authenticator, Microsoft Authenticator o la de Contraseñas del iPhone.</li><li>Escanea este código QR con ella.</li><li>Escribe el código de 6 cifras que te aparece.</li></ol>
+    <div class="mfa-qr"><img src="${esc(data.totp.qr_code)}" alt="Código QR para la app de autenticación"></div>
+    <details class="small"><summary>¿No puedes escanearlo? Clave para escribirla a mano</summary><code class="mfa-k">${esc(data.totp.secret)}</code><p class="tiny muted">Guárdala en un sitio seguro: te sirve de respaldo si cambias de móvil.</p></details>
+    <form id="f-mfa-on" data-id="${esc(data.id)}" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="mfa-on-c">Código de 6 cifras</label><input id="mfa-on-c" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="mfa-in"></div><button class="btn pri block">Activar</button></form>`);
+  } catch (e) { toast(errMsg(e)); }
+}
+async function mfaOn(f) {
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: f.dataset.id, code: f.code.value.trim() }); if (error) throw error; sheet(""); toast("Verificación en dos pasos activada"); viewMas(); }
+  catch (e) { toast(/invalid|expired|code/i.test((e && e.message) || "") ? "Código incorrecto. Espera al siguiente y vuelve a probar." : errMsg(e)); b.disabled = false; }
+}
+const LG_KEY = "arc-login-fallos";
+function loginEspera() { try { const d = JSON.parse(localStorage.getItem(LG_KEY) || "{}"); return d.hasta && d.hasta > Date.now() ? Math.ceil((d.hasta - Date.now()) / 1000) : 0; } catch { return 0; } }
+function loginFallo() { try { const d = JSON.parse(localStorage.getItem(LG_KEY) || "{}"); const n = (d.t && Date.now() - d.t < 30 * 60000 ? d.n || 0 : 0) + 1; const esp = n >= 5 ? Math.min(15 * 60, 30 * 2 ** (n - 5)) : 0; localStorage.setItem(LG_KEY, JSON.stringify({ n, t: Date.now(), hasta: esp ? Date.now() + esp * 1000 : 0 })); } catch { } }
+async function doLogin(f) {
+  const w = loginEspera(); if (w) { toast(`Demasiados intentos. Espera ${w >= 60 ? Math.ceil(w / 60) + " min" : w + " s"} y vuelve a probar.`); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { const email = f.email.value.trim().toLowerCase(); await q(sb.auth.signInWithPassword({ email, password: f.pw.value })); try { localStorage.removeItem(LG_KEY); } catch { } S.email = email; await afterLogin(); }
+  catch (e) { if (/invalid login credentials/i.test((e && e.message) || "")) loginFallo(); toast(authMsg(e)); b.disabled = false; }
 }
 async function doAlta(f) {
   const email = f.email.value.trim().toLowerCase(), pw = f.pw.value, codigo = f.codigo.value.trim();
   if (pw !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
-  if (pw.length < 8) { toast("La contraseña debe tener al menos 8 caracteres"); return; }
+  if (pwDebil(pw)) { toast(PW_TXT); return; }
   const b = f.querySelector("button.pri"); b.disabled = true;
   try {
     let r = await sb.auth.signUp({ email, password: pw });
@@ -429,7 +472,7 @@ async function doOlvido(f) {
 }
 async function doRecCodigo(f) {
   if (f.pw.value !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
-  if (f.pw.value.length < 8) { toast("La contraseña debe tener al menos 8 caracteres"); return; }
+  if (pwDebil(f.pw.value)) { toast(PW_TXT); return; }
   const b = f.querySelector("button.pri"); b.disabled = true;
   try {
     const { error } = await sb.auth.verifyOtp({ email: S.recEmail, token: f.otp.value.trim(), type: "recovery" });
@@ -440,7 +483,7 @@ async function doRecCodigo(f) {
 }
 async function doNueva(f) {
   if (f.pw.value !== f.pw2.value) { toast("Las contraseñas no coinciden"); return; }
-  if (f.pw.value.length < 8) { toast("La contraseña debe tener al menos 8 caracteres"); return; }
+  if (pwDebil(f.pw.value)) { toast(PW_TXT); return; }
   const b = f.querySelector("button.pri"); b.disabled = true;
   try { await q(sb.auth.updateUser({ password: f.pw.value })); S.recovery = false; toast("Contraseña cambiada"); history.replaceState(null, "", location.pathname); const { data } = await sb.auth.getSession(); S.email = (data.session && data.session.user.email) || ""; await afterLogin(); }
   catch (e) { toast(authMsg(e)); b.disabled = false; }
@@ -936,27 +979,6 @@ async function saveItem(f) {
 }
 
 /* ================= Cliente: Calendario ================= */
-async function viewCal() {
-  loading("Calendario");
-  const t = today(); const m = S.sub.calM || t.slice(0, 7); const sel = S.sub.calD && S.sub.calD.startsWith(m) ? S.sub.calD : (t.startsWith(m) ? t : m + "-01");
-  const first = m + "-01"; const last = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 0));
-  const [plan, asig, ev, wo] = await Promise.all([getPlan(), getAsig(first, last), q(sb.from("events").select("*").lte("fecha", last).order("fecha")), q(sb.from("workouts").select("fecha,dia,assignment_id,actividad,duracion_min,rpe_sesion").gte("fecha", first).lte("fecha", last))]);
-  const evOn = d => ev.filter(e => e.fecha <= d && d <= (e.fin || e.fecha));
-  const libres = wo.filter(w => !w.assignment_id);
-  let cells = Array.from({ length: dow(first) - 1 }, () => `<span></span>`).join("");
-  for (let k = 1; k <= +last.slice(8); k++) {
-    const d = m + "-" + String(k).padStart(2, "0"); const a = asig.filter(x => x.fecha === d);
-    const dots = [...new Set(a.map(x => x.tipo))].map(tp => `<i class="dot dot-${tp}${a.filter(x => x.tipo === tp).every(x => x.hecho) ? "" : " hollow"}"></i>`).join("") + (evOn(d).length ? `<i class="dot dot-evento"></i>` : "") + (libres.some(w => w.fecha === d) ? `<i class="dot dot-workout"></i>` : "");
-    cells += `<button class="cd${d === t ? " hoy" : ""}" data-act="cal-d" data-d="${d}" aria-pressed="${d === sel}" aria-label="${esc(fdate(d, { weekday: "long", day: "numeric", month: "long" }))}"><span>${k}</span><span class="dots">${dots}</span></button>`;
-  }
-  const w = weekNow(plan, sel);
-  const items = [...asig.filter(x => x.fecha === sel).map(asigRow), ...libres.filter(x => x.fecha === sel).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${x.actividad ? `Actividad extra${x.duracion_min ? " · " + esc(x.duracion_min) + " min" : ""}${x.rpe_sesion != null ? " · dureza " + esc(x.rpe_sesion) + "/10" : ""}` : "Entreno registrado"}</span></span><span class="done">Hecho ✓</span></div>`), ...evOn(sel).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}${e.notas ? " · " + esc(e.notas) : ""}</span></span></span></div>`)];
-  const mName = cap(parseD(first).toLocaleDateString("es-ES", { month: "long", year: "numeric" }));
-  const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
-  shell("Calendario", `<div class="card"><div class="row"><button class="btn ghost sm" data-act="cal-m" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2 class="grow" style="text-align:center;margin:0;display:block">${esc(mName)}</h2><button class="btn ghost sm" data-act="cal-m" data-m="${nextM}" aria-label="Mes siguiente">›</button></div>
-  <div class="calg"><span class="dh">L</span><span class="dh">M</span><span class="dh">X</span><span class="dh">J</span><span class="dh">V</span><span class="dh">S</span><span class="dh">D</span>${cells}</div></div>
-  <div class="card"><h2>${esc(cap(fdate(sel, { weekday: "long", day: "numeric", month: "long" })))}${w ? ` <small>${esc(w.bloque)} · ${esc(w.nombre)}</small>` : ""}</h2>${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="small muted" style="margin:0">Nada previsto este día.</p>`}</div>`);
-}
 
 /* Leyenda discreta del calendario: solo lo que aparece este mes + estados */
 const LEY_T = { workout: "Entreno", cardio: "Cardio", formulario: "Formulario", tarea: "Tarea", nota: "Mensaje", peso: "Peso", fotos: "Fotos", medidas: "Medidas", evento: "Evento" };
@@ -1028,7 +1050,6 @@ function restSecs(t) {
 }
 const RT = { end: 0, dur: 0, iv: null, done: false };
 const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
-const restBtn = x => x ? `<button type="button" class="rgo" data-act="rest-go">⏱ Descanso ${mmss(x)}</button>` : "";
 const restTxt = x => !x ? "" : x < 60 ? `${x} s` : x % 60 ? mmss(x) : `${x / 60} min`;
 const IC_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`;
 const IC_HIST = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>`;
@@ -1474,9 +1495,9 @@ async function viewInforme(id) {
 /* ================= Perfil ================= */
 async function viewMas() {
   const wa = (CFG.whatsappEntrenador || "").replace(/\D/g, "");
-  const coach = S.me.role === "coach"; const plan = coach ? null : await getPlan(); const bkc = coach ? await sysCard() + await pushCardPerfil() + await pushCoachCard() + await backupCard() + await legalCard() : await pushCardPerfil();
+  const coach = S.me.role === "coach"; const mf = coach ? await mfaFactors() : []; const plan = coach ? null : await getPlan(); const bkc = coach ? await sysCard() + await pushCardPerfil() + await pushCoachCard() + await backupCard() + await legalCard() : await pushCardPerfil();
   shell("Perfil", `<div class="card pcard">${coach ? avatar(S.me.nombre || "?") : `<label class="avedit" title="Cambiar foto de perfil">${avatar(S.me.nombre || "?", "", S.me.cid)}<input type="file" accept="image/*" data-act-change="av-file" hidden><span class="avcam" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span></label>`}<div><h2>${esc(S.me.nombre || "")}</h2><p class="small muted" style="margin:0">${esc(S.email)}${coach ? " · Entrenador" : ""}</p>${coach ? "" : `<div class="avopts"><button type="button" class="lnkb" data-act="av-pick">${S.me.avatar ? "Cambiar foto" : "Poner foto de perfil"}</button>${S.me.avatar ? `<button type="button" class="lnkb muted" data-act="av-del">Quitar</button>` : ""}</div>`}</div></div>
-  <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button><button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
+  <div class="card menu-l">${coach ? "" : `<button class="it" data-act="go" data-h="informes"><span><b>Mis revisiones</b></span><span class="chev">›</span></button>`}${!coach && wa ? `<a class="it" href="https://wa.me/${wa}" target="_blank" rel="noopener"><span><b>Escribir a Adrián</b></span><span class="chev">›</span></a>` : ""}<button class="it" data-act="cambiar-pw"><span><b>Cambiar contraseña</b></span><span class="chev">›</span></button>${coach ? `<button class="it" data-act="mfa"><span class="grow"><b>Verificación en dos pasos</b><br><span class="tiny ${mf.length ? "ok-t" : "muted"}">${mf.length ? "Activada" : "Recomendada: protege tu panel aunque alguien sepa tu contraseña"}</span></span><span class="chev">›</span></button>` : ""}<button class="it danger" data-act="logout"><span><b>Cerrar sesión</b></span></button></div>
   ${bkc}
   <p class="tiny muted foot"><a href="#legal">Aviso legal</a> · <a href="#privacidad">Política de privacidad</a></p>
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
@@ -1553,7 +1574,7 @@ async function restoreRun(b) {
 }
 
 function openCambiarPw() {
-  sheet(`<h2>Cambiar contraseña</h2><form id="f-nueva" style="display:flex;flex-direction:column;gap:10px">${pwField("pw", "Nueva contraseña (mínimo 8 caracteres)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+  sheet(`<h2>Cambiar contraseña</h2><form id="f-nueva" style="display:flex;flex-direction:column;gap:10px">${pwField("pw", "Nueva contraseña (mínimo 10, con letras y números)", "new-password")}${pwField("pw2", "Repítela", "new-password")}<button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
 }
 
 /* ================= Entrenador: utilidades ================= */
@@ -1963,14 +1984,6 @@ function bienvenida(c) {
   <button class="btn block" data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}">Ir a su ficha</button><button type="button" class="btn ghost" data-act="close">Cerrar</button>`);
 }
 // Bloque de Inicio del entrenador
-function inicioEmbudo(leads, onb) {
-  const ls = leads.filter(l => l.estado === "nuevo" || l.estado === "contactado"), os = onb.filter(o => !o.revisado);
-  if (!ls.length && !os.length) return `<div class="card embudo"><h2 class="hh">${ICON.clientes}Embudo</h2><p class="small muted" style="margin:0">Sin solicitudes nuevas. Tu enlace para Instagram: <b class="sel">${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar</b> <button class="btn ghost sm" data-act="copy-txt" data-t="${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar">Copiar</button></p></div>`;
-  return `<div class="card embudo"><h2 class="hh">${ICON.clientes}Embudo <span class="cnt">${ls.length + os.length}</span></h2><div class="list">
-  ${ls.map(l => `<button class="it feed" data-act="lead" data-id="${esc(l.id)}">${avatar(l.nombre)}<span class="grow"><span class="lnk">${esc(l.nombre)}</span> <span class="chip ${l.estado === "nuevo" ? "acc" : ""}">${esc(LEAD_EST[l.estado])}</span><br><span class="tiny muted">${esc(l.objetivo || "Solicitud de contacto")} · ${esc(relTime(l.created_at))}</span></span></button>`).join("")}
-  ${os.map(o => `<button class="it feed" data-act="go-inicial" data-cid="${esc(o.client_id)}">${avatar(clientName(o.client_id), "", o.client_id)}<span class="grow"><span class="lnk">${esc(clientName(o.client_id))}</span> <span class="chip ok">Cuestionario inicial</span><br><span class="tiny muted">Rellenado ${esc(relTime(o.enviado_en))} · sin revisar</span></span></button>`).join("")}
-  </div><p class="tiny muted" style="margin:8px 0 0">Enlace para Instagram: <b class="sel">${esc(location.origin + location.pathname.replace(/[^/]*$/, ""))}empezar</b></p></div>`;
-}
 
 /* ---- Cliente: cuestionario inicial ---- */
 const COM_KEY = () => "arc-comienzo-" + (S.me && S.me.cid);
@@ -3225,7 +3238,13 @@ function secRow(s = {}) { return `<div class="card" data-s style="display:flex;f
 async function tabInformes(c) {
   const rp = await q(sb.from("reports").select("*").eq("client_id", c.id).order("fecha", { ascending: false }).limit(30));
   return `<div class="row" style="flex-wrap:wrap"><button class="btn pri" data-act="rep-new" data-auto="1" title="Se rellena con los datos de la semana. Nada se publica hasta que pulses «Publicar».">+ Nueva revisión</button><button class="btn" data-act="rep-new" data-auto="0">En blanco</button></div>
-  ${rp.length ? rp.map(r => `<div class="card"><h2>${esc(r.titular || "Revisión")} <small>${esc(fdate(r.fecha))}${r.semana ? " · " + esc(r.semana) : ""}</small></h2><div class="row" style="flex-wrap:wrap"><span class="chip ${r.publicado ? "ok" : "warn"}">${r.publicado ? "Visible para el cliente" : "Borrador (no lo ve)"}</span><span class="tag tag-${r.autor === "adrian" ? "workout" : "formulario"}">${r.autor === "adrian" ? "Hecho por ti" : "Hecho por Claude"}</span>${r.publicado ? `<span class="chip ${r.leido_en ? "ok" : ""}">${r.leido_en ? "Leída " + esc(relTime(r.leido_en)) : "Sin leer"}</span>` : ""}${(r.adjuntos || []).length ? `<span class="chip">📎 ${(r.adjuntos || []).length}</span>` : ""}<span class="grow"></span><button class="btn sm" data-act="ver-informe" data-id="${esc(r.id)}">Vista del cliente</button><button class="btn sm" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button><button class="btn sm ${r.publicado ? "" : "pri"}" data-act="publicar" data-id="${esc(r.id)}" data-v="${r.publicado ? "0" : "1"}">${r.publicado ? "Ocultar" : "Publicar"}</button></div>${r.respuesta ? `<div class="rresp"><b>Respuesta de ${esc(clientName(r.client_id))}</b> <span class="tiny muted">${esc(relTime(r.respondido_en))}</span><p>${esc(r.respuesta)}</p></div>` : ""}</div>`).join("") : `<div class="empty">Aún no hay revisiones.</div>`}`;
+  ${rp.length ? `<div class="rpcs">${rp.map(r => `<article class="card rpc">
+    <div class="rpc-top"><span class="rpc-d">${esc(fdate(r.fecha, { day: "numeric", month: "short" }))}${r.semana ? " · " + esc(r.semana) : ""}</span><span class="rpc-st ${r.publicado ? "ok" : "warn"}"><i></i>${r.publicado ? "Publicada" : "Borrador"}</span></div>
+    <h3 class="rpc-t">${esc(r.titular || "Revisión")}</h3>
+    <p class="rpc-m">${[r.autor === "adrian" ? "Hecha por ti" : "Borrador de Claude", r.publicado ? (r.leido_en ? "Leída " + esc(relTime(r.leido_en)) : "Sin leer") : "El cliente no la ve", (r.adjuntos || []).length ? `${(r.adjuntos || []).length} archivo${(r.adjuntos || []).length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ")}</p>
+    ${r.respuesta ? `<div class="rresp"><b>Respuesta de ${esc(c.nombre)}</b> <span class="tiny muted">${esc(relTime(r.respondido_en))}</span><p>${esc(r.respuesta)}</p></div>` : ""}
+    <div class="rpc-a"><button class="btn sm" data-act="ver-informe" data-id="${esc(r.id)}">Vista previa</button><button class="btn sm" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button><button class="btn sm ${r.publicado ? "" : "pri"}" data-act="publicar" data-id="${esc(r.id)}" data-v="${r.publicado ? "0" : "1"}">${r.publicado ? "Ocultar" : "Publicar"}</button></div>
+  </article>`).join("")}</div>` : `<div class="empty">Aún no hay revisiones.</div>`}`;
 }
 const repLines = a => (a || []).map(x => typeof x === "string" ? x : `${x.t || ""}${x.p ? " | " + x.p : ""}`).join("\n");
 async function autoReport(cid, fin) {
@@ -3852,6 +3871,8 @@ document.addEventListener("click", async ev => {
       case "login-tab": renderLogin(a.dataset.t); break;
       case "ver-pw": { const i = a.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; const v = i.type === "text"; a.innerHTML = v ? EYE_OFF : EYE; a.setAttribute("aria-label", v ? "Ocultar contraseña" : "Mostrar contraseña"); a.title = a.getAttribute("aria-label"); a.classList.toggle("on", v); i.focus(); break; }
       case "cambiar-pw": openCambiarPw(); break;
+      case "mfa": openMfa(); break;
+      case "mfa-off": if (!confirm("¿Seguro que quieres desactivar la verificación en dos pasos?")) break; try { const { error } = await sb.auth.mfa.unenroll({ factorId: a.dataset.id }); if (error) throw error; sheet(""); toast("Desactivada"); viewMas(); } catch (e) { toast(errMsg(e)); } break;
       case "close": closeSheet(); break;
       case "go-back": goBack(); break;
       case "pay-new": payForm(a.dataset.cid || ""); break;
@@ -4096,7 +4117,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-mfa": doMfa, "f-mfa-on": mfaOn, "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
