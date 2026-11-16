@@ -1707,3 +1707,11 @@ textarea.tscroll:focus{box-shadow:var(--ring),inset 0 -14px 12px -12px rgba(28,3
 .vwrap{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden;margin:0 auto}
 .vwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .vwrap.vshort{aspect-ratio:9/16;max-height:62vh;width:auto}
+.shdone{text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px}
+.shdone .finst{width:100%;margin-top:10px}
+.shok{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;margin-top:6px}
+.shok svg{width:30px;height:30px}
+.shcta{background:var(--surface-2);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;font-size:14.5px;line-height:1.45}
+.shcta b{font-size:15.5px}
+.shpick{cursor:pointer;position:relative}
+.shprev{display:block;width:62%;max-width:280px;margin:0 auto;border-radius:16px;box-shadow:var(--shadow)}

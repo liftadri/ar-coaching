@@ -1187,6 +1187,48 @@ async function openFin() {
   <div class="f"><label for="fin-com">Comentario para Adrián <span class="opt-l">opcional</span></label><textarea id="fin-com" name="com" rows="3" maxlength="2000" placeholder="Cómo te has sentido, molestias, algo que quieras contarme…">${esc(d.com || "")}</textarea></div>
   <button class="btn pri block">Guardar entreno</button><button type="button" class="btn ghost block" data-act="w-seguir">Seguir entrenando</button></form>`);
 }
+/* ===== Al terminar: animar a compartir el entreno etiquetando a @liftadri ===== */
+const IG = "@liftadri";
+function openShareDone() {
+  const d = S.share; if (!d) return;
+  sheet(`<div class="shdone"><div class="shok">${IC_OK}</div><h2>¡Entreno completado!</h2><p class="small muted">Buen trabajo. Ya le llega todo a Adrián.</p>
+  <div class="finst">${d.dur != null ? `<div><b>${esc(durTxt(d.dur))}</b><span>Duración</span></div>` : ""}<div><b>${d.series}</b><span>Series</span></div>${d.vol ? `<div><b>${esc(fmt(Math.round(d.vol)))} kg</b><span>Volumen</span></div>` : ""}</div></div>
+  <div class="shcta"><b>¿Lo celebras?</b><span>Hazte una foto, súbela a tu historia y etiqueta a <b>${IG}</b>. Te pongo tu entreno encima de la foto.</span></div>
+  <label class="btn pri block shpick">📸 Hacerme una foto<input type="file" accept="image/*" capture="user" data-act-change="sh-foto" hidden></label>
+  <label class="btn block shpick">Elegir una de la galería<input type="file" accept="image/*" data-act-change="sh-foto" hidden></label>
+  <button type="button" class="btn ghost block" data-act="sh-sinfoto">Compartir sin foto</button>
+  <button type="button" class="btn ghost block" data-act="close">Ahora no</button>`);
+}
+async function shareImage(file) {
+  const d = S.share || {}; const W = 1080, H = 1920; const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+  const load = src => new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; });
+  if (file) { const url = URL.createObjectURL(file); try { const im = await load(url); const r = Math.max(W / im.width, H / im.height); const w = im.width * r, h = im.height * r; x.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); } finally { URL.revokeObjectURL(url); } }
+  else { const g = x.createRadialGradient(W, 0, 0, W, 0, 1300); g.addColorStop(0, "#5a2412"); g.addColorStop(1, "#16181b"); x.fillStyle = g; x.fillRect(0, 0, W, H); }
+  const gr = x.createLinearGradient(0, H * .5, 0, H); gr.addColorStop(0, "rgba(10,11,13,0)"); gr.addColorStop(.55, "rgba(10,11,13,.75)"); gr.addColorStop(1, "rgba(10,11,13,.92)"); x.fillStyle = gr; x.fillRect(0, H * .5, W, H * .5);
+  await document.fonts.ready.catch(() => { });
+  const F = (w, s) => `${w} ${s}px Geist, system-ui, sans-serif`; const L = 84;
+  try { const lg = await load("./logo-color.png"); x.drawImage(lg, L, 220, 120, 120 * lg.height / lg.width); } catch { }
+  x.fillStyle = "#fff"; x.textBaseline = "alphabetic";
+  let y = 1340; x.font = F(600, 40); x.fillStyle = "#ff6a2b"; x.fillText("Entreno completado", L, y);
+  y += 92; x.fillStyle = "#fff"; x.font = F(800, 84); const t = String(d.titulo || "Entreno"); x.fillText(t.length > 20 ? t.slice(0, 19) + "…" : t, L, y);
+  const stats = [d.dur != null ? [durTxt(d.dur), "duración"] : null, [String(d.series || 0), "series"], d.vol ? [fmt(Math.round(d.vol)) + " kg", "volumen"] : null].filter(Boolean);
+  y += 120; let sx = L; stats.forEach(([v, l]) => { x.font = F(750, 60); x.fillStyle = "#fff"; x.fillText(v, sx, y); const w = Math.max(x.measureText(v).width, 160); x.font = F(500, 32); x.fillStyle = "rgba(255,255,255,.65)"; x.fillText(l, sx, y + 46); sx += w + 70; });
+  x.font = F(700, 40); x.fillStyle = "#fff"; x.fillText(IG, L, 1700);
+  return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .9));
+}
+async function shareFlow(file) {
+  sheet(`<h2>Preparando tu foto…</h2><div class="empty">Un segundo</div>`);
+  try {
+    const blob = await shareImage(file); const f = new File([blob], "entreno-liftadri.jpg", { type: "image/jpeg" }); const url = URL.createObjectURL(blob);
+    try { await navigator.clipboard.writeText(IG); } catch { }
+    S.shareFile = f;
+    sheet(`<h2>Tu foto, lista</h2><img class="shprev" src="${url}" alt="Vista previa de la foto para compartir">
+    <div class="shcta"><b>Último paso</b><span>Compártela en tu historia y <b>etiqueta a ${IG}</b>. Ya lo he copiado: solo tienes que pegarlo.</span></div>
+    ${navigator.canShare && navigator.canShare({ files: [f] }) ? `<button type="button" class="btn pri block" data-act="sh-compartir">Compartir</button>` : ""}
+    <a class="btn ${navigator.canShare && navigator.canShare({ files: [f] }) ? "" : "pri "}block" href="${url}" download="entreno-liftadri.jpg">Guardar en mi galería</a>
+    <button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
+  } catch (e) { toast(errMsg(e)); sheet(""); }
+}
 function wSeguir() { const f = $("#f-workout"); if (f) { let d = {}; try { d = JSON.parse(localStorage.getItem(draftKey(f.dataset.id)) || "{}"); } catch { } delete d.tf; try { localStorage.setItem(draftKey(f.dataset.id), JSON.stringify(d)); } catch { } } closeSheet(); }
 
 /* Series ordenadas: carga, repeticiones y RIR */
@@ -1263,7 +1305,7 @@ async function saveWorkout(fin) {
   try {
     await op({ t: "insert", table: "workouts", row: { client_id: S.me.cid, fecha: today(), dia: a.titulo, sets, rpe_sesion: rpe, duracion_min: durAuto(dr), comentario: com, notas_ej, assignment_id: id } });
     await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: id, p_hecho: true, p_respuesta: com } });
-    try { localStorage.removeItem(draftKey(id)); } catch { } clearInterval(S.durT); restStop(); sheet(""); toast(savedMsg("¡Entreno guardado!")); location.hash = "hoy";
+    try { localStorage.removeItem(draftKey(id)); } catch { } clearInterval(S.durT); restStop(); sheet(""); const st = sesStats({ sets }); S.share = { titulo: a.titulo, dur: durAuto(dr), series: st.series, vol: st.vol, rpe }; location.hash = "hoy"; setTimeout(openShareDone, 450);
   } catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 
@@ -3902,6 +3944,8 @@ document.addEventListener("click", async ev => {
       case "rest-stop": restStop(); break;
       case "w-start": wStart(a.dataset.id); break;
       case "ex-video": openVideo(a.dataset.u, a.dataset.n); break;
+      case "sh-sinfoto": shareFlow(null); break;
+      case "sh-compartir": try { await navigator.share({ files: [S.shareFile], text: "Entreno hecho 💪 " + IG }); } catch (e) { if (e && e.name !== "AbortError") toast("No se pudo abrir el menú de compartir. Guárdala y súbela desde Instagram."); } break;
       case "w-fin": openFin(); break;
       case "w-seguir": wSeguir(); break;
       case "set-ok": setOk(a); break;
@@ -4111,6 +4155,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && el.dataset.actChange === "t-clave") { S.coach.tclave = el.value; const b = $("#t-campos"); if (b) b.innerHTML = tCampos(el.value); }
   if (el.dataset && el.dataset.actChange === "t-ej") { const p = VMT.find(x => x[0] === el.value), m = el.form && el.form.c_vmt; if (p && m && (!m.value || m.dataset.auto)) { m.value = String(p[1]).replace(".", ","); m.dataset.auto = "1"; } tPreview(); }
   if (el.dataset && el.dataset.actChange === "av-file") { avSubir(el.files && el.files[0]); el.value = ""; }
+  if (el.dataset && el.dataset.actChange === "sh-foto") { const f = el.files && el.files[0]; el.value = ""; if (f) shareFlow(f); }
   if (el.dataset && el.dataset.actChange === "ra-les") { const l = (((S.coach.c || {}).ficha || {}).lesiones || []).find(x => x.id === el.value); const p = protoDeLesion(l), sl = $("#ra-proto"); if (p && sl) sl.value = p; }
   if (el.dataset && el.dataset.actChange === "les-tipo") { const b = $("#les-sub"); if (b) b.innerHTML = lesSub(el.value); }
   if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
