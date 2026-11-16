@@ -1187,6 +1187,33 @@ async function openFin() {
   <div class="f"><label for="fin-com">Comentario para Adrián <span class="opt-l">opcional</span></label><textarea id="fin-com" name="com" rows="3" maxlength="2000" placeholder="Cómo te has sentido, molestias, algo que quieras contarme…">${esc(d.com || "")}</textarea></div>
   <button class="btn pri block">Guardar entreno</button><button type="button" class="btn ghost block" data-act="w-seguir">Seguir entrenando</button></form>`);
 }
+/* ===== Entrenador: corregir un entreno registrado por el cliente ===== */
+const woRow = (x = {}, i = "") => `<div class="wer" data-i="${i}"><input name="e_n" list="dl-ex" value="${esc(x.ejercicio || "")}" placeholder="Ejercicio" aria-label="Ejercicio"><label><span>Kg</span><input name="e_kg" inputmode="decimal" value="${esc(x.kg ?? "")}" placeholder="–" aria-label="Kilos"></label><label><span>Reps</span><input name="e_r" inputmode="numeric" value="${esc(x.reps ?? "")}" placeholder="–" aria-label="Repeticiones"></label><label><span>RIR</span><input name="e_rir" inputmode="decimal" value="${esc(x.rir ?? "")}" placeholder="–" aria-label="RIR"></label><button type="button" class="btn ghost sm" data-act="wer-del" aria-label="Quitar serie">✕</button></div>`;
+async function openWoEdit(id) {
+  const w = (S.coach.wo || {})[id]; if (!w) return; await exLib().catch(() => []);
+  sheet(`<h2>Editar entreno</h2><p class="tiny muted" style="margin:0">Corrige lo que el cliente apuntó mal. Los cambios se ven al momento en su progreso.</p>
+  <form id="f-woe" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px">
+  <div class="grid2"><div class="f"><label>Nombre</label><input name="dia" value="${esc(w.dia || "")}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(w.fecha)}" required></div></div>
+  <div class="grid2"><div class="f"><label>Dureza (1–10)</label><input name="rpe" inputmode="numeric" value="${esc(w.rpe_sesion ?? "")}"></div><div class="f"><label>Duración (min)</label><input name="dur" inputmode="numeric" value="${esc(w.duracion_min ?? "")}"></div></div>
+  ${w.actividad ? "" : `<div class="f"><label>Series</label><div class="werh"><span>Ejercicio</span><span>Kg</span><span>Reps</span><span>RIR</span><span></span></div><div id="wer-list">${(w.sets || []).map((x, i) => x.hecho ? "" : woRow(x, i)).join("")}</div><button type="button" class="btn sm" data-act="wer-add" style="align-self:flex-start;margin-top:6px">+ Añadir serie</button></div>`}
+  <div class="f"><label>Comentario del cliente</label><textarea name="com" rows="2">${esc(w.comentario || "")}</textarea></div>
+  ${exDatalist()}
+  <button class="btn pri block">Guardar cambios</button><button type="button" class="btn ghost bad block" data-act="wo-del" data-id="${esc(id)}">Borrar este entreno</button></form>`, "wide");
+}
+async function saveWoEdit(f) {
+  const id = f.dataset.id; const w = (S.coach.wo || {})[id]; if (!w) return;
+  const rpe = num(f.rpe.value), dur = num(f.dur.value);
+  if (rpe != null && (rpe < 1 || rpe > 10)) { toast("La dureza va de 1 a 10"); return; }
+  let sets = w.sets || [];
+  if (!w.actividad) {
+    const cont = {}; const keep = sets.filter(x => x.hecho);
+    const rows = [...f.querySelectorAll(".wer")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); const orig = r.dataset.i !== "" ? sets[+r.dataset.i] || {} : {}; const ej = g("e_n"); if (!ej) return null; const o = { ...orig, ejercicio: ej, kg: num(g("e_kg")), reps: num(g("e_r")), rir: num(g("e_rir")) }; cont[ej] = (cont[ej] || 0) + 1; o.serie = cont[ej]; return o; }).filter(Boolean);
+    sets = [...rows, ...keep];
+  }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { await q(sb.from("workouts").update({ dia: f.dia.value.trim() || w.dia, fecha: f.fecha.value || w.fecha, rpe_sesion: rpe, duracion_min: dur, comentario: f.com.value.trim(), sets }).eq("id", id)); sheet(""); toast("Entreno corregido"); S.coach.keep = true; viewCoachClient(S.coach.cid); }
+  catch (e) { toast(errMsg(e)); b.disabled = false; }
+}
 /* ===== Al terminar: animar a compartir el entreno etiquetando a @liftadri ===== */
 const IG = "@liftadri";
 function openShareDone() {
@@ -1204,16 +1231,12 @@ async function shareImage(file) {
   const load = src => new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; });
   if (file) { const url = URL.createObjectURL(file); try { const im = await load(url); const r = Math.max(W / im.width, H / im.height); const w = im.width * r, h = im.height * r; x.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); } finally { URL.revokeObjectURL(url); } }
   else { const g = x.createRadialGradient(W, 0, 0, W, 0, 1300); g.addColorStop(0, "#5a2412"); g.addColorStop(1, "#16181b"); x.fillStyle = g; x.fillRect(0, 0, W, H); }
-  const gr = x.createLinearGradient(0, H * .5, 0, H); gr.addColorStop(0, "rgba(10,11,13,0)"); gr.addColorStop(.55, "rgba(10,11,13,.75)"); gr.addColorStop(1, "rgba(10,11,13,.92)"); x.fillStyle = gr; x.fillRect(0, H * .5, W, H * .5);
+  // Solo un degradado suave abajo para que se lea; la foto ocupa toda la historia
+  const gr = x.createLinearGradient(0, H - 520, 0, H); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.55)"); x.fillStyle = gr; x.fillRect(0, H - 520, W, 520);
   await document.fonts.ready.catch(() => { });
-  const F = (w, s) => `${w} ${s}px Geist, system-ui, sans-serif`; const L = 84;
-  try { const lg = await load("./logo-color.png"); x.drawImage(lg, L, 220, 120, 120 * lg.height / lg.width); } catch { }
-  x.fillStyle = "#fff"; x.textBaseline = "alphabetic";
-  let y = 1340; x.font = F(600, 40); x.fillStyle = "#ff6a2b"; x.fillText("Entreno completado", L, y);
-  y += 92; x.fillStyle = "#fff"; x.font = F(800, 84); const t = String(d.titulo || "Entreno"); x.fillText(t.length > 20 ? t.slice(0, 19) + "…" : t, L, y);
-  const stats = [d.dur != null ? [durTxt(d.dur), "duración"] : null, [String(d.series || 0), "series"], d.vol ? [fmt(Math.round(d.vol)) + " kg", "volumen"] : null].filter(Boolean);
-  y += 120; let sx = L; stats.forEach(([v, l]) => { x.font = F(750, 60); x.fillStyle = "#fff"; x.fillText(v, sx, y); const w = Math.max(x.measureText(v).width, 160); x.font = F(500, 32); x.fillStyle = "rgba(255,255,255,.65)"; x.fillText(l, sx, y + 46); sx += w + 70; });
-  x.font = F(700, 40); x.fillStyle = "#fff"; x.fillText(IG, L, 1700);
+  const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`; x.textAlign = "center"; x.shadowColor = "rgba(0,0,0,.35)"; x.shadowBlur = 12;
+  const t = String(d.titulo || "Entreno"); x.font = F(750, 64); x.fillStyle = "#fff"; x.fillText((t.length > 24 ? t.slice(0, 23) + "…" : t) + " ✓", W / 2, H - 330);
+  x.font = F(600, 42); x.fillStyle = "rgba(255,255,255,.92)"; x.fillText(IG, W / 2, H - 262);
   return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .9));
 }
 async function shareFlow(file) {
@@ -3253,7 +3276,8 @@ async function tabEvo(c) {
     <div class="card"><h2>Últimas tareas</h2>${as.length ? `<table><tbody>${as.slice(0, 40).map(x => `<tr data-act="asig-edit" data-id="${esc(x.id)}" style="cursor:pointer"><td style="white-space:nowrap" class="tiny muted">${esc(fdate(x.fecha, { day: "numeric", month: "short" }))}</td><td>${tipoChip(x.tipo)} ${esc(x.titulo)}${x.respuesta ? `<div class="tiny muted">«${esc(x.respuesta)}»</div>` : ""}</td><td>${x.hecho ? `<span class="chip ok">Hecho</span>` : `<span class="chip bad">No hecho</span>`}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">—</div>`}</div>`;
   } else if (sub === "entrenos") {
     const wo = await q(sb.from("workouts").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40));
-    body = wo.length ? wo.map(w => { const st = sesStats(w); return `<div class="card ses"><div class="seshd"><div><h2>${esc(w.dia || "Entreno")}</h2><span class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</span></div>
+    S.coach.wo = Object.fromEntries(wo.map(w => [w.id, w]));
+    body = wo.length ? wo.map(w => { const st = sesStats(w); return `<div class="card ses"><div class="seshd"><div><h2>${esc(w.dia || "Entreno")} <button type="button" class="btn ghost sm wedit" data-act="wo-edit" data-id="${esc(w.id)}">Editar</button></h2><span class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</span></div>
       <div class="sesk">${w.rpe_sesion != null ? `<span><b>${esc(w.rpe_sesion)}<small>/10</small></b><em>Dureza</em></span>` : ""}${w.duracion_min ? `<span><b>${esc(w.duracion_min)}<small> min</small></b><em>Duración</em></span>` : ""}${w.actividad ? "" : `<span><b>${st.ej}</b><em>Ejercicios</em></span><span><b>${st.series}</b><em>Series</em></span>`}${st.vol ? `<span><b>${fmt(st.vol, 0)}<small> kg</small></b><em>Volumen</em></span>` : ""}${w.rpe_sesion != null && w.duracion_min ? `<span><b>${w.rpe_sesion * w.duracion_min}<small> UA</small></b><em>Carga interna</em></span>` : ""}</div></div>
       ${w.actividad ? `<p class="small muted" style="margin:0">Actividad extra apuntada por el cliente</p>` : sessionTable(w.sets, w.notas_ej)}${(() => { const sn = new Set(groupSets(w.sets).map(e => e.n)); const o = Object.entries(w.notas_ej || {}).filter(([k]) => !sn.has(k)); return o.length ? o.map(([k, v]) => `<div class="sescom"><span>${esc(k)}</span>${esc(v)}</div>`).join("") : ""; })()}${w.comentario ? `<div class="sescom"><span>Comentario de la sesión</span>${esc(w.comentario)}</div>` : ""}</div>`; }).join("") : `<div class="empty">Aún no ha registrado ningún entreno.</div>`;
   } else if (sub === "fuerza") {
@@ -3945,6 +3969,10 @@ document.addEventListener("click", async ev => {
       case "w-start": wStart(a.dataset.id); break;
       case "ex-video": openVideo(a.dataset.u, a.dataset.n); break;
       case "sh-sinfoto": shareFlow(null); break;
+      case "wo-edit": openWoEdit(a.dataset.id); break;
+      case "wer-add": { const l = $("#wer-list"); if (l) { l.insertAdjacentHTML("beforeend", woRow()); const r = l.lastElementChild; r.querySelector("input").focus(); } break; }
+      case "wer-del": a.closest(".wer").remove(); break;
+      case "wo-del": if (!confirm("¿Borrar este entreno del cliente? No se puede deshacer.")) break; try { await q(sb.from("workouts").delete().eq("id", a.dataset.id)); sheet(""); toast("Entreno borrado"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } break;
       case "sh-compartir": try { await navigator.share({ files: [S.shareFile], text: "Entreno hecho 💪 " + IG }); } catch (e) { if (e && e.name !== "AbortError") toast("No se pudo abrir el menú de compartir. Guárdala y súbela desde Instagram."); } break;
       case "w-fin": openFin(); break;
       case "w-seguir": wSeguir(); break;
@@ -4178,7 +4206,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-mfa": doMfa, "f-mfa-on": mfaOn, "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-woe": saveWoEdit, "f-mfa": doMfa, "f-mfa-on": mfaOn, "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
