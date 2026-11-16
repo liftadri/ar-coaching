@@ -1055,9 +1055,24 @@ const IC_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_HIST = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>`;
 const IC_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>`;
 const IC_OK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+// Vídeos: el de la tarea o, si no, el de la librería (nombre parecido)
+const vKey = n => tKey(n).replace(/\(.*?\)/g, "").replace(/[^a-z0-9ñ ]/g, " ").replace(/\b(con|de|en|el|la|los|las|a|al)\b/g, " ").replace(/\s+/g, " ").trim();
+function exVideo(e) {
+  const u = safeUrl(e.video); if (u) return u;
+  const lib = S.lib.ex || []; const k = tKey(e.nombre), v = vKey(e.nombre);
+  const hit = lib.find(x => x.video_url && tKey(x.nombre) === k) || lib.find(x => x.video_url && vKey(x.nombre) === v);
+  return hit ? safeUrl(hit.video_url) : "";
+}
+const ytId = u => { const m = String(u || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/); return m ? m[1] : null; };
+function openVideo(url, nombre) {
+  const id = ytId(url);
+  if (!id) { window.open(url, "_blank", "noopener"); return; }
+  sheet(`<h2>${esc(nombre)}</h2><div class="vwrap${/\/shorts\//.test(url) ? " vshort" : ""}"><iframe src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${esc(nombre)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div><a class="btn ghost block" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Abrir en YouTube</a><button type="button" class="btn block" data-act="close">Volver al entreno</button>`);
+}
 // Cabecera común de cada ejercicio en el entreno del cliente
 function exHead(e, meta, pg) {
-  return `<div class="wxh"><div class="wxt">${e.bloque ? `<span class="wxb">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta)}</p>` : ""}</div><div class="wxa">${safeUrl(e.video) ? `<a class="wxi" href="${esc(safeUrl(e.video))}" target="_blank" rel="noopener noreferrer" aria-label="Ver vídeo">${IC_PLAY}</a>` : ""}${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div></div>
+  return `<div class="wxh"><div class="wxt">${e.bloque ? `<span class="wxb">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta)}</p>` : ""}</div><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div></div>
+  ${(() => { const u = exVideo(e); return u ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(u)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : `<a class="wxv buscar" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}" target="_blank" rel="noopener noreferrer">${IC_PLAY}<span>Buscar vídeo</span></a>`; })()}
   ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${e.notas ? `<p class="wxn">${esc(e.notas)}</p>` : ""}`;
 }
 const okBtn = (k, on) => `<button type="button" class="sok" data-act="set-ok" data-k="${k}" aria-pressed="${!!on}" aria-label="Serie hecha">${IC_OK}</button>`;
@@ -2820,7 +2835,7 @@ async function viewCoachClient(cid) {
   S.coach.c = c; S.coach.pl = pl;
   const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? await tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
-  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div>${alertas.length ? `<div class="calert" role="button" tabindex="0" data-act="salud-edit" title="Editar salud y alertas"><b>⚠ Salud</b>${alertas.map(s => `<span>${esc(String(s).slice(1))}</span>`).join("")}</div>` : ""}${((c.ficha || {}).lesiones || []).filter(l => l.estado !== "recuperada").length ? `<div class="calert les" title="Historial lesional (pestaña Información)"><b>✚ Lesión</b>${c.ficha.lesiones.filter(l => l.estado !== "recuperada").map(l => `<span>${esc(lesTxt(l))} · ${esc(LESTADO[l.estado] || "")}</span>`).join("")}</div>` : ""}</div>${body}`;
+  const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div></div>${body}`;
   const rail = document.querySelector("#app .rail");
   if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
@@ -3886,6 +3901,7 @@ document.addEventListener("click", async ev => {
       case "rest-add": RT.end += (+a.dataset.s) * 1000; RT.dur = Math.max(RT.dur, Math.round((RT.end - Date.now()) / 1000)); RT.done = false; restTick(); break;
       case "rest-stop": restStop(); break;
       case "w-start": wStart(a.dataset.id); break;
+      case "ex-video": openVideo(a.dataset.u, a.dataset.n); break;
       case "w-fin": openFin(); break;
       case "w-seguir": wSeguir(); break;
       case "set-ok": setOk(a); break;

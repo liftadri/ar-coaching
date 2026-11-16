@@ -1697,3 +1697,13 @@ textarea.tscroll:focus{box-shadow:var(--ring),inset 0 -14px 12px -12px rgba(28,3
 .mfa-qr img{width:200px;height:200px}
 .mfa-k{display:block;margin-top:8px;padding:10px;background:var(--surface-2);border-radius:8px;word-break:break-all;font-size:14px;user-select:all;-webkit-user-select:all}
 .ok-t{color:var(--ok)}
+/* Barras y tablas que se desplazan en horizontal: nunca en vertical */
+.seg,.rail,.tbl,.heat{overflow-y:hidden!important;overscroll-behavior:contain}
+.seg,.rail{touch-action:pan-x pan-y}
+.wxv{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:9px 16px 9px 12px;border-radius:999px;background:var(--ink);color:#fff;font-size:14px;font-weight:600}
+.wxv svg{width:16px;height:16px;color:#ff6a2b}
+.wxv.buscar{background:var(--surface-2);color:var(--ink)}.wxv.buscar svg{color:var(--muted)}
+.wxv:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vwrap{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden;margin:0 auto}
+.vwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.vwrap.vshort{aspect-ratio:9/16;max-height:62vh;width:auto}
