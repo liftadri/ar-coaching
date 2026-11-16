@@ -1226,7 +1226,6 @@ function openShareDone() {
   <button type="button" class="btn ghost block" data-act="sh-sinfoto">Compartir sin foto</button>
   <button type="button" class="btn ghost block" data-act="close">Ahora no</button>`);
 }
-const SH_EST = [["clasico", "Clásico"], ["minimal", "Minimal"], ["tarjeta", "Tarjeta"]];
 async function shareImage(file, est = "clasico") {
   const d = S.share || {}; const W = 1080, H = 1920; const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
   const load = src => new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; });
@@ -1241,22 +1240,7 @@ async function shareImage(file, est = "clasico") {
   const M = 96, BOT = H - 330; // márgenes: fuera de las zonas que tapa Instagram
   const fade = (h, a) => { const g = x.createLinearGradient(0, H - h, 0, H); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(.5, `rgba(0,0,0,${a * .6})`); g.addColorStop(1, `rgba(0,0,0,${a})`); x.fillStyle = g; x.fillRect(0, H - h, W, h); };
   x.textBaseline = "alphabetic";
-  if (est === "minimal") {
-    fade(620, .55); x.textAlign = "center"; x.shadowColor = "rgba(0,0,0,.35)"; x.shadowBlur = 14;
-    x.font = F(700, 46); x.fillStyle = "#fff"; x.letterSpacing = "6px"; x.fillText(tit.toUpperCase(), W / 2, BOT - 120); x.letterSpacing = "0px";
-    x.shadowBlur = 0; x.fillStyle = "#ff6a2b"; x.fillRect(W / 2 - 36, BOT - 92, 72, 4);
-    x.shadowBlur = 14; x.font = F(500, 34); x.fillStyle = "rgba(255,255,255,.92)"; x.fillText(st.map(([v, l]) => l === "Series" ? v + " series" : v).join("   ·   "), W / 2, BOT - 30);
-    x.font = F(600, 30); x.fillStyle = "rgba(255,255,255,.8)"; x.fillText(IG, W / 2, BOT + 40);
-  } else if (est === "tarjeta") {
-    const cw = W - M * 2 + 24, ch = 330, cx = (W - cw) / 2, cy = BOT - ch + 40, R = 36;
-    const path = () => { x.beginPath(); x.roundRect(cx, cy, cw, ch, R); };
-    x.save(); path(); x.clip(); cover(x, "blur(28px) brightness(.55)"); x.restore();
-    path(); x.fillStyle = "rgba(20,21,24,.35)"; x.fill(); x.strokeStyle = "rgba(255,255,255,.14)"; x.lineWidth = 2; x.stroke();
-    x.fillStyle = "#ff6a2b"; x.beginPath(); x.roundRect(cx + 44, cy + 46, 8, 52, 4); x.fill();
-    x.textAlign = "left"; x.font = F(800, 52); x.fillStyle = "#fff"; x.fillText(tit, cx + 72, cy + 92);
-    x.textAlign = "right"; x.font = F(600, 28); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(IG, cx + cw - 44, cy + 86);
-    const colW = (cw - 88) / st.length; st.forEach(([v, l], k) => { const sx = cx + 44 + colW * k; x.textAlign = "left"; x.font = F(750, 56); x.fillStyle = "#fff"; x.fillText(v, sx, cy + 214); x.font = F(500, 26); x.fillStyle = "rgba(255,255,255,.62)"; x.fillText(l, sx, cy + 256); if (k) { x.fillStyle = "rgba(255,255,255,.14)"; x.fillRect(sx - 24, cy + 160, 2, 110); } });
-  } else {
+  {
     fade(900, .72); x.textAlign = "left"; x.shadowColor = "rgba(0,0,0,.3)"; x.shadowBlur = 10;
     x.font = F(600, 32); x.fillStyle = "#ff7a3d"; x.fillText("Entreno completado", M, BOT - 250);
     x.font = F(800, 92); x.fillStyle = "#fff"; x.fillText(tit, M, BOT - 160);
@@ -1266,14 +1250,14 @@ async function shareImage(file, est = "clasico") {
   }
   return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .92));
 }
-async function shareFlow(file, est) {
-  if (file !== undefined) S.shareSrc = file; est = est || S.shareEst || "clasico"; S.shareEst = est;
+async function shareFlow(file) {
+  if (file !== undefined) S.shareSrc = file; const est = "clasico";
   if (!$("#modal-root .shprev")) sheet(`<h2>Preparando tu foto…</h2><div class="empty">Un segundo</div>`);
   try {
     const blob = await shareImage(S.shareSrc, est); const f = new File([blob], "entreno-liftadri.jpg", { type: "image/jpeg" }); if (S.shareUrl) URL.revokeObjectURL(S.shareUrl); const url = S.shareUrl = URL.createObjectURL(blob);
     try { await navigator.clipboard.writeText(IG); } catch { }
     S.shareFile = f; const can = !!(navigator.canShare && navigator.canShare({ files: [f] }));
-    sheet(`<h2>Tu foto, lista</h2><div class="shest" role="group" aria-label="Estilo">${SH_EST.map(([k, l]) => `<button type="button" data-act="sh-est" data-e="${k}" aria-pressed="${k === est}">${l}</button>`).join("")}</div><img class="shprev" src="${url}" alt="Vista previa de la foto para compartir">
+    sheet(`<h2>Tu foto, lista</h2><img class="shprev" src="${url}" alt="Vista previa de la foto para compartir">
     <div class="shcta"><b>Último paso</b><span>Compártela en tu historia y <b>etiqueta a ${IG}</b>. Ya lo he copiado: solo tienes que pegarlo.</span></div>
     ${can ? `<button type="button" class="btn pri block" data-act="sh-compartir">Compartir en mi historia</button>` : ""}
     <a class="btn ${can ? "" : "pri "}block" href="${url}" download="entreno-liftadri.jpg">Guardar en mi galería</a>
@@ -3997,7 +3981,6 @@ document.addEventListener("click", async ev => {
       case "w-start": wStart(a.dataset.id); break;
       case "ex-video": openVideo(a.dataset.u, a.dataset.n); break;
       case "sh-sinfoto": shareFlow(null); break;
-      case "sh-est": shareFlow(undefined, a.dataset.e); break;
       case "wo-edit": openWoEdit(a.dataset.id); break;
       case "wer-add": { const l = $("#wer-list"); if (l) { l.insertAdjacentHTML("beforeend", woRow()); const r = l.lastElementChild; r.querySelector("input").focus(); } break; }
       case "wer-del": a.closest(".wer").remove(); break;
