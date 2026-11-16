@@ -1231,12 +1231,15 @@ async function shareImage(file) {
   const load = src => new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; });
   if (file) { const url = URL.createObjectURL(file); try { const im = await load(url); const r = Math.max(W / im.width, H / im.height); const w = im.width * r, h = im.height * r; x.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); } finally { URL.revokeObjectURL(url); } }
   else { const g = x.createRadialGradient(W, 0, 0, W, 0, 1300); g.addColorStop(0, "#5a2412"); g.addColorStop(1, "#16181b"); x.fillStyle = g; x.fillRect(0, 0, W, H); }
-  // Solo un degradado suave abajo para que se lea; la foto ocupa toda la historia
-  const gr = x.createLinearGradient(0, H - 520, 0, H); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.55)"); x.fillStyle = gr; x.fillRect(0, H - 520, W, 520);
+  // La foto ocupa toda la historia; abajo, un degradado suave con el resumen del entreno y el @
+  const gr = x.createLinearGradient(0, H - 760, 0, H); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(.6, "rgba(0,0,0,.5)"); gr.addColorStop(1, "rgba(0,0,0,.7)"); x.fillStyle = gr; x.fillRect(0, H - 760, W, 760);
   await document.fonts.ready.catch(() => { });
-  const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`; x.textAlign = "center"; x.shadowColor = "rgba(0,0,0,.35)"; x.shadowBlur = 12;
-  const t = String(d.titulo || "Entreno"); x.font = F(750, 64); x.fillStyle = "#fff"; x.fillText((t.length > 24 ? t.slice(0, 23) + "…" : t) + " ✓", W / 2, H - 330);
-  x.font = F(600, 42); x.fillStyle = "rgba(255,255,255,.92)"; x.fillText(IG, W / 2, H - 262);
+  const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`; const L = 84; x.shadowColor = "rgba(0,0,0,.3)"; x.shadowBlur = 10;
+  let y = H - 520; x.font = F(600, 38); x.fillStyle = "#ff7a3d"; x.fillText("Entreno completado", L, y);
+  y += 84; x.font = F(800, 78); x.fillStyle = "#fff"; const t = String(d.titulo || "Entreno"); x.fillText(t.length > 20 ? t.slice(0, 19) + "…" : t, L, y);
+  const stats = [d.dur != null ? [durTxt(d.dur), "duración"] : null, [String(d.series || 0), "series"], d.vol ? [fmt(Math.round(d.vol)) + " kg", "volumen"] : null].filter(Boolean);
+  y += 110; let sx = L; stats.forEach(([v, l]) => { x.font = F(750, 56); x.fillStyle = "#fff"; x.fillText(v, sx, y); const w = Math.max(x.measureText(v).width, 150); x.font = F(500, 30); x.fillStyle = "rgba(255,255,255,.75)"; x.fillText(l, sx, y + 44); sx += w + 64; });
+  x.font = F(700, 40); x.fillStyle = "#fff"; x.fillText(IG, L, H - 250);
   return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .9));
 }
 async function shareFlow(file) {
