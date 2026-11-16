@@ -1053,10 +1053,11 @@ const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
 const restTxt = x => !x ? "" : x < 60 ? `${x} s` : x % 60 ? mmss(x) : `${x / 60} min`;
 const IC_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`;
 const IC_HIST = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>`;
-const IC_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>`;
+const IC_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 6.2v11.6l9.6-5.8z"/></svg>`;
 const IC_OK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
 // Vídeos: el de la tarea o, si no, el de la librería (nombre parecido)
 const vKey = n => tKey(n).replace(/\(.*?\)/g, "").replace(/[^a-z0-9ñ ]/g, " ").replace(/\b(con|de|en|el|la|los|las|a|al)\b/g, " ").replace(/\s+/g, " ").trim();
+const exNota = e => { const t = String(e.notas || e.claves || "").replace(/importad[oa] (de|desde) harbiz\.?/gi, "").trim(); return t; };
 function exVideo(e) {
   const u = safeUrl(e.video); if (u) return u;
   const lib = S.lib.ex || []; const k = tKey(e.nombre), v = vKey(e.nombre);
@@ -1070,9 +1071,9 @@ function openVideo(url, nombre) {
   sheet(`<h2>${esc(nombre)}</h2><div class="vwrap${/\/shorts\//.test(url) ? " vshort" : ""}"><iframe src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${esc(nombre)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div><a class="btn ghost block" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Abrir en YouTube</a><button type="button" class="btn block" data-act="close">Volver al entreno</button>`);
 }
 // Cabecera común de cada ejercicio en el entreno del cliente
-function exHead(e, meta, pg) {
-  return `<div class="wxh"><div class="wxt">${e.bloque ? `<span class="wxb">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta)}</p>` : ""}</div><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div></div>
-  ${(() => { const u = exVideo(e); return u ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(u)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : `<a class="wxv buscar" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}" target="_blank" rel="noopener noreferrer">${IC_PLAY}<span>Buscar vídeo</span></a>`; })()}
+function exHead(e, meta, pg, n = 0, done = 0, open = false) {
+  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta)}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
+  ${(() => { const u = exVideo(e); return u ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(u)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : `<a class="wxv buscar" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}" target="_blank" rel="noopener noreferrer">${IC_PLAY}<span>Buscar vídeo</span></a>`; })()}</div>
   ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${e.notas ? `<p class="wxn">${esc(e.notas)}</p>` : ""}`;
 }
 const okBtn = (k, on) => `<button type="button" class="sok" data-act="set-ok" data-k="${k}" aria-pressed="${!!on}" aria-label="Serie hecha">${IC_OK}</button>`;
@@ -1127,11 +1128,13 @@ async function viewWorkout(id) {
     <div class="wkgo"><button type="button" class="btn pri block" data-act="w-start" data-id="${esc(id)}">Empezar entreno</button></div>`, { back: "entreno", noTabs: true });
     return;
   }
+  S.wkOpen = exs.findIndex((e, ei) => { const n = e.series && e.series.length ? e.series.length : seriesOf(e.sxr); if (!n) return !(draft[`${ei}-done`] || {}).hecho; for (let si = 0; si < n; si++) if (!(draft[`${ei}-${si}`] || {}).ok) return true; return false; });
   const exHtml = (e, ei) => {
     const n = seriesOf(e.sxr); const prev = lastSets(e.nombre); if (e.series && e.series.length) return presClient(e, ei, prev, draft, wo);
     const prevKg = prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
     const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev); const rs = restSecs(e.descanso);
-    return `<div class="ex wx" data-rest="${rs}" data-exn="${esc(e.nombre)}">${exHead(e, metaOf(e), pg)}${n ? mk.html : ""}
+    const nd = n ? Array.from({ length: n }, (_, si) => (draft[`${ei}-${si}`] || {}).ok ? 1 : 0).reduce((a, b) => a + b, 0) : ((draft[`${ei}-done`] || {}).hecho ? 1 : 0);
+    return `<div class="ex wx" data-rest="${rs}" data-exn="${esc(e.nombre)}">${exHead(e, metaOf(e), pg, n || 1, nd, ei === S.wkOpen)}${n ? mk.html : ""}
     ${n ? `<div class="seth"><span></span><span>Kg</span><span>Reps</span><span>RIR</span><span></span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set${dv.ok ? " done" : ""}" data-k="${k}"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "–")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "–")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "–")}">${okBtn(k, dv.ok)}</div>`; }).join("")}</div>`
       : `<label class="wxdone"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""}><span>Hecho</span></label>`}</div>`;
   };
@@ -1158,7 +1161,15 @@ function setOk(btn) {
   let d = {}; try { d = JSON.parse(localStorage.getItem(draftKey(f.dataset.id)) || "{}"); } catch { }
   const o = d[btn.dataset.k] || {}; o.ok = on; d[btn.dataset.k] = o; d.tl = Date.now(); if (!d.t0) d.t0 = d.tl;
   try { localStorage.setItem(draftKey(f.dataset.id), JSON.stringify(d)); } catch { }
+  wkProgress(row.closest(".ex.wx"), on);
   if (on) { try { navigator.vibrate && navigator.vibrate(30); } catch { } const r = row.closest("[data-rest]") && row.matches("[data-rest]") ? row : row.closest("[data-rest]"); const s2 = r ? +r.dataset.rest : 0; const ex = row.closest("[data-exn]"); const next = [...row.parentElement.children].slice([...row.parentElement.children].indexOf(row) + 1).some(x => !x.classList.contains("done")); if (s2 && next) restStart(s2, ex ? ex.dataset.exn : "Descanso"); }
+}
+function wkProgress(ex, justDone) {
+  if (!ex) return; const c = ex.querySelector(".wxc"); if (!c) return;
+  const n = +c.dataset.c; const d = ex.querySelectorAll(".set.done,.pset.done").length + ex.querySelectorAll('input[data-f="hecho"]:checked').length;
+  c.textContent = (d >= n ? "✓ " : "") + d + "/" + n; c.classList.toggle("ok", d >= n);
+  if (justDone && d >= n) { const all = [...document.querySelectorAll("#f-workout .ex.wx")]; const next = all.slice(all.indexOf(ex) + 1).find(x => { const cc = x.querySelector(".wxc"); return cc && !cc.classList.contains("ok"); });
+    setTimeout(() => { const dd = ex.querySelector(".wxd"); if (dd) dd.open = false; if (next) { const nd = next.querySelector(".wxd"); if (nd) nd.open = true; next.scrollIntoView({ behavior: "smooth", block: "start" }); } }, 600); }
 }
 function workoutSets(f, a) {
   const sets = [];
@@ -1188,27 +1199,33 @@ async function openFin() {
   <button class="btn pri block">Guardar entreno</button><button type="button" class="btn ghost block" data-act="w-seguir">Seguir entrenando</button></form>`);
 }
 /* ===== Entrenador: corregir un entreno registrado por el cliente ===== */
-const woRow = (x = {}, i = "") => `<div class="wer" data-i="${i}"><input name="e_n" list="dl-ex" value="${esc(x.ejercicio || "")}" placeholder="Ejercicio" aria-label="Ejercicio"><label><span>Kg</span><input name="e_kg" inputmode="decimal" value="${esc(x.kg ?? "")}" placeholder="–" aria-label="Kilos"></label><label><span>Reps</span><input name="e_r" inputmode="numeric" value="${esc(x.reps ?? "")}" placeholder="–" aria-label="Repeticiones"></label><label><span>RIR</span><input name="e_rir" inputmode="decimal" value="${esc(x.rir ?? "")}" placeholder="–" aria-label="RIR"></label><button type="button" class="btn ghost sm" data-act="wer-del" aria-label="Quitar serie">✕</button></div>`;
+const woSet = (x = {}, i = "") => `<div class="wes" data-i="${i}"><span class="wesn"></span><input name="e_kg" inputmode="decimal" value="${esc(x.kg ?? "")}" placeholder="–" aria-label="Kilos"><input name="e_r" inputmode="numeric" value="${esc(x.reps ?? "")}" placeholder="–" aria-label="Repeticiones"><input name="e_rir" inputmode="decimal" value="${esc(x.rir ?? "")}" placeholder="–" aria-label="RIR"><button type="button" class="wesx" data-act="wes-del" aria-label="Quitar serie">✕</button></div>`;
+const woGroup = (nombre = "", sets = [{}], open = true) => `<details class="weg"${open ? " open" : ""}><summary><span class="wegn">${esc(nombre || "Ejercicio nuevo")}</span><span class="wegc">${sets.length} ${sets.length === 1 ? "serie" : "series"}</span><span class="wxchev" aria-hidden="true"></span></summary>
+  <div class="wegb"><input name="g_n" list="dl-ex" value="${esc(nombre)}" placeholder="Nombre del ejercicio" aria-label="Ejercicio" class="wegin"><div class="wes wesh"><span>#</span><span>Kg</span><span>Reps</span><span>RIR</span><span></span></div><div class="wegs">${sets.map(([x, i]) => woSet(x, i)).join("")}</div>
+  <div class="wega"><button type="button" class="btn sm" data-act="wes-add">+ Serie</button><button type="button" class="btn ghost sm bad" data-act="weg-del">Quitar ejercicio</button></div></div></details>`;
 async function openWoEdit(id) {
   const w = (S.coach.wo || {})[id]; if (!w) return; await exLib().catch(() => []);
-  sheet(`<h2>Editar entreno</h2><p class="tiny muted" style="margin:0">Corrige lo que el cliente apuntó mal. Los cambios se ven al momento en su progreso.</p>
-  <form id="f-woe" data-id="${esc(id)}" style="display:flex;flex-direction:column;gap:12px">
-  <div class="grid2"><div class="f"><label>Nombre</label><input name="dia" value="${esc(w.dia || "")}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(w.fecha)}" required></div></div>
-  <div class="grid2"><div class="f"><label>Dureza (1–10)</label><input name="rpe" inputmode="numeric" value="${esc(w.rpe_sesion ?? "")}"></div><div class="f"><label>Duración (min)</label><input name="dur" inputmode="numeric" value="${esc(w.duracion_min ?? "")}"></div></div>
-  ${w.actividad ? "" : `<div class="f"><label>Series</label><div class="werh"><span>Ejercicio</span><span>Kg</span><span>Reps</span><span>RIR</span><span></span></div><div id="wer-list">${(w.sets || []).map((x, i) => x.hecho ? "" : woRow(x, i)).join("")}</div><button type="button" class="btn sm" data-act="wer-add" style="align-self:flex-start;margin-top:6px">+ Añadir serie</button></div>`}
+  const idx = new Map(); (w.sets || []).forEach((x, i) => { if (x.hecho) return; if (!idx.has(x.ejercicio)) idx.set(x.ejercicio, []); idx.get(x.ejercicio).push([x, i]); });
+  sheet(`<h2>Corregir entreno</h2>
+  <form id="f-woe" data-id="${esc(id)}" class="woe">
+  <div class="woe-d"><div class="f"><label>Nombre</label><input name="dia" value="${esc(w.dia || "")}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(w.fecha)}" required></div><div class="f"><label>Dureza</label><input name="rpe" inputmode="numeric" value="${esc(w.rpe_sesion ?? "")}" placeholder="1–10"></div><div class="f"><label>Min</label><input name="dur" inputmode="numeric" value="${esc(w.duracion_min ?? "")}"></div></div>
+  ${w.actividad ? "" : `<div class="woe-l"><b>Ejercicios</b><span class="tiny muted">Toca un ejercicio para ver y corregir sus series</span></div><div id="weg-list">${[...idx].map(([n, ss]) => woGroup(n, ss, false)).join("")}</div><button type="button" class="btn sm" data-act="weg-add" style="align-self:flex-start">+ Añadir ejercicio</button>`}
   <div class="f"><label>Comentario del cliente</label><textarea name="com" rows="2">${esc(w.comentario || "")}</textarea></div>
   ${exDatalist()}
-  <button class="btn pri block">Guardar cambios</button><button type="button" class="btn ghost bad block" data-act="wo-del" data-id="${esc(id)}">Borrar este entreno</button></form>`, "wide");
+  <button class="btn pri block">Guardar cambios</button><button type="button" class="btn ghost bad block" data-act="wo-del" data-id="${esc(id)}">Borrar este entreno</button></form>`);
+  woRenum();
 }
+function woRenum() { document.querySelectorAll("#weg-list .weg").forEach(g => { const rows = g.querySelectorAll(".wegs .wes"); rows.forEach((r, k) => r.querySelector(".wesn").textContent = k + 1); const c = g.querySelector(".wegc"); if (c) c.textContent = rows.length + (rows.length === 1 ? " serie" : " series"); }); }
 async function saveWoEdit(f) {
   const id = f.dataset.id; const w = (S.coach.wo || {})[id]; if (!w) return;
   const rpe = num(f.rpe.value), dur = num(f.dur.value);
   if (rpe != null && (rpe < 1 || rpe > 10)) { toast("La dureza va de 1 a 10"); return; }
   let sets = w.sets || [];
   if (!w.actividad) {
-    const cont = {}; const keep = sets.filter(x => x.hecho);
-    const rows = [...f.querySelectorAll(".wer")].map(r => { const g = n => r.querySelector(`[name="${n}"]`).value.trim(); const orig = r.dataset.i !== "" ? sets[+r.dataset.i] || {} : {}; const ej = g("e_n"); if (!ej) return null; const o = { ...orig, ejercicio: ej, kg: num(g("e_kg")), reps: num(g("e_r")), rir: num(g("e_rir")) }; cont[ej] = (cont[ej] || 0) + 1; o.serie = cont[ej]; return o; }).filter(Boolean);
-    sets = [...rows, ...keep];
+    const keep = sets.filter(x => x.hecho); const out = [];
+    for (const g of f.querySelectorAll("#weg-list .weg")) { const ej = g.querySelector('[name="g_n"]').value.trim(); const rows = [...g.querySelectorAll(".wegs .wes")]; if (!ej) { if (rows.some(r => [...r.querySelectorAll("input")].some(i => i.value.trim()))) { toast("Pon el nombre del ejercicio"); g.open = true; g.querySelector('[name="g_n"]').focus(); return; } continue; }
+      let k = 0; for (const r of rows) { const v = n => num(r.querySelector(`[name="${n}"]`).value); const kg = v("e_kg"), reps = v("e_r"), rir = v("e_rir"); if (kg == null && reps == null) continue; const orig = r.dataset.i !== "" ? sets[+r.dataset.i] || {} : {}; out.push({ ...orig, ejercicio: ej, serie: ++k, kg, reps, rir }); } }
+    sets = [...out, ...keep];
   }
   const b = f.querySelector("button.pri"); b.disabled = true;
   try { await q(sb.from("workouts").update({ dia: f.dia.value.trim() || w.dia, fecha: f.fecha.value || w.fecha, rpe_sesion: rpe, duracion_min: dur, comentario: f.com.value.trim(), sets }).eq("id", id)); sheet(""); toast("Entreno corregido"); S.coach.keep = true; viewCoachClient(S.coach.cid); }
@@ -1301,6 +1318,23 @@ function sessionTable(sets, notas = {}) {
   return `<div class="tbl"><table class="stab"><thead><tr><th>Ejercicio</th><th class="n">Serie</th><th class="n">Carga</th><th class="n">Reps</th><th class="n">RIR</th><th class="n">1RM est.</th></tr></thead><tbody>${g.map(e => e.s.map((y, i) => `<tr class="${i === 0 ? "first" : ""}">${i === 0 ? `<td rowspan="${e.s.length}" class="exn"><button class="lnk linkbtn" data-act="ex-hist" data-n="${esc(e.n)}">${esc(e.n)}</button></td>` : ""}<td class="n muted">${i + 1}${y.tipo ? `<div class="tiny">${esc(pTipo(y.tipo))}</div>` : ""}</td>${y.hecho ? `<td class="n" colspan="4"><span class="sp ok">Hecho ✓</span></td>` : `<td class="n"><b>${esc(kgTxt(y.kg))}</b></td><td class="n">${esc(y.reps ?? "—")}</td><td class="n">${y.rpe != null ? "RPE " + esc(y.rpe) : esc(y.rir ?? "—")}${y.vel != null ? `<div class="tiny muted">${esc(y.vel)} m/s</div>` : ""}</td><td class="n muted">${e1rm(y.kg, y.reps, y.rir) ? fmt(e1rm(y.kg, y.reps, y.rir)) + " kg" : "—"}</td>`}</tr>`).join("") + (notas && notas[e.n] ? `<tr class="nrow"><td colspan="6"><div class="exn-nota"><span>Comentario</span>${esc(notas[e.n])}</div></td></tr>` : "")).join("")}</tbody></table></div>`;
 }
 const sesStats = w => { const ss = (w.sets || []).filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: (w.sets || []).length, ej: groupSets(w.sets).length, vol }; };
+// Vista ordenada de un entreno registrado: datos clave y ejercicios desplegables
+function sesKpis(w) { const st = sesStats(w); return [w.rpe_sesion != null ? [w.rpe_sesion + "/10", "Dureza"] : null, w.duracion_min ? [w.duracion_min + " min", "Duración"] : null, !w.actividad ? [st.series, "Series"] : null, st.vol ? [fmt(st.vol, 0) + " kg", "Volumen"] : null, w.rpe_sesion != null && w.duracion_min ? [w.rpe_sesion * w.duracion_min + " UA", "Carga"] : null].filter(Boolean); }
+function sesBody(w) {
+  if (w.actividad) return `<p class="small muted" style="margin:0">Actividad extra apuntada por el cliente${w.comentario ? "" : "."}</p>${w.comentario ? `<div class="sescom"><span>Comentario</span>${esc(w.comentario)}</div>` : ""}`;
+  const g = groupSets(w.sets); const notas = w.notas_ej || {};
+  const ex = g.map(e => { const ss = e.s.filter(y => !y.hecho); const top = ss.filter(y => num(y.kg) != null).sort((a, b) => b.kg - a.kg || (b.reps || 0) - (a.reps || 0))[0]; const best = Math.max(0, ...ss.map(y => e1rm(y.kg, y.reps, y.rir) || 0));
+    const res = e.s.every(y => y.hecho) ? "Hecho ✓" : `${ss.length} ${ss.length === 1 ? "serie" : "series"}${top ? ` · máx. ${fmt(top.kg, 2)} kg × ${esc(top.reps ?? "?")}` : ""}`;
+    return `<details class="svx"><summary><span class="svn">${esc(e.n)}${notas[e.n] ? ` <i class="svnota" title="Tiene comentario">💬</i>` : ""}</span><span class="svr">${res}</span><span class="wxchev" aria-hidden="true"></span></summary>
+    ${ss.length ? `<table class="svt"><thead><tr><th>Serie</th><th>Kg</th><th>Reps</th><th>RIR</th></tr></thead><tbody>${ss.map((y, k) => `<tr><td>${k + 1}${y.tipo ? ` <small>${esc(pTipo(y.tipo))}</small>` : ""}</td><td><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b></td><td>${esc(y.reps ?? "—")}</td><td>${y.rpe != null ? "RPE " + esc(y.rpe) : esc(y.rir ?? "—")}</td></tr>`).join("")}</tbody></table>${best ? `<p class="svb">1RM estimado <b>${fmt(best)} kg</b> · <button type="button" class="lnk linkbtn" data-act="ex-hist" data-n="${esc(e.n)}">Ver historial</button></p>` : ""}` : ""}
+    ${notas[e.n] ? `<div class="sescom"><span>Comentario</span>${esc(notas[e.n])}</div>` : ""}</details>`; }).join("");
+  const sn = new Set(g.map(e => e.n)); const otras = Object.entries(notas).filter(([k]) => !sn.has(k));
+  return `<div class="svxs">${ex || `<p class="small muted">Sin series registradas.</p>`}</div>${otras.map(([k, v]) => `<div class="sescom"><span>${esc(k)}</span>${esc(v)}</div>`).join("")}${w.comentario ? `<div class="sescom"><span>Comentario de la sesión</span>${esc(w.comentario)}</div>` : ""}`;
+}
+function sesCard(w, open) {
+  return `<details class="card svc"${open ? " open" : ""}><summary><div class="svh"><b>${esc(w.dia || (w.actividad ? "Actividad extra" : "Entreno"))}</b><span>${esc(cap(fdate(w.fecha, { weekday: "short", day: "numeric", month: "short" })))}</span></div><div class="svk">${sesKpis(w).slice(0, 3).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div><span class="wxchev" aria-hidden="true"></span></summary>
+  <div class="svin"><div class="svk full">${sesKpis(w).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div>${sesBody(w)}<div class="svact"><button type="button" class="btn sm" data-act="wo-edit" data-id="${esc(w.id)}">Corregir datos</button></div></div></details>`;
+}
 
 async function openHist(nombre) {
   let qy = sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(200);
@@ -1318,7 +1352,7 @@ const RPE_TXT = ["", "Muy, muy fácil", "Fácil", "Moderado", "Algo duro", "Duro
 const rpePick = (name, v) => `<div class="rpep" role="radiogroup" aria-label="Dureza de la sesión">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<label style="--i:${n}"><input type="radio" name="${name}" value="${n}" ${String(v) === String(n) ? "checked" : ""}><span>${n}</span></label>`).join("")}</div><div class="rpe-a"><span>Muy fácil</span><b class="rpe-t" aria-live="polite">${v && RPE_TXT[v] ? RPE_TXT[v] : "Toca un número"}</b><span>Máximo</span></div>`;
 const rpeMissing = (f, name) => { const r = f.querySelector(`input[name="${name}"]:checked`); if (r) return false; const g = f.querySelector(".rpep"); if (g) { g.classList.remove("need"); void g.offsetWidth; g.classList.add("need"); g.scrollIntoView({ behavior: "smooth", block: "center" }); } toast("Marca la dureza de la sesión (1–10)"); return true; };
 // Comentario por ejercicio (se guarda en workouts.notas_ej)
-const exNotaWrap = (ei, draft, html) => { const t = (draft[`${ei}-nota`] || {}).t || ""; return html.replace(/<\/div>\s*$/, `<details class="exnota"${t ? " open" : ""}><summary>${ICON.t_msg}<span>Comentario para Adrián</span></summary><textarea data-k="${ei}-nota" data-f="t" maxlength="500" rows="2" placeholder="Ej.: molestia en el hombro en la última serie, iba muy fácil…">${esc(t)}</textarea></details></div>`); };
+const exNotaWrap = (ei, draft, html) => { const t = (draft[`${ei}-nota`] || {}).t || ""; return html.replace(/<\/div>\s*$/, `<details class="exnota"${t ? " open" : ""}><summary>${ICON.t_msg}<span>Comentario para Adrián</span></summary><textarea data-k="${ei}-nota" data-f="t" maxlength="500" rows="2" placeholder="Ej.: molestia en el hombro en la última serie, iba muy fácil…">${esc(t)}</textarea></details></div></details></div>`); };
 // Duración automática de la fuerza: desde la primera serie apuntada hasta guardar (o la última serie si se guarda mucho después)
 const durAuto = d => { if (!d || !d.t0) return null; const now = Date.now(), end = d.tf ? d.tf : d.tl && now - d.tl > 15 * 60000 ? d.tl + 3 * 60000 : now; const m = Math.round((end - d.t0) / 60000); return m >= 1 && m <= 300 ? m : null; };
 const durTxt = m => m == null ? "0 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
@@ -1346,7 +1380,8 @@ function presClient(e, ei, prev, draft, wo) {
       <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}${okBtn(k, dv.ok)}</div></div>`;
   }).join("");
   const mk = exMarks(e.nombre, wo, prev);
-  return `<div class="ex wx" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}">${exHead(e, [presSummary(e), restSecs(e.descanso) ? restTxt(restSecs(e.descanso)) + " descanso" : ""].filter(Boolean).join(" · "), pg)}
+  const nd = ss.filter((_, si) => (draft[`${ei}-${si}`] || {}).ok).length;
+  return `<div class="ex wx" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}">${exHead(e, [presSummary(e), restSecs(e.descanso) ? restTxt(restSecs(e.descanso)) + " descanso" : ""].filter(Boolean).join(" · "), pg, ss.length, nd, ei === S.wkOpen)}
 ${mk.html}
   <div class="psets">${rows}</div>
   ${eff[0] === "rpe" ? `<p class="tiny muted" style="margin:6px 0 0">RPE: 10 = no podías hacer ni una más · 9 = te quedaba 1 · 8 = te quedaban 2.</p>` : eff[0] === "esf" ? `<p class="tiny muted" style="margin:6px 0 0">Esfuerzo: cómo de dura te ha parecido la serie, de 0 a 10.</p>` : ""}</div>`;
@@ -2222,7 +2257,7 @@ function exFicha(e, full) {
 function exInfoOpen(nombre) {
   const e = (S.lib.ex || []).find(x => tKey(x.nombre) === tKey(nombre));
   if (!e) { toast("Este ejercicio no tiene ficha"); return; }
-  sheet(`<h2>${esc(e.nombre)}</h2><div style="display:flex;flex-direction:column;gap:10px">${e.grupo || e.material ? `<p class="small muted" style="margin:0">${esc([e.grupo, e.material].filter(Boolean).join(" · "))}</p>` : ""}${exFicha(e, S.me.role === "coach")}${e.notas ? `<p class="small" style="margin:0">${esc(e.notas)}</p>` : ""}${e.video_url && safeUrl(e.video_url) ? `<a class="btn" href="${esc(safeUrl(e.video_url))}" target="_blank" rel="noopener">▶ Ver vídeo</a>` : ""}<button class="btn ghost" data-act="close">Cerrar</button></div>`);
+  sheet(`<h2>${esc(e.nombre)}</h2><div style="display:flex;flex-direction:column;gap:10px">${e.grupo || e.material ? `<p class="small muted" style="margin:0">${esc([e.grupo, e.material].filter(Boolean).join(" · "))}</p>` : ""}${exFicha(e, S.me.role === "coach")}${exNota(e) ? `<p class="small" style="margin:0">${esc(exNota(e))}</p>` : ""}${e.video_url && ytId(e.video_url) ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(e.video_url)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : ""}<button class="btn ghost" data-act="close">Cerrar</button></div>`);
 }
 
 /* ---- Catálogo de tests ---- */
@@ -2981,12 +3016,21 @@ async function tabPlan(c, pl) {
     <details class="more"><summary class="btn sm" aria-label="Más opciones">Más ▾</summary><div class="menu"><button data-act="prog-asignar">Programar un programa</button><button data-act="prog-desde-cal">Guardar semanas como programa</button><hr><button data-act="copiar-semana">Copiar semana</button><button data-act="borrar-semana">Vaciar semana</button><hr><button data-act="meso-edit">Mesociclos</button></div></details></div></div>
   <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}${calLegend(new Set([...as.map(x => x.tipo), ...(ev.length ? ["evento"] : []), ...(wo.some(w => !w.assignment_id) ? ["workout"] : [])]), ["hecho", "late", ...(as.some(x => !x.visible) ? ["hid"] : [])])}</div>`;
 }
-async function openAsig(id, fecha, pre) {
+async function openAsig(id, fecha, pre, editar) {
   await exLib(); const tpls = await tplLib();
   const x = id ? (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0] : { tipo: "workout", fecha, titulo: "", contenido: {}, visible: true, ...(pre || {}) };
   if (!x) return; S.sub.asigTipo = x.tipo; S.sub.tpls = tpls;
-  const logs = id && x.tipo === "workout" ? await q(sb.from("workouts").select("*").eq("assignment_id", id)) : [];
+  const logs = id && (x.tipo === "workout" || x.tipo === "cardio") ? await q(sb.from("workouts").select("*").eq("assignment_id", id)) : [];
   const res = (x.resultado && x.resultado.respuestas) || [];
+  if (id && x.hecho && !editar) { // Tarea hecha: primero lo que hizo el cliente
+    S.coach.wo = { ...(S.coach.wo || {}), ...Object.fromEntries(logs.map(w => [w.id, w])) };
+    sheet(`<h2>${esc(x.titulo || TIPOS[x.tipo] || "Tarea")}</h2><p class="tiny muted" style="margin:-4px 0 0">${tipoChip(x.tipo)} ${esc(cap(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" })))} · <span class="ok-t">Hecha${x.hecho_en ? " " + esc(relTime(x.hecho_en)) : ""}</span></p>
+    ${logs.map(w => `<div class="svin solo"><div class="svk full">${sesKpis(w).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div>${sesBody(w)}<div class="svact"><button type="button" class="btn sm" data-act="wo-edit" data-id="${esc(w.id)}">Corregir datos</button></div></div>`).join("")}
+    ${resExtra(x)}${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta && !logs.some(w => w.comentario === x.respuesta) ? `<p class="small" style="margin:4px 0;white-space:pre-wrap">${esc(x.respuesta)}</p>` : ""}</div>` : ""}
+    ${!logs.length && !res.length && !x.respuesta && !resExtra(x) ? `<p class="small muted">La marcó como hecha sin apuntar datos.</p>` : ""}
+    <button type="button" class="btn block" data-act="asig-edit2" data-id="${esc(id)}">Ver o editar la tarea</button><button type="button" class="btn ghost block" data-act="close">Cerrar</button>`, "wide");
+    return;
+  }
   sheet(`<h2>${id ? "Editar" : "Añadir"} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</h2>
   <form id="f-asig" class="sform" data-id="${esc(id || "")}">
   ${!id ? `<div class="tpick" role="group" aria-label="Tipo">${[...Object.entries(TIPOS), ["evento", "Evento"]].map(([k, l]) => `<button type="button" class="tp-${k}" data-act="asig-tipo" data-t="${k}" aria-pressed="${x.tipo === k}">${ICON[{ workout: "entreno", cardio: "t_cardio", formulario: "doc", nota: "t_msg", peso: "t_peso", fotos: "t_foto", medidas: "t_med", tarea: "t_tarea", evento: "cal" }[k]] || ""}<span>${l}</span></button>`).join("")}</div>` : `<p class="small" style="margin:0">${tipoChip(x.tipo)}${x.hecho ? ` <span class="chip ok">Hecho ${x.hecho_en ? esc(relTime(x.hecho_en)) : ""}</span>` : ""}${x.programa ? ` <span class="chip">${esc(x.programa)}</span>` : ""}</p>`}
@@ -3315,9 +3359,7 @@ async function tabEvo(c) {
   } else if (sub === "entrenos") {
     const wo = await q(sb.from("workouts").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40));
     S.coach.wo = Object.fromEntries(wo.map(w => [w.id, w]));
-    body = wo.length ? wo.map(w => { const st = sesStats(w); return `<div class="card ses"><div class="seshd"><div><h2>${esc(w.dia || "Entreno")} <button type="button" class="btn ghost sm wedit" data-act="wo-edit" data-id="${esc(w.id)}">Editar</button></h2><span class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</span></div>
-      <div class="sesk">${w.rpe_sesion != null ? `<span><b>${esc(w.rpe_sesion)}<small>/10</small></b><em>Dureza</em></span>` : ""}${w.duracion_min ? `<span><b>${esc(w.duracion_min)}<small> min</small></b><em>Duración</em></span>` : ""}${w.actividad ? "" : `<span><b>${st.ej}</b><em>Ejercicios</em></span><span><b>${st.series}</b><em>Series</em></span>`}${st.vol ? `<span><b>${fmt(st.vol, 0)}<small> kg</small></b><em>Volumen</em></span>` : ""}${w.rpe_sesion != null && w.duracion_min ? `<span><b>${w.rpe_sesion * w.duracion_min}<small> UA</small></b><em>Carga interna</em></span>` : ""}</div></div>
-      ${w.actividad ? `<p class="small muted" style="margin:0">Actividad extra apuntada por el cliente</p>` : sessionTable(w.sets, w.notas_ej)}${(() => { const sn = new Set(groupSets(w.sets).map(e => e.n)); const o = Object.entries(w.notas_ej || {}).filter(([k]) => !sn.has(k)); return o.length ? o.map(([k, v]) => `<div class="sescom"><span>${esc(k)}</span>${esc(v)}</div>`).join("") : ""; })()}${w.comentario ? `<div class="sescom"><span>Comentario de la sesión</span>${esc(w.comentario)}</div>` : ""}</div>`; }).join("") : `<div class="empty">Aún no ha registrado ningún entreno.</div>`;
+    body = wo.length ? `<div class="svlist">${wo.map((w, i) => sesCard(w, i === 0)).join("")}</div>` : `<div class="empty">Aún no ha registrado ningún entreno.</div>`;
   } else if (sub === "fuerza") {
     const wo = await q(sb.from("workouts").select("fecha,sets").eq("client_id", cid).order("fecha", { ascending: true }).limit(400));
     const exs = [...new Set(wo.flatMap(w => (w.sets || []).filter(s => s.kg != null).map(s => s.ejercicio)))]; const sel = exs.includes(S.sub.cex) ? S.sub.cex : exs[0];
@@ -3470,7 +3512,7 @@ async function viewLib() {
   else if (tab === "recetas") body = await libRecipesHTML();
   else if (tab === "ejercicios") {
     const ex = await exLib(true); const fp = S.lib.prev || ""; const list = ex.filter(e => (!qy || (e.nombre + " " + e.grupo + " " + e.material + " " + (e.claves || "")).toLowerCase().includes(qy)) && (!fp || (fp === "all" ? e.prevencion : (e.fases || []).some(x => x.startsWith(fp)))));
-    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="subtabs exf-f">${[["", "Todos"], ["all", "Prevención y readaptación"], ["p", "Prevención"], ["m", "Muscular"], ["t", "Tendón"], ["l", "LCA / menisco"]].map(([k, l]) => `<button data-act="ex-fp" data-k="${k}" aria-current="${fp === k}">${l}</button>`).join("")}</div><div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.prevencion ? ` <span class="chip acc sm">${esc(ACTIV[e.activacion] || "Prevención")}</span>` : ""}${e.notas || e.claves ? `<div class="tiny muted clamp">${esc(e.notas || e.claves)}</div>` : ""}${(e.fases || []).length ? `<div class="exfases">${e.fases.map(f => `<span>${esc(FASES_EX[f] || f)}</span>`).join("")}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td>${e.video_url ? `<span class="tag tag-workout">▶ vídeo</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
+    body = head("Ejercicios", ex.length, "ex-new", "", "Añadir ejercicio") + `<div class="subtabs exf-f">${[["", "Todos"], ["all", "Prevención y readaptación"], ["p", "Prevención"], ["m", "Muscular"], ["t", "Tendón"], ["l", "LCA / menisco"]].map(([k, l]) => `<button data-act="ex-fp" data-k="${k}" aria-current="${fp === k}">${l}</button>`).join("")}</div><div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Grupo / patrón</th><th>Material</th><th>Vídeo</th></tr></thead><tbody>${list.map(e => `<tr data-act="ex-edit" data-id="${esc(e.id)}"><td><span class="lnk">${esc(e.nombre)}</span>${e.prevencion ? ` <span class="chip acc sm">${esc(ACTIV[e.activacion] || "Prevención")}</span>` : ""}${exNota(e) ? `<div class="tiny muted clamp">${esc(exNota(e))}</div>` : ""}${(e.fases || []).length ? `<div class="exfases">${e.fases.map(f => `<span>${esc(FASES_EX[f] || f)}</span>`).join("")}</div>` : ""}</td><td>${esc(e.grupo)}</td><td>${esc(e.material)}</td><td class="libv">${e.video_url && ytId(e.video_url) ? `<button type="button" class="vplay" data-act="ex-video" data-u="${esc(e.video_url)}" data-n="${esc(e.nombre)}" aria-label="Ver vídeo de ${esc(e.nombre)}">${IC_PLAY}</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin resultados.</td></tr>`}</tbody></table></div></div>`;
   } else if (tab === "workouts") {
     const ts = await tplLib(); const list = ts.filter(t => !qy || (t.nombre + " " + t.descripcion + " " + desc(t.contenido)).toLowerCase().includes(qy));
     body = head("Workouts", ts.length, "go", "lib-w-new", "Añadir workout") + `<div class="card flat"><div class="tbl"><table class="htable libtab"><thead><tr><th>Nombre</th><th>Tipo</th><th>Descripción</th><th>Actualizado</th></tr></thead><tbody>${list.map(t => `<tr data-act="go" data-h="lib-w-${esc(t.id)}"><td><span class="lnk">${esc(t.nombre)}</span></td><td><span class="tag tag-${esc(t.tipo)}">${esc(TIPOS[t.tipo])}</span></td><td><div class="tiny muted clamp">${esc(t.descripcion ? t.descripcion + ". " : "")}${esc(desc(t.contenido))}</div></td><td class="tiny muted">${esc(fdate((t.updated_at || "").slice(0, 10)))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Sin workouts.</td></tr>`}</tbody></table></div></div>`;
@@ -4012,8 +4054,10 @@ document.addEventListener("click", async ev => {
       case "cam-flip": CAM.facing = CAM.facing === "user" ? "environment" : "user"; camStart(); break;
       case "cam-shot": camShot(); break;
       case "wo-edit": openWoEdit(a.dataset.id); break;
-      case "wer-add": { const l = $("#wer-list"); if (l) { l.insertAdjacentHTML("beforeend", woRow()); const r = l.lastElementChild; r.querySelector("input").focus(); } break; }
-      case "wer-del": a.closest(".wer").remove(); break;
+      case "wes-add": { const g = a.closest(".weg"); const l = g.querySelector(".wegs"); const last = l.lastElementChild; l.insertAdjacentHTML("beforeend", woSet()); const r = l.lastElementChild; if (last) ["e_kg", "e_r", "e_rir"].forEach(n => { r.querySelector(`[name="${n}"]`).value = last.querySelector(`[name="${n}"]`).value; }); woRenum(); r.querySelector("input").focus(); break; }
+      case "wes-del": a.closest(".wes").remove(); woRenum(); break;
+      case "weg-add": { const l = $("#weg-list"); l.insertAdjacentHTML("beforeend", woGroup("", [[{}, ""]], true)); woRenum(); const g = l.lastElementChild; g.querySelector('[name="g_n"]').focus(); g.scrollIntoView({ block: "center", behavior: "smooth" }); break; }
+      case "weg-del": if (confirm("¿Quitar este ejercicio y sus series?")) { a.closest(".weg").remove(); woRenum(); } break;
       case "wo-del": if (!confirm("¿Borrar este entreno del cliente? No se puede deshacer.")) break; try { await q(sb.from("workouts").delete().eq("id", a.dataset.id)); sheet(""); toast("Entreno borrado"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } break;
       case "sh-compartir": try { await navigator.share({ files: [S.shareFile], text: "Entreno hecho 💪 " + IG }); } catch (e) { if (e && e.name !== "AbortError") toast("No se pudo abrir el menú de compartir. Guárdala y súbela desde Instagram."); } break;
       case "w-fin": openFin(); break;
@@ -4063,6 +4107,7 @@ document.addEventListener("click", async ev => {
       // planificación
       case "asig-new": openAsig(null, a.dataset.d); break;
       case "asig-edit": openAsig(id); break;
+      case "asig-edit2": openAsig(a.dataset.id, null, null, true); break;
       case "asig-tipo": { S.sub.asigTipo = a.dataset.t; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); const f = $("#f-asig"); $("#asig-body").innerHTML = asigBody({ tipo: a.dataset.t, fecha: f.fecha.value, titulo: f.titulo.value, contenido: {}, visible: true }, S.sub.tpls || []); break; }
       case "tpl-load": { const t = (S.sub.tpls || []).find(x => x.id === $("#tpl-sel").value); if (!t) break; const f = a.closest("form"); f.querySelector(".wed").outerHTML = wEditor(t.contenido || {}, S.sub.asigTipo); if (!f.titulo.value) f.titulo.value = t.nombre.replace(/^[^·]+ · /, ""); break; }
       case "w-add": a.closest(".wed").querySelector(".wrows").insertAdjacentHTML("beforeend", wRow()); a.closest(".wed").querySelector(".wrows").lastElementChild.querySelector('[name="r_n"]').focus(); break;
@@ -4209,6 +4254,7 @@ let qT;
 document.addEventListener("input", ev => {
   const el = ev.target;
   if (el.tagName === "TEXTAREA") grow(el);
+  if (el.name === "g_n" && el.closest(".weg")) { const n = el.closest(".weg").querySelector(".wegn"); if (n) n.textContent = el.value.trim() || "Ejercicio nuevo"; }
   if (el.closest && el.closest("#f-test") && el.name !== "notas") { if (el.name === "c_vmt") delete el.dataset.auto; tPreview(); }
   if (el.type === "radio" && el.closest(".rpep")) { const g = el.closest(".rpep"), t = g.parentElement.querySelector(".rpe-t"); if (t) t.textContent = RPE_TXT[el.value] || ""; g.classList.remove("need"); }
   if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.top != null) topSync(el); }
@@ -4218,7 +4264,7 @@ document.addEventListener("input", ev => {
 });
 document.addEventListener("change", ev => {
   const el = ev.target;
-  if (el.closest && el.closest("#f-workout")) saveDraftFrom(el);
+  if (el.closest && el.closest("#f-workout")) { saveDraftFrom(el); if (el.dataset.f === "hecho") wkProgress(el.closest(".ex.wx"), el.checked); }
   if (el.closest && el.closest("[data-pres]") && (el.dataset.pc || el.dataset.p === "tipo")) presRerender(el.closest("[data-pres]"));
   if (el.dataset && el.dataset.actChange === "ap-prev") apRefresh(el.form);
   if (el.dataset && el.dataset.actChange === "pay-cli") payForm(el.value);
