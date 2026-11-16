@@ -1221,7 +1221,7 @@ function openShareDone() {
   sheet(`<div class="shdone"><div class="shok">${IC_OK}</div><h2>¡Entreno completado!</h2><p class="small muted">Buen trabajo. Ya le llega todo a Adrián.</p>
   <div class="finst">${d.dur != null ? `<div><b>${esc(durTxt(d.dur))}</b><span>Duración</span></div>` : ""}<div><b>${d.series}</b><span>Series</span></div>${d.vol ? `<div><b>${esc(fmt(Math.round(d.vol)))} kg</b><span>Volumen</span></div>` : ""}</div></div>
   <div class="shcta"><b>¿Lo celebras?</b><span>Hazte una foto, súbela a tu historia y etiqueta a <b>${IG}</b>. Te pongo tu entreno encima de la foto.</span></div>
-  <label class="btn pri block shpick">📸 Hacerme una foto<input type="file" accept="image/*" capture="user" data-act-change="sh-foto" hidden></label>
+  <button type="button" class="btn pri block" data-act="cam-open">📸 Abrir la cámara</button>
   <label class="btn block shpick">Elegir una de la galería<input type="file" accept="image/*" data-act-change="sh-foto" hidden></label>
   <button type="button" class="btn ghost block" data-act="sh-sinfoto">Compartir sin foto</button>
   <button type="button" class="btn ghost block" data-act="close">Ahora no</button>`);
@@ -1249,6 +1249,32 @@ async function shareImage(file, est = "clasico") {
     x.shadowBlur = 10; x.font = F(600, 30); x.fillStyle = "#fff"; x.textAlign = "right"; x.fillText(IG, W - M, BOT + 100); x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(fdate(today(), { day: "numeric", month: "long" }), M, BOT + 100);
   }
   return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .92));
+}
+/* ===== Cámara propia: trasera por defecto, cambiar a la delantera y tirar de la galería ===== */
+const CAM = { st: null, facing: "environment" };
+function camStop() { if (CAM.st) CAM.st.getTracks().forEach(t => t.stop()); CAM.st = null; }
+function camClose() { camStop(); const el = $("#cam"); if (el) el.remove(); }
+async function camStart() {
+  camStop(); const v = $("#cam video"); if (!v) return;
+  try { CAM.st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: CAM.facing }, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false }); v.srcObject = CAM.st; v.classList.toggle("mirror", CAM.facing === "user"); await v.play().catch(() => { }); }
+  catch (e) { camClose(); toast("No se pudo abrir la cámara. Usa el botón de la galería o revisa los permisos."); const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.setAttribute("capture", "environment"); i.onchange = () => { const f = i.files && i.files[0]; if (f) shareFlow(f); }; i.click(); }
+}
+function camOpen() {
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.setAttribute("capture", "environment"); i.onchange = () => { const f = i.files && i.files[0]; if (f) shareFlow(f); }; i.click(); return; }
+  sheet(""); CAM.facing = "environment";
+  document.body.insertAdjacentHTML("beforeend", `<div id="cam" role="dialog" aria-label="Cámara"><video playsinline muted autoplay></video>
+  <button type="button" class="camx" data-act="cam-close" aria-label="Cerrar cámara">✕</button>
+  <div class="cambar"><label class="camb" aria-label="Elegir de la galería"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg><input type="file" accept="image/*" data-act-change="sh-foto" hidden></label>
+  <button type="button" class="camshot" data-act="cam-shot" aria-label="Hacer foto"></button>
+  <button type="button" class="camb" data-act="cam-flip" aria-label="Cambiar de cámara"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-3l-2-3H9L7 7H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Z"/><path d="M9 13a3 3 0 0 1 5-2.2M15 13a3 3 0 0 1-5 2.2"/><path d="m14 9 .5 2-2 .3M10 17l-.5-2 2-.3"/></svg></button></div></div>`);
+  camStart();
+}
+function camShot() {
+  const v = $("#cam video"); if (!v || !v.videoWidth) return;
+  const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight; const x = c.getContext("2d");
+  if (CAM.facing === "user") { x.translate(c.width, 0); x.scale(-1, 1); }
+  x.drawImage(v, 0, 0); const el = $("#cam"); if (el) el.classList.add("flash");
+  c.toBlob(b => { camClose(); if (b) shareFlow(new File([b], "foto.jpg", { type: "image/jpeg" })); }, "image/jpeg", .92);
 }
 async function shareFlow(file) {
   if (file !== undefined) S.shareSrc = file; const est = "clasico";
@@ -3981,6 +4007,10 @@ document.addEventListener("click", async ev => {
       case "w-start": wStart(a.dataset.id); break;
       case "ex-video": openVideo(a.dataset.u, a.dataset.n); break;
       case "sh-sinfoto": shareFlow(null); break;
+      case "cam-open": camOpen(); break;
+      case "cam-close": camClose(); break;
+      case "cam-flip": CAM.facing = CAM.facing === "user" ? "environment" : "user"; camStart(); break;
+      case "cam-shot": camShot(); break;
       case "wo-edit": openWoEdit(a.dataset.id); break;
       case "wer-add": { const l = $("#wer-list"); if (l) { l.insertAdjacentHTML("beforeend", woRow()); const r = l.lastElementChild; r.querySelector("input").focus(); } break; }
       case "wer-del": a.closest(".wer").remove(); break;
@@ -4195,7 +4225,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && el.dataset.actChange === "t-clave") { S.coach.tclave = el.value; const b = $("#t-campos"); if (b) b.innerHTML = tCampos(el.value); }
   if (el.dataset && el.dataset.actChange === "t-ej") { const p = VMT.find(x => x[0] === el.value), m = el.form && el.form.c_vmt; if (p && m && (!m.value || m.dataset.auto)) { m.value = String(p[1]).replace(".", ","); m.dataset.auto = "1"; } tPreview(); }
   if (el.dataset && el.dataset.actChange === "av-file") { avSubir(el.files && el.files[0]); el.value = ""; }
-  if (el.dataset && el.dataset.actChange === "sh-foto") { const f = el.files && el.files[0]; el.value = ""; if (f) shareFlow(f); }
+  if (el.dataset && el.dataset.actChange === "sh-foto") { const f = el.files && el.files[0]; el.value = ""; if (f) { camClose(); shareFlow(f); } }
   if (el.dataset && el.dataset.actChange === "ra-les") { const l = (((S.coach.c || {}).ficha || {}).lesiones || []).find(x => x.id === el.value); const p = protoDeLesion(l), sl = $("#ra-proto"); if (p && sl) sl.value = p; }
   if (el.dataset && el.dataset.actChange === "les-tipo") { const b = $("#les-sub"); if (b) b.innerHTML = lesSub(el.value); }
   if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
