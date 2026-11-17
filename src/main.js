@@ -2995,7 +2995,8 @@ async function tabPlan(c, pl) {
   for (let d = g0; d <= g1; d = addDays(d, 7)) {
     const wi = weekInfo(d); const wa = as.filter(x => x.fecha >= d && x.fecha <= addDays(d, 6) && x.visible && x.tipo !== "nota"); const wp = wa.filter(x => x.fecha <= t); const wh = wp.filter(x => x.hecho).length;
     const nb = wi && wi.b !== lastB; if (wi) lastB = wi.b;
-    rows += `<div class="pweek">${wi ? `<div class="pwl2"><span class="wtag t-${esc(wi.tipo)}">${esc(wi.s)}</span><span class="wname">${[nb ? wi.b : "", wi.tipo !== "carga" ? cap(wi.tipo) : ""].filter(Boolean).map(esc).join(" · ")}</span></div>` : ""}<div class="pgrid">`;
+    const now = d <= t && t <= addDays(d, 6);
+    rows += `<div class="pweek">${wi || now ? `<div class="pwl2">${wi ? `<span class="wtag t-${esc(wi.tipo)}">${esc(wi.s)}</span>` : ""}<span class="wname">${[wi && nb ? wi.b : "", wi && wi.tipo !== "carga" ? cap(wi.tipo) : ""].filter(Boolean).map(esc).join(" · ")}</span>${now ? `<span class="wnow">Esta semana</span>` : ""}</div>` : ""}<div class="pgrid">`;
     for (let k = 0; k < 7; k++) {
       const day = addDays(d, k); const items = as.filter(x => x.fecha === day); const evs = ev.filter(e => e.fecha <= day && day <= (e.fin || e.fecha)); const libres = wo.filter(w => w.fecha === day && !w.assignment_id);
       const cls = `${day.slice(0, 7) !== m ? " out" : ""}${day === t ? " hoy" : ""}${day < t ? " past" : ""}${k >= 5 ? " we" : ""}`;
