@@ -905,6 +905,13 @@ async function pushCardPerfil() {
   const co = S.me.role === "coach";
   return `<div class="card"><h2 class="hh">${ICON.bell}${co ? "Tus avisos en este móvil" : "Avisos"}</h2>${co ? `<p class="tiny muted" style="margin:-4px 0 8px">Para enterarte al momento si falta espacio o fallan las copias.</p>` : ""}<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px 12px"><span class="small">${esc(txt)}</span><span class="row" style="gap:6px">${e === "on" && co ? `<button class="btn sm" data-act="push-test" data-cid="__coach">Probar</button>` : ""}${e === "on" ? `<button class="btn sm" data-act="push-off">Desactivar</button>` : e === "off" ? `<button class="btn pri sm" data-act="push-on">Activar</button>` : ""}</span></div>${e === "denegado" ? `<p class="tiny muted" style="margin:8px 0 0">Para activarlos: Ajustes del móvil → Notificaciones → esta app.</p>` : ""}</div>`;
 }
+const BIENV_TXT = "¡Bienvenido/a al equipo! Aquí vas a tener tus entrenos, tu progreso y tus revisiones semanales. Empieza por el cuestionario inicial para que pueda prepararte el plan a tu medida. Cualquier duda me escribes.";
+async function bienvenidaAuto(cid, nombre) {
+  try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "push").limit(1)); const v = (r[0] || {}).valor || {}; if (v.bienv === false) return;
+    const txt = (v.bienv_txt || BIENV_TXT).replace(/\{nombre\}/g, String(nombre || "").split(" ")[0]);
+    await q(sb.from("assignments").insert({ client_id: cid, fecha: today(), tipo: "nota", titulo: "Bienvenida", contenido: { detalle: txt, hora: "00:00" }, visible: true, orden: 0 }));
+  } catch (e) { console.warn("bienvenida", e); }
+}
 async function pushCoachCard() {
   let v = {}; try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "push").limit(1)); v = (r[0] || {}).valor || {}; } catch { }
   const on = k => v[k] !== false; const subs = await q(sb.from("push_subs").select("client_id")).catch(() => []); const n = new Set(subs.map(x => x.client_id).filter(Boolean)).size;
@@ -913,10 +920,16 @@ async function pushCoachCard() {
   ${it("nuevas", "Tareas nuevas", "Cuando les programas algo (agrupado en un solo aviso).")}
   <div class="pushdia"><label class="chkrow"><input type="checkbox" name="dia" ${on("dia") ? "checked" : ""}><span><b>Aviso del día</b><small>Lo que les toca hoy.</small></span></label><label class="pushh"><span class="tiny muted">Hora</span><input name="hora_dia" type="time" value="${esc(v.hora_dia || "08:00")}"></label></div>
   ${it("mensajes", "Mensajes programados", "A la hora que pusiste en el mensaje.")}${it("revision", "Revisión publicada", "Cuando publicas su revisión semanal.")}${it("comunidad", "Comunidad", "Cuando publicas algo en el tablón.")}
+  <div class="pushdia"><label class="chkrow"><input type="checkbox" name="cuest" ${on("cuest") ? "checked" : ""}><span><b>Recordatorio del cuestionario</b><small>Si a esa hora no ha rellenado el cuestionario diario de hoy.</small></span></label><label class="pushh"><span class="tiny muted">Hora</span><input name="hora_cuest" type="time" value="${esc(v.hora_cuest || "11:00")}"></label></div>
+  <h3 class="pushsub">Automatizaciones</h3>
+  ${it("meso", "Fin de mesociclo (aviso a ti)", "Una semana antes de que termine el mesociclo de un cliente, para preparar el siguiente y el informe de cierre.")}
+  <label class="chkrow"><input type="checkbox" name="bienv" ${on("bienv") ? "checked" : ""}><span><b>Bienvenida a clientes nuevos</b><small>Al darlo de alta le dejo este mensaje en su app. El cuestionario inicial le sale solo al entrar. Los entrenos los programas tú.</small></span></label>
+  <textarea name="bienv_txt" rows="3" aria-label="Mensaje de bienvenida">${esc(v.bienv_txt || BIENV_TXT)}</textarea>
   <div class="row"><span class="tiny muted grow">Se revisa cada 10 minutos.</span><button class="btn pri">Guardar</button></div></form>`;
 }
 async function savePushCfg(f) {
-  const valor = { nuevas: f.nuevas.checked, dia: f.dia.checked, mensajes: f.mensajes.checked, revision: f.revision.checked, comunidad: f.comunidad.checked, hora_dia: f.hora_dia.value || "08:00" };
+  let prev = {}; try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "push").limit(1)); prev = (r[0] || {}).valor || {}; } catch { }
+  const valor = { ...prev, nuevas: f.nuevas.checked, dia: f.dia.checked, mensajes: f.mensajes.checked, revision: f.revision.checked, comunidad: f.comunidad.checked, hora_dia: f.hora_dia.value || "08:00", cuest: f.cuest.checked, hora_cuest: f.hora_cuest.value || "11:00", meso: f.meso.checked, bienv: f.bienv.checked, bienv_txt: f.bienv_txt.value.trim() || BIENV_TXT };
   try { await q(sb.from("ajustes").upsert({ clave: "push", valor, updated_at: new Date().toISOString() }, { onConflict: "clave" })); toast("Avisos guardados"); } catch (e) { toast(errMsg(e)); }
 }
 async function pushTest(cid, b) {
@@ -2148,6 +2161,7 @@ async function leadAlta(id) {
   try {
     const r = await q(sb.from("clients").insert({ id: cid, nombre: l.nombre, email: l.email, estado: "activo", ficha: { telefono: l.telefono, edad: l.edad != null ? String(l.edad) : "", sexo: l.sexo, fechaInicio: today(), ...(obj ? { perfil: obj } : {}), origen: "Contacto web", objetivo: l.objetivo || "" } }).select("id,codigo_alta"));
     await q(sb.from("plans").insert({ client_id: cid }));
+    await bienvenidaAuto(cid, l.nombre);
     await q(sb.from("leads").update({ estado: "alta", client_id: cid }).eq("id", id));
     let cod = r && r[0] && r[0].codigo_alta; if (!cod) cod = ((await q(sb.from("clients").select("codigo_alta").eq("id", cid).limit(1)))[0] || {}).codigo_alta;
     S.coach.list = []; bienvenida({ id: cid, codigo_alta: cod || "(míralo en su pestaña Cuenta)", nombre: l.nombre, email: l.email, telefono: l.telefono });
@@ -2985,7 +2999,7 @@ async function saveNewClient(f) {
   const nombre = f.nombre.value.trim(), email = f.email.value.trim().toLowerCase(); let id = slug(nombre.split(" ")[0] + "-" + (nombre.split(" ")[1] || "x").slice(0, 1));
   if (!S.coach.list.length) await loadClients();
   if (S.coach.list.some(c => c.id === id)) id += "-" + Math.random().toString(36).slice(2, 5);
-  try { await q(sb.from("clients").insert({ id, nombre, email, ficha: { objetivo: f.objetivo.value.trim() } })); await q(sb.from("plans").insert({ client_id: id })); sheet(""); toast("Cliente creado"); S.coach.tabFix = true; S.coach.tab = "cuenta"; location.hash = "c-" + id; }
+  try { await q(sb.from("clients").insert({ id, nombre, email, ficha: { objetivo: f.objetivo.value.trim() } })); await q(sb.from("plans").insert({ client_id: id })); await bienvenidaAuto(id, nombre); sheet(""); toast("Cliente creado"); S.coach.tabFix = true; S.coach.tab = "cuenta"; location.hash = "c-" + id; }
   catch (e) { toast(errMsg(e)); }
 }
 
