@@ -1209,14 +1209,17 @@ function wkProgress(ex, justDone) {
 }
 function workoutSets(f, a) {
   const sets = [];
+  // Solo cuentan las series marcadas con ✓. Si no se ha marcado ninguna (registro sin ✓), cuentan las que tengan datos.
+  const anyOk = !!f.querySelector(".set.done,.pset.done");
+  const rowOk = k => { if (!anyOk) return true; const el = f.querySelector(`[data-k="${k}"][data-f]`); const r = el && el.closest(".set,.pset"); return r ? r.classList.contains("done") : true; };
   ((a.contenido || {}).ejercicios || []).forEach((e, ei) => {
     if (e.series && e.series.length) { e.series.forEach((x, si) => { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; let kg = g("kg"); const reps = g("reps"), rpe = g("rpe"), esf = g("esf"), vel = g("vel"); let rir = g("rir");
       if (kg == null) { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="kg"]`); if (el && el.dataset.plan != null && reps != null && num(el.placeholder) != null) kg = num(el.placeholder); }
       if (rir == null && rpe != null) rir = Math.max(0, 10 - rpe);
-      if (kg != null || reps != null) { const o = { ejercicio: e.nombre, serie: si + 1, kg, reps, rir }; if (rpe != null) o.rpe = rpe; if (esf != null) o.esf = esf; if (vel != null) o.vel = vel; if (x.tipo && x.tipo !== "normal") o.tipo = x.tipo; sets.push(o); } }); return; }
+      if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) { const o = { ejercicio: e.nombre, serie: si + 1, kg, reps, rir }; if (rpe != null) o.rpe = rpe; if (esf != null) o.esf = esf; if (vel != null) o.vel = vel; if (x.tipo && x.tipo !== "normal") o.tipo = x.tipo; sets.push(o); } }); return; }
     const n = seriesOf(e.sxr);
     if (!n) { const c = f.querySelector(`[data-k="${ei}-done"]`); if (c && c.checked) sets.push({ ejercicio: e.nombre, serie: 1, hecho: true }); return; }
-    for (let si = 0; si < n; si++) { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; const kg = g("kg"), reps = g("reps"), rir = g("rir"); if (kg != null || reps != null) sets.push({ ejercicio: e.nombre, serie: si + 1, kg, reps, rir }); }
+    for (let si = 0; si < n; si++) { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; const kg = g("kg"), reps = g("reps"), rir = g("rir"); if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) sets.push({ ejercicio: e.nombre, serie: si + 1, kg, reps, rir }); }
   });
   return sets;
 }
@@ -1356,7 +1359,7 @@ function sessionTable(sets, notas = {}) {
 }
 // Solo cuentan las series efectivas: las de aproximación/calentamiento no suman series ni volumen
 const esAprox = x => /aprox|calent|warm/i.test(String(x.tipo || ""));
-const sesStats = w => { const all = (w.sets || []).filter(x => !esAprox(x)); const ss = all.filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: all.length, ej: new Set((w.sets || []).map(x => x.ejercicio)).size, vol }; };
+const sesStats = w => { const all = (w.sets || []).filter(x => !esAprox(x)); const ss = all.filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: ss.length, ej: new Set(all.map(x => x.ejercicio)).size, vol }; };
 // Vista ordenada de un entreno registrado: datos clave y ejercicios desplegables
 function sesKpis(w) { const st = sesStats(w); return [w.rpe_sesion != null ? [w.rpe_sesion + "/10", "Dureza"] : null, w.duracion_min ? [w.duracion_min + " min", "Duración"] : null, !w.actividad ? [st.series, "Series"] : null, st.vol ? [fmt(st.vol, 0) + " kg", "Volumen"] : null, w.rpe_sesion != null && w.duracion_min ? [w.rpe_sesion * w.duracion_min + " UA", "Carga"] : null].filter(Boolean); }
 function sesBody(w) {
