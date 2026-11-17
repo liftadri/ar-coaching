@@ -1936,3 +1936,7 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .vchart .vpl{font-weight:500;fill:var(--muted)}
 .vleg-pl{background:transparent!important;border:1.5px dashed var(--muted)}
 .vchart svg{width:100%;height:auto}
+/* Botón con «+»: círculo con el mismo aire arriba, abajo y a la izquierda */
+.btn:has(> .plus){display:inline-flex;align-items:center;gap:8px;padding-left:10px!important}.btn.sm:has(> .plus){padding-left:6px!important}
+.btn .plus{margin:0!important;vertical-align:middle}
+.btn .plus svg{transform:none}
