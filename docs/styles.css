@@ -1819,3 +1819,11 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 }
 @media (max-width:640px){.subtabs{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;overscroll-behavior:contain;scrollbar-width:none;max-width:100%}.subtabs::-webkit-scrollbar{display:none}.subtabs>button{flex:0 0 auto;white-space:nowrap}}
 .pwl2 .wnow{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--accent)}
+.ddl{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px}
+.ddl>div{background:var(--surface-2);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.ddl span{font-size:12.5px;color:var(--muted)}.ddl b{font-size:15px;font-variant-numeric:tabular-nums}
+.ddc{margin:10px 0 0;padding-left:12px;border-left:3px solid var(--accent);white-space:pre-wrap}
+.ddf{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.ddf figure{margin:0}.ddf img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px;display:block}
+.ddf figcaption{font-size:12.5px;color:var(--muted);margin-top:4px;text-align:center}
+.ddedit{align-self:center;font-size:13px;color:var(--muted);margin-top:2px}

@@ -3023,13 +3023,14 @@ async function openAsig(id, fecha, pre, editar) {
   if (!x) return; S.sub.asigTipo = x.tipo; S.sub.tpls = tpls;
   const logs = id && (x.tipo === "workout" || x.tipo === "cardio") ? await q(sb.from("workouts").select("*").eq("assignment_id", id)) : [];
   const res = (x.resultado && x.resultado.respuestas) || [];
+  const extraDone = id && x.hecho && !editar ? await doneData(x).catch(() => "") : "";
   if (id && x.hecho && !editar) { // Tarea hecha: primero lo que hizo el cliente
     S.coach.wo = { ...(S.coach.wo || {}), ...Object.fromEntries(logs.map(w => [w.id, w])) };
     sheet(`<h2>${esc(x.titulo || TIPOS[x.tipo] || "Tarea")}</h2><p class="tiny muted" style="margin:-4px 0 0">${tipoChip(x.tipo)} ${esc(cap(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" })))} · <span class="ok-t">Hecha${x.hecho_en ? " " + esc(relTime(x.hecho_en)) : ""}</span></p>
     ${logs.map(w => `<div class="svin solo"><div class="svk full">${sesKpis(w).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div>${sesBody(w)}<div class="svact"><button type="button" class="btn sm" data-act="wo-edit" data-id="${esc(w.id)}">Corregir datos</button></div></div>`).join("")}
-    ${resExtra(x)}${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta && !logs.some(w => w.comentario === x.respuesta) ? `<p class="small" style="margin:4px 0;white-space:pre-wrap">${esc(x.respuesta)}</p>` : ""}</div>` : ""}
-    ${!logs.length && !res.length && !x.respuesta && !resExtra(x) ? `<p class="small muted">La marcó como hecha sin apuntar datos.</p>` : ""}
-    <button type="button" class="btn block" data-act="asig-edit2" data-id="${esc(id)}">Ver o editar la tarea</button><button type="button" class="btn ghost block" data-act="close">Cerrar</button>`, "wide");
+    ${extraDone}${resExtra(x)}${res.length || x.respuesta ? `<div class="card"><h2>Respuesta del cliente</h2>${res.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r || "—")}</p>`).join("")}${x.respuesta && !logs.some(w => w.comentario === x.respuesta) ? `<p class="small" style="margin:4px 0;white-space:pre-wrap">${esc(x.respuesta)}</p>` : ""}</div>` : ""}
+    ${!logs.length && !extraDone && !res.length && !x.respuesta && !resExtra(x) ? `<p class="small muted">La marcó como hecha sin apuntar datos.</p>` : ""}
+    <button type="button" class="btn block" data-act="close">Cerrar</button><button type="button" class="lnk ddedit" data-act="asig-edit2" data-id="${esc(id)}">Editar la tarea programada</button>`, "wide");
     return;
   }
   sheet(`<h2>${id ? "Editar" : "Añadir"} · ${esc(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" }))}</h2>
@@ -3124,6 +3125,36 @@ function validExtras(t, c) {
 }
 
 // Lo que registró el cliente en cardio y tareas con pasos (vista del entrenador)
+// Datos que el cliente registró al completar formularios de bienestar, peso, medidas o fotos
+async function doneData(x) {
+  const c = x.contenido || {}; const d = (x.hecho_en || "").slice(0, 10) || x.fecha; const ds = [...new Set([d, x.fecha])];
+  const tono = v => v >= 4 ? "ok" : v <= 2 ? "low" : "mid";
+  if (x.tipo === "formulario" && c.wellness) {
+    const w = (await q(sb.from("wellness").select("*").eq("client_id", x.client_id).in("fecha", ds).order("fecha", { ascending: false }).limit(1)))[0];
+    if (!w) return "";
+    const wi = wellIdx(w);
+    const extra = [w.sueno_h != null ? ["Horas dormidas", `${fmt(w.sueno_h)} h`] : null, w.fc != null ? ["Pulso en reposo", `${w.fc} lpm`] : null, w.hrv != null ? ["HRV", `${w.hrv} ms`] : null, w.apetito != null ? ["Apetito", `${w.apetito}/5`] : null, w.molestia_zona || w.molestia_0a10 ? ["Molestia", [w.molestia_zona, w.molestia_0a10 != null ? `${w.molestia_0a10}/10` : ""].filter(Boolean).join(" · ")] : null].filter(Boolean);
+    return `<div class="card wb"><div class="wbh"><div><h2>Lo que respondió</h2>${w.fecha !== x.fecha ? `<p class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</p>` : ""}</div>${wi != null ? `<div class="wbi ${tono(wi)}"><b>${fmt(wi, 1)}</b><span>de 5</span></div>` : ""}</div>
+      <div class="wbl">${WK.filter(([k]) => num(w[k]) != null).map(([k, l]) => `<div class="wbr ${tono(num(w[k]))}"><span>${esc(l)}</span><i><em style="width:${num(w[k]) * 20}%"></em></i><b>${num(w[k])}</b></div>`).join("")}</div>
+      ${extra.length ? `<div class="ddl">${extra.map(([l, v]) => `<div><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join("")}</div>` : ""}
+      ${w.comentario ? `<p class="small ddc">${esc(w.comentario)}</p>` : ""}</div>`;
+  }
+  if (x.tipo === "peso") {
+    const w = (await q(sb.from("weights").select("fecha,kg").eq("client_id", x.client_id).in("fecha", ds).order("fecha", { ascending: false }).limit(1)))[0];
+    return w ? `<div class="card"><h2>Lo que registró</h2><div class="ddl"><div><span>Peso</span><b>${esc(fmt(w.kg))} kg</b></div></div></div>` : "";
+  }
+  if (x.tipo === "medidas") {
+    const m = (await q(sb.from("measurements").select("*").eq("client_id", x.client_id).in("fecha", ds).order("fecha", { ascending: false }).limit(1)))[0];
+    if (!m) return ""; const r = MEDIDAS.filter(([k]) => m[k] != null && m[k] !== "");
+    return r.length ? `<div class="card"><h2>Medidas que registró</h2><div class="ddl">${r.map(([k, l]) => `<div><span>${esc(l)}</span><b>${esc(fmt(m[k]))} cm</b></div>`).join("")}</div></div>` : "";
+  }
+  if (x.tipo === "fotos") {
+    const ph = await q(sb.from("photos").select("*").eq("client_id", x.client_id).in("fecha", ds));
+    if (!ph.length) return ""; const u = await signedUrls(ph.map(p => p.path));
+    return `<div class="card"><h2>Fotos que subió</h2><div class="ddf">${ph.map(p => u[p.path] ? `<figure><img src="${esc(u[p.path])}" alt="Foto ${esc(p.vista || "")}" loading="lazy"><figcaption>${esc(cap(p.vista || ""))}</figcaption></figure>` : "").join("")}</div></div>`;
+  }
+  return "";
+}
 function resExtra(x) {
   const r = x.resultado || {}, c = x.contenido || {}; const out = [];
   if (x.tipo === "cardio") { const p = [["min", " min"], ["km", " km"], ["pasos", " pasos"], ["fc", " ppm"], ["rpe", "/10 dureza"]].filter(([k]) => r[k] != null).map(([k, u]) => `${k === "pasos" ? Number(r[k]).toLocaleString("es-ES") : fmt(r[k])}${u}`); if (p.length) out.push(`<p class="small" style="margin:0"><b>Hizo:</b> ${esc(p.join(" · "))}</p>${cardioResumen(c) ? `<p class="tiny muted" style="margin:2px 0 0">Objetivo: ${esc(cardioResumen(c))}</p>` : ""}`); }
