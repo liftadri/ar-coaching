@@ -2956,7 +2956,7 @@ function ewmaSeries(all, load) {
 }
 function cargaAlertas(load, t, tendon) {
   const sum = (end, n) => { let s = 0; for (let k = 0; k < n; k++) s += load[addDays(end, -k)] || 0; return s; };
-  const has = Object.keys(load).some(d => d <= addDays(t, -21)); if (!has) return [];
+  const has = [0, 1, 2, 3].filter(k => sum(addDays(t, -7 * k), 7) > 0).length >= 3; if (!has) return [];
   const a7 = sum(t, 7), p7 = sum(addDays(t, -7), 7), ch = sum(t, 28) / 4; const out = [];
   if (ch > 0 && a7 / ch > 1.5) out.push(`ACWR ${fmt(a7 / ch, 2)}: subida brusca de carga (> 1,5)`);
   const lim = tendon ? 5 : 10; if (p7 > 0 && a7 > p7 * (1 + lim / 100) && a7 - p7 > 150) out.push(`Carga semanal +${Math.round(100 * (a7 / p7 - 1))} % respecto a la anterior (límite ${lim} %${tendon ? " por tendinopatía" : ""})`);
@@ -3669,9 +3669,10 @@ async function saveProg(f) {
 function multiChart(days, series, o = {}) {
   const W = 620, H = o.h || 220, P = { l: 40, r: 16, t: 12, b: 24 };
   const vals = series.flatMap(s => days.map(d => s.v[d]).filter(v => v != null)).concat((o.band ? days.flatMap(d => o.band[d] ? [o.band[d][0], o.band[d][1]] : []) : []), o.ref != null ? [o.ref] : []);
-  if (vals.length < 2) return `<div class="empty">${esc(o.empty || "Aún no hay suficientes datos")}</div>`;
-  let y0 = o.yMin ?? Math.min(...vals), y1 = o.yMax ?? Math.max(...vals); if (o.yMin == null) { const pd = (y1 - y0) * .12 || 1; y0 -= pd; y1 += pd; }
-  const tk = niceTicks(y0, y1, 4); if (o.yMin == null) { y0 = tk[0]; y1 = tk[tk.length - 1]; }
+  const nData = series.reduce((t, sr) => t + days.filter(d => sr.v[d] != null).length, 0);
+  if (nData < (o.bars ? 1 : 2)) return `<div class="empty">${esc(o.empty || "Aún no hay suficientes datos")}</div>`;
+  let y0 = o.yMin ?? Math.min(...vals), y1 = o.yMax ?? Math.max(...vals); if (o.yMax != null && Math.max(...vals) > o.yMax) y1 = Math.ceil(Math.max(...vals) * 1.1 * 2) / 2; // nunca dibujar fuera de la gráfica if (o.yMin == null) { const pd = (y1 - y0) * .12 || 1; y0 -= pd; y1 += pd; }
+  const tk = niceTicks(y0, y1, 4); if (o.yMin == null) y0 = tk[0]; if (tk[tk.length - 1] >= y1) y1 = tk[tk.length - 1];
   const n = days.length, X = i => P.l + (n === 1 ? 0 : i / (n - 1)) * (W - P.l - P.r), Y = v => P.t + (1 - (v - y0) / (y1 - y0 || 1)) * (H - P.t - P.b);
   let g = tk.filter(v => v >= y0 && v <= y1).map(v => `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${P.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v, o.dec ?? 0)}</text>`).join("");
   if (o.band) { const up = [], lo = []; days.forEach((d, i) => { if (o.band[d]) { up.push([X(i), Y(o.band[d][1])]); lo.unshift([X(i), Y(o.band[d][0])]); } }); if (up.length > 1) g += `<path d="M${[...up, ...lo].map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L")} Z" fill="var(--ok)" opacity=".13"/>`; }
@@ -3705,8 +3706,10 @@ async function tabRecup(c) {
   const load = {}; wo.forEach(w => { if (w.rpe_sesion != null && w.duracion_min) load[w.fecha] = (load[w.fecha] || 0) + w.rpe_sesion * w.duracion_min; });
   ca.forEach(x => { const r = x.resultado || {}; if (r.rpe != null && r.min) load[x.fecha] = (load[x.fecha] || 0) + r.rpe * r.min; }); // el cardio también suma carga
   const sumR = (end, n) => { let s = 0; for (let k = 0; k < n; k++) s += load[addDays(end, -k)] || 0; return s; };
-  const acwr = {}; all.forEach(d => { const ch = sumR(d, 28) / 4; if (ch > 0 && Object.keys(load).some(x => x <= addDays(d, -21))) acwr[d] = sumR(d, 7) / ch; });
-  const acwrE = Object.keys(load).length ? ewmaSeries(all, load) : {};
+  // El ratio solo tiene sentido con registros continuos: al menos 3 de las 4 semanas crónicas con carga y la semana actual registrada
+  const cubre = d => [0, 1, 2, 3].filter(k => sumR(addDays(d, -7 * k), 7) > 0).length >= 3 && sumR(d, 7) > 0;
+  const acwr = {}; all.forEach(d => { const ch = sumR(d, 28) / 4; if (ch > 0 && cubre(d)) acwr[d] = sumR(d, 7) / ch; });
+  const acwrE = {}; if (Object.keys(load).length) { const e = ewmaSeries(all, load); Object.keys(e).forEach(d => { if (cubre(d)) acwrE[d] = e[d]; }); }
   const tendon = (await q(sb.from("readaptaciones").select("protocolo").eq("client_id", c.id).eq("estado", "activa")).catch(() => [])).some(r => r.protocolo === "tendon");
   const lastW = Array.from({ length: 7 }, (_, k) => load[addDays(t, -k)] || 0), mono = sdOf(lastW) ? meanOf(lastW) / sdOf(lastW) : null, strain = mono ? lastW.reduce((a, b) => a + b, 0) * mono : null;
   // Alertas
@@ -3735,7 +3738,7 @@ async function tabRecup(c) {
   <div class="card"><h2>Sueño <small>horas</small></h2>${multiChart(days, [{ name: "Horas", color: "#7c5cff", v: sh, dec: 1 }], { bars: true, ref: 7, refName: "7 h", yMin: 0, yMax: Math.max(10, ...Object.values(sh)), barColor: v => v < 6 ? "#e5484d" : v < 7 ? "#f2c94c" : "#7c5cff", dec: 1, empty: "Sin datos de sueño" })}</div>
   <div class="card"><h2>Bienestar general <small>1–5</small></h2>${multiChart(days, [{ name: "Bienestar", color: "#2f9e6e", v: wi, w: 1.4, dots: true, dec: 2 }, { name: "Media 7 días", color: "#16603f", v: wi7, w: 2.6, dec: 2 }], { yMin: 1, yMax: 5, dec: 1, empty: "Sin cuestionarios" })}</div>
   <div class="card"><h2>Carga interna <small>RPE × minutos</small></h2>${multiChart(days, [{ name: "Carga", color: "#f39c12", v: load }], { bars: true, yMin: 0, empty: "Hace falta que registre dureza y minutos al terminar los entrenos" })}<div class="kpis"><div class="kpi"><span>Carga 7 días</span><b>${fmt(sumR(t, 7), 0)}</b><em>UA</em></div><div class="kpi"><span>Media semanal (28 d)</span><b>${fmt(sumR(t, 28) / 4, 0)}</b><em>UA</em></div><div class="kpi"><span>Monotonía</span><b>${mono != null ? fmt(mono, 1) : "—"}</b><em>&gt; 2 = poco variada</em></div><div class="kpi"><span>Strain</span><b>${strain != null ? fmt(strain, 0) : "—"}</b><em>carga × monotonía</em></div></div></div>
-  <div class="card"><h2>Ratio agudo:crónico <small>media móvil y EWMA</small></h2>${multiChart(days, [{ name: "Media móvil 7:28", color: "#22242f", v: acwr, dec: 2 }, { name: "EWMA (Impellizzeri)", color: "#e8491a", v: acwrE, dec: 2, w: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Hacen falta 3–4 semanas de entrenos con dureza registrada" })}</div>
+  <div class="card"><h2>Ratio agudo:crónico <small>media móvil y EWMA</small></h2>${multiChart(days, [{ name: "Media móvil 7:28", color: "#22242f", v: acwr, dec: 2 }, { name: "EWMA (Impellizzeri)", color: "#e8491a", v: acwrE, dec: 2, w: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Aparece cuando lleve 3–4 semanas seguidas registrando dureza y minutos en sus entrenos" })}</div>
   </div>
   <div class="card"><h2>Cuestionario diario <small>28 días · 5 = mejor</small></h2>${heat}</div>`;
 }
