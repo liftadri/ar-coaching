@@ -198,6 +198,7 @@ const ICON = {
   evo: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
   doc: svg('<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/>'),
   key: svg('<circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3M14 8l2 2"/>'),
+  seg: svg('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
   plan: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h6"/>')
 };
 const initials = n => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
@@ -2979,15 +2980,16 @@ async function saveNewClient(f) {
   const nombre = f.nombre.value.trim(), email = f.email.value.trim().toLowerCase(); let id = slug(nombre.split(" ")[0] + "-" + (nombre.split(" ")[1] || "x").slice(0, 1));
   if (!S.coach.list.length) await loadClients();
   if (S.coach.list.some(c => c.id === id)) id += "-" + Math.random().toString(36).slice(2, 5);
-  try { await q(sb.from("clients").insert({ id, nombre, email, ficha: { objetivo: f.objetivo.value.trim() } })); await q(sb.from("plans").insert({ client_id: id })); sheet(""); toast("Cliente creado"); S.coach.tab = "cuenta"; location.hash = "c-" + id; }
+  try { await q(sb.from("clients").insert({ id, nombre, email, ficha: { objetivo: f.objetivo.value.trim() } })); await q(sb.from("plans").insert({ client_id: id })); sheet(""); toast("Cliente creado"); S.coach.tabFix = true; S.coach.tab = "cuenta"; location.hash = "c-" + id; }
   catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Entrenador: ficha del cliente ================= */
-const CTABS = [["plan", "Planificación", "plan"], ["info", "Información", "info"], ["readapt", "Readaptación", "readapt"], ["inicial", "Cuestionario inicial", "doc"], ["evo", "Evolución", "evo"], ["nutri", "Nutrición", "nutri"], ["informes", "Revisiones", "doc"], ["cuenta", "Cuenta", "key"]];
+const CTABS = [["seg", "Seguimiento", "seg"], ["plan", "Planificación", "plan"], ["evo", "Evolución", "evo"], ["informes", "Revisiones", "doc"], ["readapt", "Readaptación", "readapt"], ["nutri", "Nutrición", "nutri"], ["info", "Información", "info"], ["inicial", "Cuestionario inicial", "doc"], ["cuenta", "Cuenta", "key"]];
 async function viewCoachClient(cid) {
-  if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; }
-  const tab = S.coach.tab || "plan";
+  if (S.coach.cid !== cid) { S.coach.cid = cid; S.coach.calM = null; S.coach.volW = null; if (!S.coach.tabFix) S.coach.tab = "seg"; }
+  S.coach.tabFix = false;
+  const tab = S.coach.tab || "seg";
   const reuse = S.coach.inPlace && S.coach.c && S.coach.c.id === cid && S.coach.pl;
   const [cr, pr] = reuse ? [[S.coach.c], [S.coach.pl]] : await Promise.all([q(sb.from("clients").select("*").eq("id", cid).limit(1)), q(sb.from("plans").select("*").eq("client_id", cid).limit(1))]);
   const c = cr[0];
@@ -2995,7 +2997,7 @@ async function viewCoachClient(cid) {
   const pl = reuse ? S.coach.pl : pr[0] || { client_id: cid, bloques: [], habitos: [], objetivo: "", progreso_visible: ["peso", "fuerza", "medidas", "fotos", "bienestar", "tests"] };
   if (!reuse) { const MZ = (c.ficha || {}).mesos || []; pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) })); }
   S.coach.c = c; S.coach.pl = pl;
-  const body = tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? await tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
+  const body = tab === "seg" ? await tabSeg(c, pl) : tab === "plan" ? await tabPlan(c, pl) : tab === "info" ? await tabInfo(c, pl) : tab === "readapt" ? await tabReadapt(c) : tab === "inicial" ? await tabInicial(c) : tab === "evo" ? await tabEvo(c, pl) : tab === "nutri" ? await tabNutri(c, pl) : tab === "informes" ? await tabInformes(c) : tabCuenta(c, pl) + await consentInfo(c.id) + archivarCard(c);
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div></div>${body}`;
   const rail = document.querySelector("#app .rail");
@@ -3004,6 +3006,132 @@ async function viewCoachClient(cid) {
   <div class="cmain">${mainHTML}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
   S.coach.shownCid = cid;
   S.coach.keep = false;
+}
+
+/* ---- Seguimiento: lo importante de un vistazo ---- */
+async function tabSeg(c, pl) {
+  const t = today(), mon = monday(t), d7 = addDays(t, -6);
+  const [as, atr, wo, wl, ws, rp, ev] = await Promise.all([
+    q(sb.from("assignments").select("*").eq("client_id", c.id).gte("fecha", mon).lte("fecha", addDays(mon, 6)).order("orden")),
+    q(sb.from("assignments").select("id,fecha,titulo,tipo").eq("client_id", c.id).eq("hecho", false).eq("visible", true).neq("tipo", "nota").gte("fecha", addDays(t, -14)).lt("fecha", t)),
+    q(sb.from("workouts").select("id,fecha,dia,rpe_sesion,duracion_min,created_at").eq("client_id", c.id).gte("fecha", addDays(t, -35)).order("fecha", { ascending: false })),
+    q(sb.from("wellness").select("*").eq("client_id", c.id).gte("fecha", addDays(t, -13)).order("fecha", { ascending: false })),
+    q(sb.from("weights").select("fecha,kg").eq("client_id", c.id).gte("fecha", addDays(t, -20)).order("fecha")),
+    q(sb.from("reports").select("id,fecha,titular,publicado,leido_en,respuesta").eq("client_id", c.id).order("fecha", { ascending: false }).limit(1)).catch(() => []),
+    q(sb.from("events").select("fecha,titulo,tipo").eq("client_id", c.id).gte("fecha", t).order("fecha").limit(1)).catch(() => [])]);
+  // Cumplimiento de la semana (hasta hoy)
+  const vis = as.filter(x => x.visible && x.tipo !== "nota"), hasta = vis.filter(x => x.fecha <= t), hechas = hasta.filter(x => x.hecho).length;
+  const pct = hasta.length ? Math.round(100 * hechas / hasta.length) : null;
+  const ult = wo[0]; const w7 = wl.filter(w => w.fecha >= d7); const wi = avg(w7.map(wellIdx).filter(x => x != null));
+  const kgA = ws.filter(x => x.fecha >= d7).map(x => +x.kg), kgB = ws.filter(x => x.fecha < d7 && x.fecha >= addDays(t, -13)).map(x => +x.kg);
+  const pA = kgA.length ? avg(kgA) : null, pB = kgB.length ? avg(kgB) : null;
+  const wk = (() => { for (const b of pl.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= t && t <= s.fin); if (w) return { b: b.nombre, s: w.nombre, tipo: w.tipo || "carga" }; } return null; })();
+  const kpi = (l, v, sub, cls = "") => `<div class="kpi ${cls}"><span>${l}</span><b>${v}</b><em>${sub}</em></div>`;
+  const kpis = [
+    kpi("Cumplimiento", pct != null ? pct + " %" : "—", hasta.length ? `${hechas} de ${hasta.length} tareas hasta hoy` : "Nada programado aún", pct == null ? "" : pct >= 80 ? "ok" : pct < 50 ? "low" : "mid"),
+    kpi("Último entreno", ult ? esc(cap(relDay(ult.fecha))) : "—", ult ? esc(ult.dia || "Entreno") : "Sin registros en 5 semanas"),
+    kpi("Bienestar 7 días", wi != null ? fmt(wi, 1) + "<small>/5</small>" : "—", w7.length ? `${w7.length} de 7 cuestionarios` : "Sin cuestionarios", wi == null ? "" : wi >= 3.5 ? "ok" : wi < 2.5 ? "low" : "mid"),
+    kpi("Peso medio", pA != null ? fmt(pA, 1) + " kg" : "—", pA != null && pB != null ? `${pA - pB >= 0 ? "+" : ""}${fmt(pA - pB, 1)} kg vs semana anterior` : "Última semana"),
+    kpi("Semana", wk ? esc(semTxt(wk.s)) : "—", wk ? esc([wk.b, wk.tipo !== "carga" ? cap(wk.tipo) : ""].filter(Boolean).join(" · ")) : "Sin mesociclo")];
+  // Alertas, solo aquí
+  const al = [];
+  ((c.ficha || {}).salud || []).filter(x => String(x).startsWith("!")).forEach(x => al.push(["bad", "Salud", String(x).slice(1)]));
+  const mol = wl.find(w => w.fecha >= d7 && num(w.molestia_0a10) >= 3); if (mol) al.push([num(mol.molestia_0a10) >= 5 ? "bad" : "warn", "Molestia", `${mol.molestia_zona || "Sin zona"} · ${mol.molestia_0a10}/10 (${relDay(mol.fecha)})`]);
+  if (wi != null && wi < 2.5) al.push(["warn", "Bienestar bajo", `Media de ${fmt(wi, 1)} en los últimos 7 días`]);
+  const load = {}; wo.forEach(w => { if (w.rpe_sesion != null && w.duracion_min) load[w.fecha] = (load[w.fecha] || 0) + w.rpe_sesion * w.duracion_min; });
+  cargaAlertas(load, t, false).forEach(x => al.push(["warn", "Carga", x]));
+  if (c.estado === "activo" && (!ult || ult.fecha < addDays(t, -7))) al.push(["warn", "Sin entrenar", ult ? `Último entreno ${relDay(ult.fecha)}` : "No hay entrenos registrados"]);
+  if (atr.length) al.push(["warn", "Pendiente", `${atr.length} tarea${atr.length > 1 ? "s" : ""} sin hacer de días anteriores`]);
+  // Semana en tira
+  const DN = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const tira = DN.map((n, k) => { const day = addDays(mon, k); const items = as.filter(x => x.fecha === day);
+    return `<div class="pday${day === t ? " hoy" : ""}${day < t ? " past" : ""}" data-act="day-open" data-d="${day}" role="button" tabindex="0"><div class="pdh"><span class="dwn">${n}</span><span class="dn">${+day.slice(8)}</span></div>${items.map(x => `<button class="pch tp-${esc(x.tipo)}${x.hecho ? " ok" : day < t ? " late" : ""}${x.visible ? "" : " hid"}" data-act="asig-edit" data-id="${esc(x.id)}">${x.hecho ? `<i class="pi ok">✓</i>` : ""}${esc(x.titulo)}</button>`).join("")}</div>`; }).join("");
+  S.coach.asig = as;
+  const r = rp[0]; const e = ev[0];
+  return `<div class="segk kpis">${kpis.join("")}</div>
+  <div class="card segal"><h2>Alertas ${al.length ? `<span class="cnt">${al.length}</span>` : ""}</h2>${al.length ? `<ul class="alist">${al.map(([k, l, txt]) => `<li class="${k}"><i></i><p><b>${esc(l)}</b> <span>${esc(txt)}</span></p></li>`).join("")}</ul>` : `<p class="small muted" style="margin:0">Todo en orden. No hay nada que requiera tu atención.</p>`}</div>
+  <div class="card cal segwk"><div class="segh"><h2>Esta semana</h2><button class="btn ghost sm" data-act="ctab" data-t="plan">Ver calendario</button></div><div class="pgrid">${tira}</div></div>
+  <div class="segrow">
+    <button class="card rowcard" data-act="ctab" data-t="informes"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="tiny muted">Última revisión${r ? " · " + esc(fdate(r.fecha)) : ""}</span><br><b>${r ? esc(r.titular || "Revisión semanal") : "Aún no hay revisiones"}</b>${r ? `<br><span class="tiny ${r.publicado ? (r.leido_en ? "ok-t" : "muted") : "muted"}">${!r.publicado ? "Borrador sin publicar" : r.respuesta ? "Ha respondido" : r.leido_en ? "Leída" : "Publicada, sin leer"}</span>` : ""}</span><span class="chev">›</span></button>
+    ${e ? `<div class="card rowcard"><span class="ricon">${ICON.cal}</span><span class="grow"><span class="tiny muted">Próximo evento · ${esc(fdate(e.fecha, { day: "numeric", month: "long" }))}</span><br><b>${esc(e.titulo)}</b><br><span class="tiny muted">${daysBetween(t, e.fecha) === 0 ? "Hoy" : "En " + daysBetween(t, e.fecha) + " días"}</span></span></div>` : ""}
+  </div>`;
+}
+const relDay = d => { const n = daysBetween(d, today()); return n === 0 ? "hoy" : n === 1 ? "ayer" : n < 7 ? `hace ${n} días` : fdate(d, { day: "numeric", month: "short" }); };
+
+/* ---- Barra del mesociclo ---- */
+function mesoActual(pl, t) { const bs = (pl.bloques || []).filter(b => (b.semanas || []).length); return bs.find(b => b.semanas[0].inicio <= t && t <= b.semanas[b.semanas.length - 1].fin) || bs.find(b => b.semanas[0].inicio > t) || bs[bs.length - 1] || null; }
+function mesoBar(pl, t) {
+  const b = mesoActual(pl, t);
+  const acts = `<div class="mzact"><button class="btn sm" data-act="meso-next">+ Siguiente mesociclo</button><button class="btn sm" data-act="meso-retrasar">Retrasar 1 semana</button><button class="btn ghost sm" data-act="meso-edit">Editar</button></div>`;
+  if (!b) return `<div class="card mzbar"><div class="mzh"><div><h2>Sin mesociclo</h2><p class="tiny muted">Crea uno para ver sus semanas aquí y las series por músculo.</p></div><button class="btn sm pri" data-act="meso-next">+ Crear mesociclo</button></div></div>`;
+  const ws = b.semanas; const cur = ws.findIndex(w => w.inicio <= t && t <= w.fin); const cnt = {};
+  const lab = w => { const k = w.tipo || "carga"; cnt[k] = (cnt[k] || 0) + 1; const n = ws.filter(x => (x.tipo || "carga") === k).length; return cap(k === "competicion" ? "competición" : k === "transicion" ? "transición" : k) + (n > 1 ? " " + cnt[k] : ""); };
+  const sel = S.coach.volW || monday(t);
+  const estado = cur >= 0 ? `El cliente está en la ${esc(semTxt(ws[cur].nombre))} · ${esc(cap(ws[cur].tipo || "carga"))} (${cur + 1}/${ws.length})` : ws[0].inicio > t ? `Empieza el ${esc(fdate(ws[0].inicio, { day: "numeric", month: "long" }))}` : "Terminado";
+  return `<div class="card mzbar"><div class="mzh"><div><h2>${esc(b.nombre || "Mesociclo")} <span class="chip">${ws.length} semanas</span></h2><p class="tiny muted">${estado}</p></div>${acts}</div>
+  <div class="mzseg">${ws.map((w, i) => `<button class="mzs t-${esc(w.tipo || "carga")}${i === cur ? " now" : ""}${monday(w.inicio) === sel ? " sel" : ""}" data-act="vol-w" data-w="${esc(monday(w.inicio))}" title="${esc(semTxt(w.nombre))} · ${esc(fdate(w.inicio, { day: "numeric", month: "short" }))}–${esc(fdate(w.fin, { day: "numeric", month: "short" }))}${w.foco ? " · " + esc(w.foco) : ""}"><b>${esc(lab(w))}</b><span>${esc(semTxt(w.nombre))}</span></button>`).join("")}</div></div>`;
+}
+async function mesoRetrasar() {
+  const t = today(), mon = monday(t);
+  if (!confirm("Retrasar 1 semana: las semanas del mesociclo desde esta en adelante y todas las tareas sin hacer desde el lunes se mueven 7 días. Lo ya hecho, las semanas de competición y los eventos no se mueven. ¿Seguir?")) return;
+  try {
+    const bl = (S.coach.pl.bloques || []).map(b => { const sem = (b.semanas || []).map(w => w.fin >= mon && w.tipo !== "competicion" ? { ...w, inicio: w.inicio >= mon ? addDays(w.inicio, 7) : w.inicio, fin: addDays(w.fin, 7) } : w); return { ...b, semanas: sem, inicio: sem.length ? sem[0].inicio : b.inicio, fin: sem.length ? sem[sem.length - 1].fin : b.fin }; });
+    const pub = bl.map(({ objetivo, notas, ...b }) => b);
+    const xs = await q(sb.from("assignments").select("id,fecha").eq("client_id", S.coach.cid).eq("hecho", false).gte("fecha", mon));
+    await q(sb.from("plans").upsert({ client_id: S.coach.cid, bloques: pub }, { onConflict: "client_id" }));
+    for (let i = 0; i < xs.length; i += 10) await Promise.all(xs.slice(i, i + 10).map(x => q(sb.from("assignments").update({ fecha: addDays(x.fecha, 7) }).eq("id", x.id))));
+    toast(`Retrasado 1 semana · ${xs.length} tarea${xs.length === 1 ? "" : "s"} movida${xs.length === 1 ? "" : "s"}`); S.coach.keep = true; S.coach.c = null; viewCoachClient(S.coach.cid);
+  } catch (e) { toast(errMsg(e)); }
+}
+function mesoNext() {
+  const bl = (S.coach.pl.bloques || []).slice(); const last = bl.filter(b => (b.semanas || []).length).pop();
+  let ini = last ? addDays(last.semanas[last.semanas.length - 1].fin, 1) : monday(addDays(today(), 7)); ini = monday(ini) < ini ? addDays(monday(ini), 7) : monday(ini);
+  const sem = Array.from({ length: 4 }, (_, k) => ({ nombre: "S" + (k + 1), inicio: addDays(ini, 7 * k), fin: addDays(ini, 7 * k + 6), tipo: k === 3 ? "descarga" : "carga", foco: "" }));
+  bl.push({ nombre: `Mesociclo ${bl.length + 1}`, objetivo: "", notas: "", semanas: sem });
+  openMeso(bl);
+}
+
+/* ---- Series por músculo (programadas) ---- */
+const VOL_ORD = ["Pecho", "Espalda", "Hombro", "Hombro posterior", "Bíceps", "Tríceps", "Cuádriceps", "Isquios", "Glúteo", "Gemelos", "Core", "Cuello"];
+const VOL_RX = [[/hombro posterior|deltoides posterior|pajaro|face pull|contractora invertida|reverse fly/, "Hombro posterior"], [/triceps sural|soleo|gemelo|aquiles|pantorrilla|calf/, "Gemelos"], [/curl femoral|femoral|isquio|nordic|peso muerto rumano|good morning|rdl/, "Isquios"],
+  [/extension de cuadriceps|cuadriceps|sentadilla|prensa|zancada|split squat|bulgara|step.?up|sissy|hack/, "Cuadriceps"], [/gluteo|hip thrust|puente|abduc|patada/, "Gluteo"], [/pecho|pectoral|press banca|press de banca|bench|apertura|contractora|fondos|flexion/, "Pecho"],
+  [/dorsal|espalda|remo|jalon|dominada|pull.?over|pulldown|row/, "Espalda"], [/triceps|press frances|extension de codo|pushdown|patada de triceps/, "Triceps"], [/biceps|curl|martillo/, "Biceps"],
+  [/manguito|rotador|hombro|deltoides|press militar|elevacion|elevaciones laterales|shoulder|arnold/, "Hombro"], [/core|abdominal|abdomen|oblicuo|pallof|plancha|rueda|lenador|dead.?bug|crunch|anti.?rotac|recto abdominal/, "Core"], [/cuello/, "Cuello"]];
+const VOL_SEC = [[/press (de )?banca|bench|fondos|flexion|press inclinado|press de pecho/, "Triceps"], [/remo|jalon|dominada/, "Biceps"], [/sentadilla|prensa|zancada|split squat|bulgara/, "Gluteo"], [/peso muerto/, "Gluteo"], [/press militar|landmine press/, "Triceps"]];
+const VOL_FIX = { Cuadriceps: "Cuádriceps", Gluteo: "Glúteo", Triceps: "Tríceps", Biceps: "Bíceps" };
+const volNorm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const volMus = s => { const n = volNorm(s); for (const [rx, m] of VOL_RX) if (rx.test(n)) return VOL_FIX[m] || m; return null; };
+const NO_VOL = /potencia|salto|pliometr|velocidad|sprint|cardio|movilidad|estiramiento|tecnica de carrera|aterrizaje|lanzamiento|calentamiento|skip|carrera|bici|rodaje|cuerda/;
+function volEj(e, lib) {
+  const nom = e.nombre || ""; const L = lib.find(x => volNorm(x.nombre) === volNorm(nom)); const g = (e.grupo || (L && L.grupo) || "").trim();
+  if (NO_VOL.test(volNorm(g + " " + nom)) && !volMus(g)) return { otro: true };
+  const out = {};
+  if (g) { g.split(/[,/;+]| y /).map(x => volMus(x)).filter(Boolean).forEach((m, i) => { if (out[m] == null) out[m] = i === 0 ? 1 : 0.5; }); }
+  if (!Object.keys(out).length) { const m = volMus(nom); if (m) { out[m] = 1; const n = volNorm(nom); for (const [rx, sm] of VOL_SEC) { const k = VOL_FIX[sm] || sm; if (rx.test(n) && out[k] == null) { out[k] = 0.5; break; } } } }
+  return Object.keys(out).length ? { m: out } : { sin: true };
+}
+function volSeries(e) { if (e.series && e.series.length) return e.series.filter(x => !/aprox|calent|warm/i.test(String(x.tipo || x.nota || ""))).length; const all = [...String(e.sxr || "").matchAll(/(\d+)\s*[x×]/gi)].map(m => +m[1]); return all.length ? Math.min(all.reduce((a, b) => a + b, 0), 12) : 0; }
+async function volWeek(cid, w0, lib) {
+  const xs = await q(sb.from("assignments").select("contenido,tipo").eq("client_id", cid).eq("tipo", "workout").gte("fecha", w0).lte("fecha", addDays(w0, 6)));
+  const v = {}, sin = {}; let otros = 0;
+  xs.forEach(a => ((a.contenido || {}).ejercicios || []).forEach(e => { const n = volSeries(e); if (!n) return; const r = volEj(e, lib); if (r.otro) { otros += n; return; } if (r.sin) { sin[e.nombre] = (sin[e.nombre] || 0) + n; return; } Object.entries(r.m).forEach(([m, f]) => v[m] = (v[m] || 0) + n * f); }));
+  return { v, sin, otros, ses: xs.length };
+}
+async function volCard(c, pl) {
+  const lib = await exLib().catch(() => []); const w0 = S.coach.volW || monday(today()); const wp = addDays(w0, -7);
+  const [A, B] = await Promise.all([volWeek(c.id, w0, lib), volWeek(c.id, wp, lib)]);
+  const ms = [...VOL_ORD.filter(m => A.v[m] || B.v[m]), ...Object.keys(A.v).filter(m => !VOL_ORD.includes(m))].sort((a, b) => (A.v[b] || 0) - (A.v[a] || 0));
+  const tot = Object.values(A.v).reduce((a, b) => a + b, 0), totB = Object.values(B.v).reduce((a, b) => a + b, 0);
+  const MAX = Math.max(24, ...ms.map(m => A.v[m] || 0)); const pc = x => (100 * x / MAX).toFixed(1) + "%";
+  const nav = `<div class="volnav"><button class="cnav" data-act="vol-w" data-w="${wp}" aria-label="Semana anterior">‹</button><span>${esc(fdate(w0, { day: "numeric", month: "short" }))} – ${esc(fdate(addDays(w0, 6), { day: "numeric", month: "short" }))}</span><button class="cnav" data-act="vol-w" data-w="${addDays(w0, 7)}" aria-label="Semana siguiente">›</button></div>`;
+  const sinL = Object.entries(A.sin);
+  if (!ms.length) return `<div class="card vol"><div class="segh"><h2>Series por músculo</h2>${nav}</div><div class="empty">${A.ses ? "Los entrenos de esta semana no tienen ejercicios con músculo reconocido" : "No hay entrenos programados esta semana"}</div></div>`;
+  return `<div class="card vol"><div class="segh"><h2>Series por músculo</h2>${nav}</div>
+  <p class="tiny muted volsum"><b>${fmt(tot, 1)}</b> series efectivas en ${A.ses} entreno${A.ses === 1 ? "" : "s"}${totB ? ` · <span class="${tot >= totB ? "up" : "down"}">${tot >= totB ? "+" : ""}${Math.round(100 * (tot / totB - 1))} %</span> vs la semana anterior` : ""}</p>
+  <div class="vrows">${ms.map(m => { const v = A.v[m] || 0, p = B.v[m] || 0, d = p ? Math.round(100 * (v / p - 1)) : null; const k = v < 10 ? "lo" : v > 20 ? "hi" : "ok";
+    return `<div class="vr"><span class="vn">${esc(m)}</span><span class="vt"><i class="vband" style="left:${pc(10)};width:${pc(10)}"></i><i class="vb ${k}" style="width:${pc(v)}"></i></span><span class="vv"><b>${fmt(v, 1)}</b>${d != null && d !== 0 ? `<em class="${d > 0 ? "up" : "down"}">${d > 0 ? "+" : ""}${d} %</em>` : ""}</span></div>`; }).join("")}</div>
+  <p class="tiny muted volfoot">Franja gris: 10–20 series a la semana, el rango habitual para hipertrofia. El 2.º músculo de un ejercicio cuenta media serie. Potencia, saltos, movilidad y cardio no cuentan${A.otros ? ` (${A.otros} series esta semana)` : ""}.</p>
+  ${sinL.length ? `<details class="volsin"><summary>${sinL.length} ejercicio${sinL.length > 1 ? "s" : ""} sin músculo asignado</summary><p class="tiny muted">Ponles el grupo muscular en Librería › Ejercicios para que cuenten.</p><ul>${sinL.map(([n, k]) => `<li>${esc(n)} <span class="muted">· ${k} series</span></li>`).join("")}</ul></details>` : ""}</div>`;
 }
 
 /* ---- Planificación ---- */
@@ -3036,10 +3164,11 @@ async function tabPlan(c, pl) {
   const prevM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).slice(0, 7), nextM = iso(new Date(+m.slice(0, 4), +m.slice(5, 7), 1)).slice(0, 7);
   const tot = as.filter(x => x.fecha >= first && x.fecha <= last && x.fecha <= t && x.visible && x.tipo !== "nota"); const pct = tot.length ? Math.round(100 * tot.filter(x => x.hecho).length / tot.length) : null;
   const mes = as.filter(x => x.fecha >= first && x.fecha <= last && x.tipo !== "nota");
-  return `<div class="card cal"><div class="calhead"><div class="calnav"><button class="cnav" data-act="pm" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(cap(mN))} <span>${esc(yN)}</span></h2><button class="cnav" data-act="pm" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn ghost sm" data-act="pm" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
+  const top = mesoBar(pl, t); const vol = await volCard(c, pl);
+  return `${top}<div class="card cal"><div class="calhead"><div class="calnav"><button class="cnav" data-act="pm" data-m="${prevM}" aria-label="Mes anterior">‹</button><h2>${esc(cap(mN))} <span>${esc(yN)}</span></h2><button class="cnav" data-act="pm" data-m="${nextM}" aria-label="Mes siguiente">›</button>${m !== t.slice(0, 7) ? `<button class="btn ghost sm" data-act="pm" data-m="${t.slice(0, 7)}">Hoy</button>` : ""}</div>
     <div class="calact"><button class="btn sm pri" data-act="asig-new" data-d="${t}">+ Añadir</button>
     <details class="more"><summary class="btn sm" aria-label="Más opciones">Más ▾</summary><div class="menu"><button data-act="prog-asignar">Programar un programa</button><button data-act="prog-desde-cal">Guardar semanas como programa</button><hr><button data-act="copiar-semana">Copiar semana</button><button data-act="borrar-semana">Vaciar semana</button><hr><button data-act="meso-edit">Mesociclos</button></div></details></div></div>
-  <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}${calLegend(new Set([...as.map(x => x.tipo), ...(ev.length ? ["evento"] : []), ...(wo.some(w => !w.assignment_id) ? ["workout"] : [])]), ["hecho", "late", ...(as.some(x => !x.visible) ? ["hid"] : [])])}</div>`;
+  <div class="pgrid phead">${DN.map(n => `<span>${n}</span>`).join("")}</div>${rows}${calLegend(new Set([...as.map(x => x.tipo), ...(ev.length ? ["evento"] : []), ...(wo.some(w => !w.assignment_id) ? ["workout"] : [])]), ["hecho", "late", ...(as.some(x => !x.visible) ? ["hid"] : [])])}</div>${vol}`;
 }
 async function openAsig(id, fecha, pre, editar) {
   await exLib(); const tpls = await tplLib();
@@ -3261,7 +3390,7 @@ async function asignarPrograma(f) {
     if (!rows.length) { toast("No hay nada que programar"); return; }
     if (f.reemplazar.checked) { const fin = rows.reduce((m, r) => r.fecha > m ? r.fecha : m, inicio); await q(sb.from("assignments").delete().eq("client_id", cid).eq("hecho", false).gte("fecha", inicio).lte("fecha", addDays(monday(fin), 6))); }
     await q(sb.from("assignments").insert(rows)); sheet(""); toast(`Programado: ${rows.length} elementos`);
-    if (S.view.startsWith("lib")) { S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + cid; S.coach.calM = inicio.slice(0, 7); } else { S.coach.calM = inicio.slice(0, 7); S.coach.keep = true; viewCoachClient(cid); }
+    if (S.view.startsWith("lib")) { S.coach.tabFix = true; S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + cid; S.coach.calM = inicio.slice(0, 7); } else { S.coach.calM = inicio.slice(0, 7); S.coach.keep = true; viewCoachClient(cid); }
   } catch (e) { toast(errMsg(e)); }
 }
 /* Guardar semanas ya planificadas de un cliente como programa reutilizable */
@@ -3322,8 +3451,8 @@ async function borrarSemana(f) { const de = monday(f.de.value); try { await q(sb
 const SEM_TIPOS = ["carga", "descarga", "afinamiento", "competicion", "test", "transicion"];
 function mesoWeek(w = {}) { return `<div class="mw" data-w><input name="s_n" value="${esc(w.nombre || "")}" placeholder="S1" aria-label="Semana"><input type="date" name="s_i" value="${esc(w.inicio || "")}" aria-label="Inicio"><input type="date" name="s_f" value="${esc(w.fin || "")}" aria-label="Fin"><select name="s_t" aria-label="Tipo">${SEM_TIPOS.map(t => `<option ${w.tipo === t ? "selected" : ""}>${t}</option>`).join("")}</select><input name="s_fo" value="${esc(w.foco || "")}" placeholder="Foco (lo ve el cliente)" aria-label="Foco" class="mwf"><button type="button" class="btn ghost sm" data-act="mw-del" aria-label="Quitar semana">✕</button></div>`; }
 function mesoBlock(b = {}) { return `<div class="mb card" data-b><div class="grid2"><div class="f"><label>Nombre</label><input name="b_n" value="${esc(b.nombre || "")}" placeholder="Mesociclo 2 · Hipertrofia"></div><div class="f"><label>Objetivo (privado)</label><input name="b_o" value="${esc(b.objetivo || "")}"></div></div><div class="f"><label>Notas (privadas)</label><input name="b_no" value="${esc(b.notas || "")}"></div><div class="mws">${(b.semanas || []).map(mesoWeek).join("")}</div><div class="row"><button type="button" class="btn sm" data-act="mw-add">+ Semana</button><span class="grow"></span><button type="button" class="btn ghost sm" data-act="mb-del" style="color:var(--bad)">Quitar mesociclo</button></div></div>`; }
-function openMeso() {
-  sheet(`<h2>Mesociclos</h2><p class="tiny muted" style="margin:0">El cliente solo ve el nombre del mesociclo, las semanas y el foco de cada semana. El objetivo y las notas son privados.</p><form id="f-meso" style="display:flex;flex-direction:column;gap:12px"><div id="mbs" style="display:flex;flex-direction:column;gap:12px">${(S.coach.pl.bloques || []).map(mesoBlock).join("")}</div><button type="button" class="btn" data-act="mb-add">+ Mesociclo</button><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`, "wide");
+function openMeso(bl = S.coach.pl.bloques || []) {
+  sheet(`<h2>Mesociclos</h2><p class="tiny muted" style="margin:0">El cliente solo ve el nombre del mesociclo, las semanas y el foco de cada semana. El objetivo y las notas son privados.</p><form id="f-meso" style="display:flex;flex-direction:column;gap:12px"><div id="mbs" style="display:flex;flex-direction:column;gap:12px">${bl.map(mesoBlock).join("")}</div><button type="button" class="btn" data-act="mb-add">+ Mesociclo</button><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cerrar</button></form>`, "wide");
 }
 async function saveMeso(f) {
   const bloques = [...f.querySelectorAll("[data-b]")].map((b, i) => { const g = n => b.querySelector(`[name="${n}"]`).value.trim(); const semanas = [...b.querySelectorAll("[data-w]")].map(w => { const h = n => w.querySelector(`[name="${n}"]`).value.trim(); return { nombre: h("s_n"), inicio: h("s_i"), fin: h("s_f"), tipo: h("s_t"), foco: h("s_fo") }; }).filter(w => w.nombre || w.inicio);
@@ -4079,8 +4208,8 @@ document.addEventListener("click", async ev => {
       case "lead-alta": await leadAlta(id); break;
       case "lead-del": if (confirm("¿Borrar esta solicitud y sus datos?")) { await q(sb.from("leads").delete().eq("id", id)); sheet(""); toast("Borrada"); route(); } break;
       case "day-open": await openDay(a.dataset.d); break;
-      case "go-tab": S.coach.tab = a.dataset.t; S.coach.cid = null; if (location.hash === "#c-" + a.dataset.cid) route(); else location.hash = "c-" + a.dataset.cid; break;
-      case "go-inicial": S.coach.tab = "inicial"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
+      case "go-tab": S.coach.tabFix = true; S.coach.tab = a.dataset.t; S.coach.cid = null; if (location.hash === "#c-" + a.dataset.cid) route(); else location.hash = "c-" + a.dataset.cid; break;
+      case "go-inicial": S.coach.tabFix = true; S.coach.tab = "inicial"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
       case "copy": { const t = $("#" + a.dataset.src); try { await navigator.clipboard.writeText(t.value); toast("Copiado"); } catch { t.select(); document.execCommand("copy"); toast("Copiado"); } break; }
       case "copy-txt": try { await navigator.clipboard.writeText(a.dataset.t); toast("Copiado"); } catch { toast(a.dataset.t); } break;
       case "com-step": { const f = $("#f-com"); if (f) { const d = comRead(f); comSaveDraft(d); } window.scrollTo(0, 0); viewComienzo(+a.dataset.s); break; }
@@ -4154,7 +4283,7 @@ document.addEventListener("click", async ev => {
       case "item-undo": await q(sb.rpc("completar_asignacion", { p_id: id, p_hecho: false, p_respuesta: ($("#it-r") || {}).value || "" })); sheet(""); route(); break;
       // entrenador: navegación
       case "new-client": openNewClient(); break;
-      case "go-plan": S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
+      case "go-plan": S.coach.tabFix = true; S.coach.tab = "plan"; S.coach.cid = null; location.hash = "c-" + a.dataset.cid; break;
       case "ctab": { if (a.getAttribute("aria-current") === "true") break; const rl = a.closest(".rail"), cm = $("#app .cmain");
         if (rl) rl.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b === a)));
         if (cm) cm.classList.add("cload");
@@ -4193,6 +4322,9 @@ document.addEventListener("click", async ev => {
       case "prog-desde-cal": openProgDesdeCal(); break;
       case "borrar-semana": openBorrarSemana(); break;
       case "meso-edit": openMeso(); break;
+      case "meso-next": mesoNext(); break;
+      case "meso-retrasar": mesoRetrasar(); break;
+      case "vol-w": S.coach.volW = a.dataset.w; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
       case "mb-add": $("#mbs").insertAdjacentHTML("beforeend", mesoBlock({ semanas: [{ tipo: "carga" }] })); break;
       case "mb-del": if (confirmar(a)) a.closest("[data-b]").remove(); break;
       case "mw-add": { const ws = a.closest("[data-b]").querySelector(".mws"); const last = ws.lastElementChild; const fin = last && last.querySelector('[name="s_f"]').value; const n = ws.children.length + 1; ws.insertAdjacentHTML("beforeend", mesoWeek({ nombre: "S" + n, inicio: fin ? addDays(fin, 1) : "", fin: fin ? addDays(fin, 7) : "", tipo: "carga" })); break; }
