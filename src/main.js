@@ -2967,9 +2967,14 @@ function cargaAlertas(load, t, tendon) {
 /* ================= Entrenador: Clientes ================= */
 async function viewCoachList() {
   loading("Clientes"); const since = addDays(today(), -7);
-  const [cl, wl, wo, as] = await Promise.all([loadClients(), q(sb.from("wellness").select("client_id,fecha,sueno,fatiga,dolor,estres,animo,motivacion,articular").gte("fecha", since)), q(sb.from("workouts").select("client_id,fecha").gte("fecha", since)), q(sb.from("assignments").select("client_id,fecha").gte("fecha", since))]);
+  const [cl, wl, wo, as] = await Promise.all([loadClients(), q(sb.from("wellness").select("client_id,fecha,sueno,fatiga,dolor,estres,animo,motivacion,articular").gte("fecha", since)), q(sb.from("workouts").select("client_id,fecha").gte("fecha", since)), q(sb.from("assignments").select("client_id,fecha,hecho,visible,tipo").gte("fecha", since))]);
+  const t = today();
+  const riesgo = (c, o, wi) => { if (c.estado !== "activo") return null; const a = as.filter(x => x.client_id === c.id && x.visible && x.tipo !== "nota" && x.fecha <= t); const pc = a.length ? a.filter(x => x.hecho).length / a.length : null; const r = [];
+    if (!o.length) r.push("sin entrenar en 7 días"); if (wi != null && wi < 2.5) r.push("bienestar bajo"); if (pc != null && pc < 0.5) r.push(`cumplimiento ${Math.round(pc * 100)} %`);
+    if (r.length) return ["bad", r.join(" · ")]; const r2 = []; if (pc != null && pc < 0.8) r2.push(`cumplimiento ${Math.round(pc * 100)} %`); if (wi != null && wi < 3) r2.push("bienestar algo bajo");
+    return r2.length ? ["warn", r2.join(" · ")] : ["ok", "Todo en orden esta semana"]; };
   const row = c => { const w = wl.filter(x => x.client_id === c.id), o = wo.filter(x => x.client_id === c.id); const wi = avg(w.map(wellIdx).filter(x => x != null)); const hasta = as.filter(x => x.client_id === c.id).map(x => x.fecha).sort().pop();
-    return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre, "", c.id)}<span><span class="lnk">${esc(c.nombre)}</span><div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
+    return `<tr data-act="go" data-h="c-${esc(encodeURIComponent(c.id))}" style="cursor:pointer"><td><span class="feedn">${avatar(c.nombre, "", c.id)}<span><span class="lnk">${esc(c.nombre)}</span>${(() => { const r = riesgo(c, o, wi); return r ? `<i class="rdot ${r[0]}" title="${esc(cap(r[1]))}" aria-label="${esc(cap(r[1]))}"></i>` : ""; })()}<div class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</div></span></span></td><td class="n">${o.length}</td><td class="n">${w.length}/7</td><td class="n">${wi != null ? fmt(wi, 2) : "—"}</td><td>${hasta ? esc(fdate(hasta)) : `<span class="chip bad">Nada</span>`}</td><td>${c.estado !== "activo" ? `<span class="chip">${esc(c.estado)}</span>` : ""}</td></tr>`; };
   shell("Clientes", `<div class="pghead"><h1 class="ptitle">Mis clientes <span class="cnt">${cl.length}</span></h1><span class="grow"></span><button class="btn dark" data-act="new-client"><span class="plus" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>Añadir cliente</button></div><p class="small muted" style="margin:0">Datos de los últimos 7 días</p>
   <div class="card"><div class="tbl"><table class="ctab"><thead><tr><th>Cliente</th><th class="n">Entrenos</th><th class="n">Cuestionarios</th><th class="n">Bienestar</th><th>Planificado hasta</th><th></th></tr></thead><tbody>${cl.map(row).join("") || `<tr><td colspan="6" class="muted">Sin clientes todavía.</td></tr>`}</tbody></table></div></div>${archivadosHTML()}`);
 }
@@ -3125,7 +3130,7 @@ async function volCard(c, pl) {
 }
 /* ---- Progreso del volumen: semanas y días en una sola gráfica, con los mesociclos marcados ---- */
 const efect = x => !x.hecho && (num(x.kg) != null || num(x.reps) != null) && !/aprox|calent|warm/i.test(String(x.tipo || ""));
-const vchartEnd = () => document.querySelectorAll(".vchart").forEach(e => { e.scrollLeft = e.scrollWidth; });
+const vchartEnd = () => { document.querySelectorAll(".vchart").forEach(e => { e.scrollLeft = e.scrollWidth; }); if (S.coach.evoFocus) { const el = document.getElementById("evc-" + S.coach.evoFocus); S.coach.evoFocus = null; if (el) el.scrollIntoView({ block: "start" }); } };
 async function volProg(c, pl) {
   const t = today(), N = S.coach.volN || 12, m = S.coach.volM || "series";
   const w1 = monday(t), w0 = addDays(w1, -7 * (N - 1)), end = addDays(w1, 6);
@@ -3583,13 +3588,28 @@ async function saveInfo(f) {
 
 /* ---- Evolución ---- */
 const EVO = [["recuperacion", "Recuperación"], ["fuerza", "Progreso de cargas"], ["entrenos", "Sesiones"], ["actividad", "Cumplimiento"], ["wellness", "Bienestar diario"], ["cuerpo", "Peso y medidas"], ["fotos", "Fotos"], ["tests", "Tests"]];
+// Evolución: 4 tarjetas, cada una con su deslizante de vistas
+const EVC = [
+  ["rend", "Rendimiento", [["fuerza", "Cargas"], ["entrenos", "Sesiones"], ["tests", "Tests"]]],
+  ["recup", "Recuperación", [["bien", "Bienestar"], ["hrv", "HRV, pulso y sueño"], ["carga", "Carga y ACWR"]]],
+  ["cuerpo", "Cuerpo", [["cuerpo", "Peso y medidas"], ["fotos", "Fotos"]]],
+  ["cumpl", "Cumplimiento", [["actividad", "Semanas y tareas"], ["habitos", "Hábitos"]]]];
 async function tabEvo(c) {
-  const sub = S.coach.evo || "recuperacion"; const cid = c.id; let body = "";
-  if (sub === "recuperacion") body = await tabRecup(c);
-  else if (sub === "actividad") {
+  const SW = S.coach.sw = S.coach.sw || {};
+  if (S.coach.evo) { const to = { recuperacion: ["recup", "bien"], wellness: ["recup", "bien"], fuerza: ["rend", "fuerza"], entrenos: ["rend", "entrenos"], tests: ["rend", "tests"], cuerpo: ["cuerpo", "cuerpo"], fotos: ["cuerpo", "fotos"], actividad: ["cumpl", "actividad"] }[S.coach.evo]; if (to) SW[to[0]] = to[1]; S.coach.evo = null; S.coach.evoFocus = to && to[0]; }
+  const R0 = await tabRecup(c);
+  const parts = await Promise.all(EVC.map(async ([id, , vs]) => { const v = SW[id] && vs.some(x => x[0] === SW[id]) ? SW[id] : vs[0][0];
+    const html = id === "recup" ? R0[v] + (v === "bien" ? `<details class="evmore"><summary>Ver registros día a día</summary>${await evoSub(c, "wellness")}</details>` : "") : v === "habitos" ? await habitosCoach(c.id, S.coach.pl || {}) : await evoSub(c, v); return [v, html]; }));
+  return `<div class="evcs">${EVC.map(([id, l, vs], n) => { const [v, html] = parts[n];
+    return `<section class="card evc" id="evc-${id}"><div class="evh"><h2>${l}</h2>${id === "recup" ? R0.win : ""}</div>${id === "recup" ? R0.al : ""}
+    <div class="seg evseg" aria-label="${l}">${vs.map(([k, t]) => `<button data-act="evo-sw" data-c="${id}" data-t="${k}" aria-pressed="${v === k}">${t}</button>`).join("")}</div><div class="evb">${html}</div></section>`; }).join("")}</div>`;
+}
+async function evoSub(c, sub) {
+  const cid = c.id; let body = "";
+  if (sub === "actividad") {
     const as = await q(sb.from("assignments").select("*").eq("client_id", cid).lte("fecha", today()).gte("fecha", addDays(today(), -28)).order("fecha", { ascending: false }));
     const byW = {}; as.forEach(x => { const k = monday(x.fecha); (byW[k] = byW[k] || []).push(x); });
-    body = await habitosCoach(cid, S.coach.pl || {}) + `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
+    body = `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
     <div class="card"><h2>Últimas tareas</h2>${as.length ? `<table><tbody>${as.slice(0, 40).map(x => `<tr data-act="asig-edit" data-id="${esc(x.id)}" style="cursor:pointer"><td style="white-space:nowrap" class="tiny muted">${esc(fdate(x.fecha, { day: "numeric", month: "short" }))}</td><td>${tipoChip(x.tipo)} ${esc(x.titulo)}${x.respuesta ? `<div class="tiny muted">«${esc(x.respuesta)}»</div>` : ""}</td><td>${x.hecho ? `<span class="chip ok">Hecho</span>` : `<span class="chip bad">No hecho</span>`}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">—</div>`}</div>`;
   } else if (sub === "entrenos") {
     const wo = await q(sb.from("workouts").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(40));
@@ -3608,7 +3628,7 @@ async function tabEvo(c) {
     <div class="card flat"><div class="tbl"><table class="htable ptab"><thead><tr><th>Ejercicio</th><th>Última sesión</th><th>Mejor serie de esa sesión</th><th class="n">Carga máx.</th><th class="n">1RM est.</th><th class="n">vs. anterior</th><th class="n">vs. inicio</th></tr></thead><tbody>${rows.map(r => `<tr data-act="ex-hist" data-n="${esc(r.x)}"><td><span class="lnk">${esc(r.x)}</span><div class="tiny muted">${r.ses.length} sesiones</div></td><td>${esc(fdate(r.l.f, { day: "numeric", month: "short" }))}<div class="tiny muted">${r.l.s.length} series</div></td><td>${setPill(r.bs)}</td><td class="n"><b>${fmt(r.mx)}</b> kg</td><td class="n">${r.best ? fmt(r.best) + " kg" : "—"}</td><td class="n">${chip(r.ch)}</td><td class="n">${chip(r.chT)}</td></tr>`).join("")}</tbody></table></div><p class="tiny muted" style="margin:8px 0 0">Pulsa un ejercicio para ver todas sus series.</p></div>` : `<div class="empty">Aún no hay series con carga registradas.</div>`;
   } else if (sub === "wellness") {
     const wl = await q(sb.from("wellness").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(60));
-    body = `<div class="card"><h2>Bienestar diario <small>1–5 (5 = mejor)</small></h2>${lineChart(wl.map(w => ({ x: w.fecha, y: wellIdx(w) })), { label: "Bienestar", yMin: 1, yMax: 5, dec: 2 })}</div><div class="card"><div class="tbl"><table><thead><tr><th>Fecha</th>${WK.map(([, l]) => `<th class="n">${esc(l.split(" ")[0])}</th>`).join("")}<th class="n">Sueño h</th><th class="n">FC</th><th class="n">VFC</th><th>Molestia</th><th>Comentario</th></tr></thead><tbody>${wl.map(w => `<tr><td>${esc(fdate(w.fecha))}</td>${WK.map(([k]) => `<td class="n">${w[k] ?? "—"}</td>`).join("")}<td class="n">${w.sueno_h ?? "—"}</td><td class="n">${w.fc ?? "—"}</td><td class="n">${w.hrv ?? "—"}</td><td>${esc(w.molestia_zona || "")}${w.molestia_0a10 != null ? " " + w.molestia_0a10 + "/10" : ""}</td><td class="tiny">${esc(w.comentario || "")}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">Sin cuestionarios.</td></tr>`}</tbody></table></div></div>`;
+    body = `<div class="card"><div class="tbl"><table><thead><tr><th>Fecha</th>${WK.map(([, l]) => `<th class="n">${esc(l.split(" ")[0])}</th>`).join("")}<th class="n">Sueño h</th><th class="n">FC</th><th class="n">VFC</th><th>Molestia</th><th>Comentario</th></tr></thead><tbody>${wl.map(w => `<tr><td>${esc(fdate(w.fecha))}</td>${WK.map(([k]) => `<td class="n">${w[k] ?? "—"}</td>`).join("")}<td class="n">${w.sueno_h ?? "—"}</td><td class="n">${w.fc ?? "—"}</td><td class="n">${w.hrv ?? "—"}</td><td>${esc(w.molestia_zona || "")}${w.molestia_0a10 != null ? " " + w.molestia_0a10 + "/10" : ""}</td><td class="tiny">${esc(w.comentario || "")}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">Sin cuestionarios.</td></tr>`}</tbody></table></div></div>`;
   } else if (sub === "cuerpo") {
     const [ws, ms] = await Promise.all([q(sb.from("weights").select("fecha,kg").eq("client_id", cid).order("fecha", { ascending: true }).limit(400)), q(sb.from("measurements").select("*").eq("client_id", cid).order("fecha", { ascending: false }).limit(30))]);
     const byW = {}; ws.forEach(w => { const k = monday(w.fecha); (byW[k] = byW[k] || []).push(+w.kg); });
@@ -3624,7 +3644,7 @@ async function tabEvo(c) {
     <div id="t-campos" style="display:flex;flex-direction:column;gap:10px">${tCampos(S.coach.tclave || "")}</div>
     <div class="f"><label>Notas</label><input name="notas" placeholder="Condiciones, dispositivo, sensaciones…"></div><button class="btn pri">Guardar test</button></form>${exDatalist()}<datalist id="tests-dl">${[...new Set(ts.filter(x => !x.clave).map(x => x.nombre))].map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
   }
-  return `<div class="seg sub" role="group" aria-label="Evolución">${EVO.map(([k, l]) => `<button data-act="evo" data-t="${k}" aria-pressed="${sub === k}">${l}</button>`).join("")}</div>${body}`;
+  return body;
 }
 async function saveTest(f) { const row = readTest(f); if (row.err) { toast("Falta " + row.err); return; } if (TC[row.clave] && TC[row.clave].ej && !(row.datos || {}).ej) { toast("Indica el ejercicio"); return; } if (!row.nombre) { toast("Pon el nombre del test"); return; } if (row.valor == null && row.izq == null && row.der == null && !Object.keys(row.datos || {}).length) { toast("Rellena algún resultado"); return; } try { S.coach.tclave = row.clave || ""; await q(sb.from("tests").insert(row)); toast("Test añadido"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } }
 
@@ -3869,7 +3889,7 @@ function multiChart(days, series, o = {}) {
 const meanOf = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const sdOf = a => { if (a.length < 2) return null; const m = meanOf(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
 function rolling(days, v, n, minN = 3) { const out = {}; days.forEach((d, i) => { const w = days.slice(Math.max(0, i - n + 1), i + 1).map(x => v[x]).filter(x => x != null); if (w.length >= minN) out[d] = meanOf(w); }); return out; }
-async function tabRecup(c) {
+async function tabRecup(c, part) {
   const t = today(), d0 = addDays(t, -119), win = +(S.coach.recW || 42);
   const [wl, wo, ca] = await Promise.all([q(sb.from("wellness").select("*").eq("client_id", c.id).gte("fecha", d0).order("fecha")), q(sb.from("workouts").select("fecha,rpe_sesion,duracion_min,dia").eq("client_id", c.id).gte("fecha", d0).order("fecha")), q(sb.from("assignments").select("fecha,resultado").eq("client_id", c.id).eq("tipo", "cardio").eq("hecho", true).gte("fecha", d0))]);
   const all = []; for (let d = d0; d <= t; d = addDays(d, 1)) all.push(d);
@@ -3909,17 +3929,18 @@ async function tabRecup(c) {
   const col = (k, v) => { if (v == null) return "transparent"; const sc = k === "apetito" ? 5 - Math.abs(v - 3) * 2 : v; return ["#e5484d", "#f08c4b", "#f2c94c", "#8fcf6b", "#2f9e6e"][Math.max(0, Math.min(4, Math.round(sc) - 1))]; };
   const heat = `<div class="heat" style="--n:${hd.length}"><span></span>${hd.map(d => `<span class="hdd">${dow(d) === 1 ? esc(fdate(d)) : ""}</span>`).join("")}${IT.map(([k, l]) => `<span class="hl2">${esc(l)}</span>${hd.map(d => { const w = wl.find(x => x.fecha === d); const v = w ? num(w[k]) : null; return `<span class="hc" style="background:${col(k, v)}" title="${esc(fdate(d, { weekday: "short", day: "numeric", month: "short" }) + " · " + l + ": " + (v ?? "—"))}">${v ?? ""}</span>`; }).join("")}`).join("")}</div>`;
   const W = [[28, "4 semanas"], [42, "6 semanas"], [84, "12 semanas"], [120, "4 meses"]];
-  return `<div class="row" style="flex-wrap:wrap"><div class="subtabs">${W.map(([n, l]) => `<button data-act="rec-w" data-n="${n}" aria-current="${win === n}">${l}</button>`).join("")}</div></div>
-  ${al.length || ok.length ? `<div class="card"><h2 class="hh">${ICON.evo}Estado de recuperación</h2>${al.map(a => `<div class="alr bad">⚠ ${esc(a)}</div>`).join("")}${ok.map(a => `<div class="alr ok">✓ ${esc(a)}</div>`).join("")}</div>` : ""}
-  <div class="cols2">
+  const P = {
+    win: `<div class="subtabs rwin">${W.map(([n, l]) => `<button data-act="rec-w" data-n="${n}" aria-current="${win === n}">${l}</button>`).join("")}</div>`,
+    al: al.length || ok.length ? `<div class="ralr">${al.map(a => `<div class="alr bad">⚠ ${esc(a)}</div>`).join("")}${ok.map(a => `<div class="alr ok">✓ ${esc(a)}</div>`).join("")}</div>` : "",
+    hrv: `<div class="cols2">
   <div class="card"><h2>HRV / VFC <small>ms</small></h2>${multiChart(days, [{ name: "HRV", color: "#2b7de9", v: hrv, w: 1.4, dots: true }, { name: "Media 7 días", color: "#173f8a", v: hrv7, w: 2.6 }], { band, bandName: "Rango normal (60 días)", empty: "Sin datos de HRV" })}</div>
   <div class="card"><h2>FC en reposo <small>lpm</small></h2>${multiChart(days, [{ name: "FC", color: "#e5484d", v: fc, w: 1.4, dots: true }, { name: "Media 7 días", color: "#8c1d22", v: fc7, w: 2.6 }], { band: fcBase, bandName: "Habitual (30 días ± 1 DE)", empty: "Sin datos de FC en reposo" })}</div>
-  <div class="card"><h2>Sueño <small>horas</small></h2>${multiChart(days, [{ name: "Horas", color: "#7c5cff", v: sh, dec: 1 }], { bars: true, ref: 7, refName: "7 h", yMin: 0, yMax: Math.max(10, ...Object.values(sh)), barColor: v => v < 6 ? "#e5484d" : v < 7 ? "#f2c94c" : "#7c5cff", dec: 1, empty: "Sin datos de sueño" })}</div>
-  <div class="card"><h2>Bienestar general <small>1–5</small></h2>${multiChart(days, [{ name: "Bienestar", color: "#2f9e6e", v: wi, w: 1.4, dots: true, dec: 2 }, { name: "Media 7 días", color: "#16603f", v: wi7, w: 2.6, dec: 2 }], { yMin: 1, yMax: 5, dec: 1, empty: "Sin cuestionarios" })}</div>
-  <div class="card"><h2>Carga interna <small>RPE × minutos</small></h2>${multiChart(days, [{ name: "Carga", color: "#f39c12", v: load }], { bars: true, yMin: 0, empty: "Hace falta que registre dureza y minutos al terminar los entrenos" })}<div class="kpis"><div class="kpi"><span>Carga 7 días</span><b>${fmt(sumR(t, 7), 0)}</b><em>UA</em></div><div class="kpi"><span>Media semanal (28 d)</span><b>${fmt(sumR(t, 28) / 4, 0)}</b><em>UA</em></div><div class="kpi"><span>Monotonía</span><b>${mono != null ? fmt(mono, 1) : "—"}</b><em>&gt; 2 = poco variada</em></div><div class="kpi"><span>Strain</span><b>${strain != null ? fmt(strain, 0) : "—"}</b><em>carga × monotonía</em></div></div></div>
-  <div class="card"><h2>Ratio agudo:crónico <small>media móvil y EWMA</small></h2>${multiChart(days, [{ name: "Media móvil 7:28", color: "#22242f", v: acwr, dec: 2 }, { name: "EWMA (Impellizzeri)", color: "#e8491a", v: acwrE, dec: 2, w: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Aparece cuando lleve 3–4 semanas seguidas registrando dureza y minutos en sus entrenos" })}</div>
-  </div>
-  <div class="card"><h2>Cuestionario diario <small>28 días · 5 = mejor</small></h2>${heat}</div>`;
+  <div class="card"><h2>Sueño <small>horas</small></h2>${multiChart(days, [{ name: "Horas", color: "#7c5cff", v: sh, dec: 1 }], { bars: true, ref: 7, refName: "7 h", yMin: 0, yMax: Math.max(10, ...Object.values(sh)), barColor: v => v < 6 ? "#e5484d" : v < 7 ? "#f2c94c" : "#7c5cff", dec: 1, empty: "Sin datos de sueño" })}</div></div>`,
+    bien: `<div class="cols2"><div class="card"><h2>Bienestar general <small>1–5</small></h2>${multiChart(days, [{ name: "Bienestar", color: "#2f9e6e", v: wi, w: 1.4, dots: true, dec: 2 }, { name: "Media 7 días", color: "#16603f", v: wi7, w: 2.6, dec: 2 }], { yMin: 1, yMax: 5, dec: 1, empty: "Sin cuestionarios" })}</div>
+  <div class="card"><h2>Cuestionario diario <small>28 días · 5 = mejor</small></h2>${heat}</div></div>`,
+    carga: `<div class="cols2"><div class="card"><h2>Carga interna <small>RPE × minutos</small></h2>${multiChart(days, [{ name: "Carga", color: "#f39c12", v: load }], { bars: true, yMin: 0, empty: "Hace falta que registre dureza y minutos al terminar los entrenos" })}<div class="kpis"><div class="kpi"><span>Carga 7 días</span><b>${fmt(sumR(t, 7), 0)}</b><em>UA</em></div><div class="kpi"><span>Media semanal (28 d)</span><b>${fmt(sumR(t, 28) / 4, 0)}</b><em>UA</em></div><div class="kpi"><span>Monotonía</span><b>${mono != null ? fmt(mono, 1) : "—"}</b><em>&gt; 2 = poco variada</em></div><div class="kpi"><span>Strain</span><b>${strain != null ? fmt(strain, 0) : "—"}</b><em>carga × monotonía</em></div></div></div>
+  <div class="card"><h2>Ratio agudo:crónico <small>media móvil y EWMA</small></h2>${multiChart(days, [{ name: "Media móvil 7:28", color: "#22242f", v: acwr, dec: 2 }, { name: "EWMA (Impellizzeri)", color: "#e8491a", v: acwrE, dec: 2, w: 2 }], { yMin: 0, yMax: 2.2, dec: 1, band: Object.fromEntries(days.map(d => [d, [0.8, 1.3]])), bandName: "Zona óptima 0,8–1,3", ref: 1.5, refName: "Riesgo > 1,5", empty: "Aparece cuando lleve 3–4 semanas seguidas registrando dureza y minutos en sus entrenos" })}</div></div>` };
+  return P;
 }
 
 /* ================= Nutrición ================= */
@@ -4340,6 +4361,7 @@ document.addEventListener("click", async ev => {
         S.coach.tab = a.dataset.t; const tk = S.coach.tabTk = (S.coach.tabTk || 0) + 1; S.coach.inPlace = true;
         try { await viewCoachClient(S.coach.cid); } finally { S.coach.inPlace = false; if (tk === S.coach.tabTk) { const m2 = $("#app .cmain"); if (m2) m2.classList.remove("cload"); } } break; }
       case "evo": S.coach.evo = a.dataset.t; refreshClient(); break;
+      case "evo-sw": S.coach.sw = S.coach.sw || {}; S.coach.sw[a.dataset.c] = a.dataset.t; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
       case "t-row-add": { const f = $("#f-test"), t = f && TC[f.clave.value]; if (t && t.filas) { $("#t-rows").insertAdjacentHTML("beforeend", tRowHTML(t)); const r = $("#t-rows").lastElementChild; r && r.querySelector("input").focus(); } break; }
       case "t-row-del": { const r = a.closest(".trow"); if (r) { r.remove(); tPreview(); } break; }
       case "evo-tests": { S.coach.evo = "tests"; const b = document.querySelector('[data-act="ctab"][data-t="evo"]'); if (b) b.click(); else { S.coach.tab = "evo"; refreshClient(); } break; }
