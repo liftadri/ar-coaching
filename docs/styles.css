@@ -1827,3 +1827,15 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .ddf figure{margin:0}.ddf img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px;display:block}
 .ddf figcaption{font-size:12.5px;color:var(--muted);margin-top:4px;text-align:center}
 .ddedit{align-self:center;font-size:13px;color:var(--muted);margin-top:2px}
+/* Calendario: lo hecho conserva su color y se marca con un borde verde fino */
+.cal .pch.ok{background:color-mix(in srgb,var(--k) 13%,#fff)!important;color:color-mix(in srgb,var(--k) 70%,#000)!important;box-shadow:inset 0 0 0 1.5px var(--ok)!important;opacity:1!important}
+.cal .pch.ok:hover{background:color-mix(in srgb,var(--k) 22%,#fff)!important}
+@media (max-width:700px){
+  .cal .pch.ok{background:var(--k)!important;opacity:1!important;box-shadow:0 0 0 1.5px var(--surface),0 0 0 3px var(--ok)!important;height:6px;margin:4px 2px 0}
+  .cal .pch{margin-left:2px;margin-right:2px}
+}
+.cleg .lg-ok{background:var(--surface-2)!important;box-shadow:inset 0 0 0 1.5px var(--ok)!important;opacity:1!important}
+.c2bars{gap:5px;padding:0 2px}
+.c2bars i.ok,.c2ley i.ok{opacity:1;box-shadow:0 0 0 1.5px var(--surface),0 0 0 3px var(--ok)}
+.c2 .lg-ok{background:var(--surface-2)!important;box-shadow:inset 0 0 0 1.5px var(--ok)}
+.c2d[aria-pressed="true"] .c2bars i.ok,.c2d.hoy .c2bars i.ok{box-shadow:0 0 0 1.5px #24282c,0 0 0 3px #4cc38f}
