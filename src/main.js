@@ -1899,7 +1899,7 @@ async function viewInicio() {
     q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)),
     q(sb.from("wellness").select(`client_id,fecha,created_at,molestia_zona,molestia_0a10,${WKC}`).gte("created_at", sinceTs)),
     q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)),
-    q(sb.from("assignments").select("client_id,titulo,tipo,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)),
+    q(sb.from("assignments").select("client_id,titulo,tipo,fecha,hecho_en").eq("hecho", true).neq("tipo", "workout").gte("hecho_en", sinceTs)),
     q(sb.from("assignments").select("client_id,fecha,hecho,visible").gte("fecha", addDays(monday(t), -28)).lte("fecha", addDays(t, 120))),
     q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha")),
     q(sb.from("leads").select("id,nombre,objetivo,estado,created_at,estado_en").order("created_at", { ascending: false }).limit(30)).catch(() => []),
@@ -1912,7 +1912,7 @@ async function viewInicio() {
   const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
   const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
   const hasta = cid => asAll.filter(x => x.client_id === cid).map(x => x.fecha).sort().pop();
-  const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] || "Tarea" })), ...resp.map(x => ({ c: x.client_id, ts: x.respondido_en, t: "Ha respondido a su revisión", k: "Revisión" }))].filter(a => a.ts).sort((a, b) => b.ts.localeCompare(a.ts));
+  const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.filter(x => !as.some(y => y.tipo === "formulario" && y.client_id === x.client_id && y.fecha === x.fecha)).map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] || "Tarea" })), ...resp.map(x => ({ c: x.client_id, ts: x.respondido_en, t: "Ha respondido a su revisión", k: "Revisión" }))].filter(a => a.ts).sort((a, b) => b.ts.localeCompare(a.ts));
   const ultimo = cid => (act.find(a => a.c === cid) || {}).ts;
   const well7 = cid => { const v = wl.filter(w => w.client_id === cid).map(wellIdx).filter(x => x != null); return v.length ? avg(v) : null; };
   // ---- Lo que requiere atención, por prioridad
