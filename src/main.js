@@ -301,7 +301,7 @@ async function legalDatos() {
 const pend = v => v ? esc(v) : `<span class="lpend">[pendiente de completar]</span>`;
 async function renderLegal(cual) {
   const L = await legalDatos(); const tit = L.marca || "Adrián Rodríguez Coaching";
-  const contacto = [L.email ? `email ${esc(L.email)}` : "", L.telefono ? `WhatsApp ${esc(L.telefono)}` : ""].filter(Boolean).join(" o ") || pend("");
+  const contacto = L.email ? `email ${esc(L.email)}` : pend("");
   const aviso = `<h1>Aviso legal</h1><p class="lmeta">Versión ${LEGAL_V}</p>
   <h2>Titular</h2><ul><li><b>Nombre:</b> ${pend(L.nombre)}</li><li><b>NIF:</b> ${pend(L.nif)}</li><li><b>Domicilio:</b> ${pend(L.domicilio)}</li><li><b>Contacto:</b> ${contacto}</li><li><b>Actividad:</b> ${esc(L.actividad || "Asesoría online de entrenamiento personal")}</li></ul>
   <h2>Objeto</h2><p>Esta aplicación permite a los clientes de ${esc(tit)} recibir su planificación de entrenamiento, registrar su progreso y comunicarse con su entrenador. El formulario de contacto sirve para solicitar información sobre las asesorías.</p>
@@ -343,14 +343,14 @@ async function saveConsent(f) {
 }
 async function legalCard() {
   const L = await legalDatos(); const f = (k, l, ph = "") => `<div class="f"><label for="lg-${k}">${l}</label><input id="lg-${k}" name="${k}" value="${esc(L[k] || "")}" placeholder="${esc(ph)}"></div>`;
-  const falta = ["nif", "domicilio"].some(k => !L[k]) || (!L.email && !L.telefono);
+  const falta = ["nif", "domicilio"].some(k => !L[k]) || !L.email;
   return `<form class="card" id="f-legal" style="display:flex;flex-direction:column;gap:12px"><h2 class="hh">${ICON.doc}Datos legales</h2>
-  ${falta ? `<div class="banner">Completa tu NIF, domicilio y un contacto: aparecen en el Aviso legal y la Política de privacidad, y la ley exige que estén.</div>` : ""}
-  <div class="grid2">${f("nombre", "Nombre del titular")}${f("marca", "Marca")}${f("nif", "NIF", "12345678Z")}${f("telefono", "Teléfono / WhatsApp de contacto")}</div>${f("domicilio", "Domicilio (puede ser profesional)")}${f("email", "Email de contacto", "contacto@…")}
+  ${falta ? `<div class="banner">Completa tu NIF, domicilio y un email de contacto: aparecen en el Aviso legal y la Política de privacidad, y la ley exige que estén.</div>` : ""}
+  <div class="grid2">${f("nombre", "Nombre del titular")}${f("marca", "Marca")}${f("nif", "NIF", "12345678Z")}${f("email", "Email de contacto", "contacto@…")}</div>${f("domicilio", "Domicilio (puede ser profesional)")}<p class="tiny muted" style="margin:0">Estos datos son públicos. Por seguridad no se muestra ningún teléfono.</p>
   <div class="row"><a class="lnk" href="#legal">Ver aviso legal</a><a class="lnk" href="#privacidad">Ver privacidad</a><span class="grow"></span><button class="btn pri">Guardar</button></div></form>`;
 }
 async function saveLegal(f) {
-  const v = n => f[n].value.trim(); const valor = { ...(S.legal || {}), nombre: v("nombre"), marca: v("marca"), nif: v("nif").toUpperCase(), domicilio: v("domicilio"), email: v("email"), telefono: v("telefono") };
+  const v = n => f[n].value.trim(); const valor = { ...(S.legal || {}), nombre: v("nombre"), marca: v("marca"), nif: v("nif").toUpperCase(), domicilio: v("domicilio"), email: v("email") }; delete valor.telefono;
   try { await q(sb.from("ajustes").upsert({ clave: "legal", valor, updated_at: new Date().toISOString() }, { onConflict: "clave" })); S.legal = valor; toast("Datos legales guardados"); route(); } catch (e) { toast(errMsg(e)); }
 }
 function renderNoAccess() {
