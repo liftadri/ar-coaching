@@ -1918,3 +1918,21 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 }
 .segh h2,.volnav span{white-space:nowrap}
 @media (max-width:700px){.vol .segh{flex-wrap:wrap}.volnav{margin-left:auto}.mzact .btn{flex:1 1 auto}}
+/* Progreso del volumen */
+.volseg{margin:-4px 0 16px}
+.vopt{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.seg.sm{border:0;gap:4px;background:var(--surface-2);padding:3px;border-radius:999px}
+.seg.sm button{padding:5px 12px;font-size:12.5px;border-radius:999px}
+.seg.sm button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.vchart{overflow-x:auto;overscroll-behavior-x:contain;margin:0 -4px;padding:0 4px}
+.vchart svg{display:block;max-width:none;font-family:inherit}
+.vchart .mzn{font-size:13px;font-weight:700}
+.vchart .mzo{font-size:11.5px;fill:var(--muted)}
+.vchart .vax{font-size:11px;fill:var(--muted)}
+.vchart .vwk{font-size:12px;font-weight:700;fill:var(--ink)}
+.vchart .vwk.now{fill:var(--accent)}
+.vchart .vwd{font-size:10.5px;fill:var(--muted)}
+.vchart .vtot{font-size:12px;font-weight:700;fill:var(--ink)}
+.vchart .vpl{font-weight:500;fill:var(--muted)}
+.vleg-pl{background:transparent!important;border:1.5px dashed var(--muted)}
+.vchart svg{width:100%;height:auto}

@@ -3001,10 +3001,10 @@ async function viewCoachClient(cid) {
   const alertas = ((c.ficha || {}).salud || []).filter(s => String(s).startsWith("!"));
   const mainHTML = `${archBanner(c)}<div class="chead">${avatar(c.nombre, "lg", c.id)}<div class="grow"><h1>${esc(c.nombre)}</h1><div class="cmeta">${(c.ficha || {}).perfil && PERFILES[c.ficha.perfil] ? `<span class="chip">${esc(PERFILES[c.ficha.perfil])}</span>` : ""}<span class="chip ${c.estado === "activo" ? "ok" : "warn"}">${esc(c.estado === "activo" ? "Activo" : cap(c.estado))}</span><span class="tiny muted">${c.user_id ? "Usa la app" : "Sin cuenta todavía"}</span></div></div></div>${body}`;
   const rail = document.querySelector("#app .rail");
-  if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => document.querySelectorAll("#app textarea").forEach(grow)); S.coach.keep = false; return; }
+  if (S.coach.inPlace && rail && S.coach.shownCid === cid && $("#app .cmain")) { if (tab !== S.coach.tab) return; rail.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", String(b.dataset.t === tab))); $("#app .cmain").innerHTML = mainHTML; requestAnimationFrame(() => { document.querySelectorAll("#app textarea").forEach(grow); vchartEnd(); }); S.coach.keep = false; return; }
   shell(c.nombre, `<div class="cwrap"><nav class="rail" aria-label="Apartados del cliente">${CTABS.map(([k, l, i]) => `<button data-act="ctab" data-t="${k}" aria-current="${tab === k}" title="${l}">${ICON[i]}<span>${l}</span></button>`).join("")}</nav>
   <div class="cmain">${mainHTML}</div></div>`, { crumb: [["c", "Clientes"], ["c", "Mis clientes"], [null, c.nombre, true]], keepScroll: S.coach.keep, sub: c.estado !== "activo" ? cap(c.estado) : "" });
-  S.coach.shownCid = cid;
+  S.coach.shownCid = cid; requestAnimationFrame(vchartEnd);
   S.coach.keep = false;
 }
 
@@ -3118,6 +3118,56 @@ async function volWeek(cid, w0, lib) {
   return { v, sin, otros, ses: xs.length };
 }
 async function volCard(c, pl) {
+  const vt = S.coach.volTab || "mus";
+  const seg = `<div class="seg volseg" aria-label="Vista del volumen"><button data-act="vol-tab" data-t="mus" aria-pressed="${vt === "mus"}">Series por músculo</button><button data-act="vol-tab" data-t="prog" aria-pressed="${vt === "prog"}">Progreso del volumen</button></div>`;
+  if (vt === "prog") return `<div class="card vol">${seg}${await volProg(c, pl)}</div>`;
+  return (await volCardMus(c, pl)).replace('<div class="card vol">', `<div class="card vol">${seg}`);
+}
+/* ---- Progreso del volumen: semanas y días en una sola gráfica, con los mesociclos marcados ---- */
+const efect = x => !x.hecho && (num(x.kg) != null || num(x.reps) != null) && !/aprox|calent|warm/i.test(String(x.tipo || ""));
+const vchartEnd = () => document.querySelectorAll(".vchart").forEach(e => { e.scrollLeft = e.scrollWidth; });
+async function volProg(c, pl) {
+  const t = today(), N = S.coach.volN || 12, m = S.coach.volM || "series";
+  const w1 = monday(t), w0 = addDays(w1, -7 * (N - 1)), end = addDays(w1, 6);
+  const [wo, as] = await Promise.all([q(sb.from("workouts").select("fecha,sets").eq("client_id", c.id).gte("fecha", w0).lte("fecha", end)), q(sb.from("assignments").select("fecha,contenido").eq("client_id", c.id).eq("tipo", "workout").gte("fecha", w0).lte("fecha", end))]);
+  const done = {}, plan = {};
+  wo.forEach(w => (w.sets || []).filter(efect).forEach(x => { done[w.fecha] = (done[w.fecha] || 0) + (m === "kg" ? (num(x.kg) || 0) * (num(x.reps) || 0) : 1); }));
+  if (m === "series") as.forEach(a => ((a.contenido || {}).ejercicios || []).forEach(e => { plan[a.fecha] = (plan[a.fecha] || 0) + volSeries(e); }));
+  const days = Array.from({ length: N * 7 }, (_, i) => addDays(w0, i));
+  const wkTot = k => days.slice(k * 7, k * 7 + 7).reduce((s2, d) => s2 + (done[d] || 0), 0), wkPlan = k => days.slice(k * 7, k * 7 + 7).reduce((s2, d) => s2 + (plan[d] || 0), 0);
+  const mx = Math.max(1, ...days.map(d => Math.max(done[d] || 0, plan[d] || 0)));
+  // Mesociclos que tocan el rango
+  const bl = (pl.bloques || []).filter(b => (b.semanas || []).length).map((b, i) => ({ b, i, ini: b.semanas[0].inicio, fin: b.semanas[b.semanas.length - 1].fin })).filter(x => x.fin >= w0 && x.ini <= end);
+  const wInfo = d => { const mid = addDays(d, 3); for (const b of pl.bloques || []) { const w = (b.semanas || []).find(s2 => s2.inicio <= mid && mid <= s2.fin); if (w) return w; } return null; };
+  // Geometría
+  const slot = 11, gap = 14, wkW = slot * 7, W = 48 + N * wkW + (N - 1) * gap + 12, top = 64, H = 300, base = H - 46, ch = base - top;
+  const X = (k, j) => 48 + k * (wkW + gap) + j * slot; const Y = v => base - ch * v / mx;
+  const fmtV = v => m === "kg" ? (v >= 1000 ? fmt(v / 1000, 1) + " t" : fmt(Math.round(v)) + " kg") : fmt(v, 0);
+  const COL = ["#e8491a", "#2a6fdb", "#1d7f55", "#7a5af5", "#b7791f"];
+  let g = "";
+  bl.forEach((x, n) => { const a = Math.max(0, Math.floor(daysBetween(w0, addDays(x.ini, 3)) / 7)), z = Math.min(N - 1, Math.floor(daysBetween(w0, addDays(x.fin, -3)) / 7)); if (z < a) return;
+    const x0 = X(a, 0) - gap / 2 + 2, x1 = X(z, 7) + gap / 2 - 2, col = COL[x.i % COL.length]; const obj = ((((c.ficha || {}).mesos || [])[x.i] || {}).objetivo) || x.b.objetivo || "";
+    g += `<rect x="${x0}" y="6" width="${x1 - x0}" height="${base - 2}" rx="10" fill="${col}" opacity=".06"/><rect x="${x0}" y="6" width="${x1 - x0}" height="3" rx="1.5" fill="${col}"/>
+      ${(() => { const cut = (str, px) => { const n = Math.max(4, Math.floor((x1 - x0 - 16) / px)); return str.length > n ? str.slice(0, n - 1) + "…" : str; }; return `<text x="${x0 + 8}" y="26" class="mzn" fill="${col}">${esc(cut(x.b.nombre || "Mesociclo", 7.4))}</text>${obj ? `<text x="${x0 + 8}" y="42" class="mzo">${esc(cut(obj, 6.2))}</text>` : ""}`; })()}`; });
+  [0.5, 1].forEach(f => { g += `<line x1="44" x2="${W - 8}" y1="${Y(mx * f)}" y2="${Y(mx * f)}" stroke="var(--line)" stroke-dasharray="3 4"/><text x="40" y="${Y(mx * f) + 4}" text-anchor="end" class="vax">${fmtV(mx * f)}</text>`; });
+  g += `<line x1="44" x2="${W - 8}" y1="${base}" y2="${base}" stroke="var(--line)"/>`;
+  for (let k = 0; k < N; k++) {
+    const wd = days[k * 7], wi = wInfo(wd), tot = wkTot(k), pt = wkPlan(k), now = wd === w1;
+    for (let j = 0; j < 7; j++) { const d = days[k * 7 + j], v = done[d] || 0, pv = plan[d] || 0, x = X(k, j) + 1.5, bw = slot - 3;
+      if (pv) g += `<rect x="${x}" y="${Y(pv)}" width="${bw}" height="${base - Y(pv)}" rx="2" fill="none" stroke="var(--muted)" stroke-opacity=".55" stroke-dasharray="2 2"><title>${esc(fdate(d, { weekday: "short", day: "numeric", month: "short" }))} · programado ${fmtV(pv)}</title></rect>`;
+      if (v) g += `<rect x="${x}" y="${Y(v)}" width="${bw}" height="${base - Y(v)}" rx="2" fill="${wi && wi.tipo === "descarga" ? "var(--c-tarea)" : "var(--accent)"}"${d > t ? ' opacity=".4"' : ""}><title>${esc(fdate(d, { weekday: "short", day: "numeric", month: "short" }))} · hecho ${fmtV(v)}${pv ? " de " + fmtV(pv) + " programadas" : ""}</title></rect>`; }
+    const cx = X(k, 3.5);
+    g += `<text x="${cx}" y="${base + 16}" text-anchor="middle" class="vwk${now ? " now" : ""}">${esc(wi ? semTxt(wi.nombre).replace("Semana ", "S") : fdate(wd, { day: "numeric", month: "short" }))}</text><text x="${cx}" y="${base + 30}" text-anchor="middle" class="vwd">${esc(fdate(wd, { day: "numeric", month: "short" }))}</text>`;
+    if (tot || pt) g += `<text x="${cx}" y="${Math.min(Y(Math.max(...days.slice(k * 7, k * 7 + 7).map(d => Math.max(done[d] || 0, plan[d] || 0)))) - 6, base - 6)}" text-anchor="middle" class="vtot">${fmtV(tot)}${pt && m === "series" ? `<tspan class="vpl">/${fmt(pt, 0)}</tspan>` : ""}</text>`;
+    if (k && N > 1) g += `<line x1="${X(k, 0) - gap / 2}" x2="${X(k, 0) - gap / 2}" y1="${base}" y2="${base + 6}" stroke="var(--line)"/>`;
+  }
+  const nd = daysBetween(w1, t) + 1; const tots = Array.from({ length: N }, (_, k) => wkTot(k)), last = tots[N - 1], prev = days.slice((N - 2) * 7, (N - 2) * 7 + nd).reduce((s2, d) => s2 + (done[d] || 0), 0), hasData = tots.some(Boolean) || Object.keys(plan).length;
+  const opts = `<div class="vopt"><div class="seg sm">${[["series", "Series"], ["kg", "Kg totales"]].map(([k, l]) => `<button data-act="vol-m" data-m="${k}" aria-pressed="${m === k}">${l}</button>`).join("")}</div><div class="seg sm">${[8, 12, 24].map(n => `<button data-act="vol-n" data-n="${n}" aria-pressed="${N === n}">${n} sem</button>`).join("")}</div></div>`;
+  return `${opts}${hasData ? `<p class="tiny muted volsum"><b>${fmtV(last)}</b> ${m === "kg" ? "levantados" : "series hechas"} esta semana${prev ? ` · <span class="${last >= prev ? "up" : "down"}">${last >= prev ? "+" : ""}${Math.round(100 * (last / prev - 1))} %</span> vs los mismos días de la anterior` : ""}</p>
+  <div class="vchart"><svg viewBox="0 0 ${W} ${H}" style="min-width:${Math.min(W, 640)}px" role="img" aria-label="Volumen por día y semana">${g}</svg></div>
+  <div class="leg tiny muted"><span><i style="background:var(--accent)"></i>Hecho</span><span><i style="background:var(--c-tarea)"></i>Semana de descarga</span>${m === "series" ? `<span><i class="vleg-pl"></i>Programado</span>` : ""}<span>Número sobre cada semana: total${m === "series" ? " hecho / programado" : ""}</span></div>` : `<div class="empty">Aún no hay entrenos registrados en estas semanas</div>`}`;
+}
+async function volCardMus(c, pl) {
   const lib = await exLib().catch(() => []); const w0 = S.coach.volW || monday(today()); const wp = addDays(w0, -7);
   const [A, B] = await Promise.all([volWeek(c.id, w0, lib), volWeek(c.id, wp, lib)]);
   const ms = [...VOL_ORD.filter(m => A.v[m] || B.v[m]), ...Object.keys(A.v).filter(m => !VOL_ORD.includes(m))].sort((a, b) => (A.v[b] || 0) - (A.v[a] || 0));
@@ -4324,6 +4374,9 @@ document.addEventListener("click", async ev => {
       case "meso-edit": openMeso(); break;
       case "meso-next": mesoNext(); break;
       case "meso-retrasar": mesoRetrasar(); break;
+      case "vol-tab": S.coach.volTab = a.dataset.t; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
+      case "vol-m": S.coach.volM = a.dataset.m; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
+      case "vol-n": S.coach.volN = +a.dataset.n; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
       case "vol-w": S.coach.volW = a.dataset.w; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
       case "mb-add": $("#mbs").insertAdjacentHTML("beforeend", mesoBlock({ semanas: [{ tipo: "carga" }] })); break;
       case "mb-del": if (confirmar(a)) a.closest("[data-b]").remove(); break;
