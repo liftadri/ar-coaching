@@ -1290,7 +1290,7 @@ async function shareImage(file, est = "clasico") {
   await document.fonts.ready.catch(() => { });
   const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`;
   const t = String(d.titulo || "Entreno"); const tit = t.length > 22 ? t.slice(0, 21) + "…" : t;
-  const st = [d.dur != null ? [durTxt(d.dur), "Duración"] : null, [String(d.series || 0), "Series"], d.vol ? [fmt(Math.round(d.vol)) + " kg", "Volumen"] : null].filter(Boolean);
+  const st = [d.dur != null ? [durTxt(d.dur), "Duración"] : null, d.ej ? [String(d.ej), d.ej === 1 ? "Ejercicio" : "Ejercicios"] : [String(d.series || 0), "Series"], d.vol ? [fmt(Math.round(d.vol)) + " kg", "Volumen"] : null].filter(Boolean);
   const M = 96, BOT = H - 330; // márgenes: fuera de las zonas que tapa Instagram
   const fade = (h, a) => { const g = x.createLinearGradient(0, H - h, 0, H); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(.5, `rgba(0,0,0,${a * .6})`); g.addColorStop(1, `rgba(0,0,0,${a})`); x.fillStyle = g; x.fillRect(0, H - h, W, h); };
   x.textBaseline = "alphabetic";
@@ -1354,7 +1354,9 @@ function sessionTable(sets, notas = {}) {
   const g = groupSets(sets); if (!g.length) return `<div class="empty">Sin series registradas.</div>`;
   return `<div class="tbl"><table class="stab"><thead><tr><th>Ejercicio</th><th class="n">Serie</th><th class="n">Carga</th><th class="n">Reps</th><th class="n">RIR</th><th class="n">1RM est.</th></tr></thead><tbody>${g.map(e => e.s.map((y, i) => `<tr class="${i === 0 ? "first" : ""}">${i === 0 ? `<td rowspan="${e.s.length}" class="exn"><button class="lnk linkbtn" data-act="ex-hist" data-n="${esc(e.n)}">${esc(e.n)}</button></td>` : ""}<td class="n muted">${i + 1}${y.tipo ? `<div class="tiny">${esc(pTipo(y.tipo))}</div>` : ""}</td>${y.hecho ? `<td class="n" colspan="4"><span class="sp ok">Hecho ✓</span></td>` : `<td class="n"><b>${esc(kgTxt(y.kg))}</b></td><td class="n">${esc(y.reps ?? "—")}</td><td class="n">${y.rpe != null ? "RPE " + esc(y.rpe) : esc(y.rir ?? "—")}${y.vel != null ? `<div class="tiny muted">${esc(y.vel)} m/s</div>` : ""}</td><td class="n muted">${e1rm(y.kg, y.reps, y.rir) ? fmt(e1rm(y.kg, y.reps, y.rir)) + " kg" : "—"}</td>`}</tr>`).join("") + (notas && notas[e.n] ? `<tr class="nrow"><td colspan="6"><div class="exn-nota"><span>Comentario</span>${esc(notas[e.n])}</div></td></tr>` : "")).join("")}</tbody></table></div>`;
 }
-const sesStats = w => { const ss = (w.sets || []).filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: (w.sets || []).length, ej: groupSets(w.sets).length, vol }; };
+// Solo cuentan las series efectivas: las de aproximación/calentamiento no suman series ni volumen
+const esAprox = x => /aprox|calent|warm/i.test(String(x.tipo || ""));
+const sesStats = w => { const all = (w.sets || []).filter(x => !esAprox(x)); const ss = all.filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: all.length, ej: new Set((w.sets || []).map(x => x.ejercicio)).size, vol }; };
 // Vista ordenada de un entreno registrado: datos clave y ejercicios desplegables
 function sesKpis(w) { const st = sesStats(w); return [w.rpe_sesion != null ? [w.rpe_sesion + "/10", "Dureza"] : null, w.duracion_min ? [w.duracion_min + " min", "Duración"] : null, !w.actividad ? [st.series, "Series"] : null, st.vol ? [fmt(st.vol, 0) + " kg", "Volumen"] : null, w.rpe_sesion != null && w.duracion_min ? [w.rpe_sesion * w.duracion_min + " UA", "Carga"] : null].filter(Boolean); }
 function sesBody(w) {
@@ -1438,7 +1440,7 @@ async function saveWorkout(fin) {
   try {
     await op({ t: "insert", table: "workouts", row: { client_id: S.me.cid, fecha: today(), dia: a.titulo, sets, rpe_sesion: rpe, duracion_min: durAuto(dr), comentario: com, notas_ej, assignment_id: id } });
     await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: id, p_hecho: true, p_respuesta: com } });
-    try { localStorage.removeItem(draftKey(id)); } catch { } clearInterval(S.durT); restStop(); sheet(""); const st = sesStats({ sets }); S.share = { titulo: a.titulo, dur: durAuto(dr), series: st.series, vol: st.vol, rpe }; location.hash = "hoy"; setTimeout(openShareDone, 450);
+    try { localStorage.removeItem(draftKey(id)); } catch { } clearInterval(S.durT); restStop(); sheet(""); const st = sesStats({ sets }); S.share = { titulo: a.titulo, dur: durAuto(dr), series: st.series, ej: st.ej, vol: st.vol, rpe }; location.hash = "hoy"; setTimeout(openShareDone, 450);
   } catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 
