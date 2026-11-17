@@ -646,6 +646,7 @@ async function getPlan() {
 }
 function weekNow(plan, d = today()) { for (const b of plan.bloques || []) { const w = (b.semanas || []).find(s => s.inicio <= d && d <= s.fin); if (w) return { ...w, bloque: b.nombre }; } return null; }
 const getAsig = async (from, to) => (await q(sb.from("assignments").select("*").gte("fecha", from).lte("fecha", to).order("fecha").order("orden"))).filter(yaVisible);
+const semTxt = n => { const m = /^S(\d+)$/i.exec(String(n || "").trim()); return m ? "Semana " + m[1] : String(n || ""); };
 function asigRow(x) {
   const t = today(); const late = !x.hecho && x.fecha < t;
   const h = x.tipo === "workout" ? `data-act="go" data-h="a-${esc(x.id)}"` : `data-act="item" data-id="${esc(x.id)}"`;
@@ -931,7 +932,7 @@ async function viewHoy() {
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
   ${S.needCom ? `<button class="card com-cta" data-act="go" data-h="comienzo"><b>Antes de empezar: tu cuestionario inicial</b><span class="small">10 minutos para que Adrián prepare tu plan. Pulsa aquí →</span></button>` : ""}
-  <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(w.nombre)}</span>${esc(w.bloque)}${w.tipo && w.tipo !== "carga" ? " · " + esc(cap(w.tipo)) : ""}</div>${w.foco ? `<p class="hfoco">${esc(w.foco)}</p>` : ""}` : ""}</section>
+  <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(semTxt(w.nombre))}</span>${esc([w.bloque, w.tipo && w.tipo !== "carga" ? cap(w.tipo) : ""].filter(Boolean).join(" · "))}</div>` : ""}</section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${rp[0] && !rp[0].leido_en ? `<button class="card revnew" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="pnew">Nueva</span> <span class="tiny">Revisión del ${esc(fdate(rp[0].fecha, { day: "numeric", month: "long" }))}</span><br><b>${esc(rp[0].titular || "Tu revisión semanal")}</b><br><span class="tiny muted">Toca para leerla</span></span><span class="chev">›</span></button>` : ""}
   ${pushc}${rah}${tbh}
@@ -946,11 +947,21 @@ async function viewHoy() {
   <div class="qlog"><span>Apuntar por tu cuenta</span><button class="btn sm" data-act="extra-open">Actividad extra</button><button class="btn sm" data-act="peso">Peso${lastW && lastW.fecha === t ? " ✓" : ""}</button></div>`, { brand: true });
   offPrefetch(asig);
 }
-async function openItem(id) {
+async function openItem(id, editar) {
   const x = (await q(sb.from("assignments").select("*").eq("id", id).limit(1)))[0]; if (!x) return;
   const c = x.contenido || {};
+  if (x.hecho && !editar && x.tipo !== "nota") {
+    const dd = await doneData(x).catch(() => ""); const R0 = x.resultado || {};
+    const resp = (R0.respuestas || []).filter(r => r.r); const puede = x.tipo !== "fotos" && x.tipo !== "medidas";
+    sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:-4px 0 0">${esc(cap(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" })))} · <span class="ok-t">Hecho ✓</span></p>
+    ${dd}${resExtra(x)}${resp.length || x.respuesta ? `<div class="card"><h2>Lo que respondiste</h2>${resp.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r)}</p>`).join("")}${x.respuesta ? `<p class="small" style="margin:4px 0;white-space:pre-wrap">${esc(x.respuesta)}</p>` : ""}</div>` : ""}
+    ${!dd && !resExtra(x) && !resp.length && !x.respuesta ? `<p class="small muted">Lo marcaste como hecho.</p>` : ""}
+    ${puede ? `<button type="button" class="btn pri block" data-act="item-edit" data-id="${esc(id)}">Editar</button>` : ""}<button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
+    return;
+  }
+  if (x.hecho && x.tipo === "peso") { const d = (x.hecho_en || "").slice(0, 10) || x.fecha; const w = (await q(sb.from("weights").select("fecha,kg").in("fecha", [d, x.fecha]).limit(1)).catch(() => []))[0]; return openPeso(c, w); }
   if (!x.hecho) { if (x.tipo === "peso") return openPeso(c); if (x.tipo === "fotos") return openFotos(c); if (x.tipo === "medidas") return openMedidas(c.medidas, c); }
-  if (x.tipo === "formulario" && c.wellness) { const r = await q(sb.from("wellness").select("*").eq("fecha", today()).limit(1)).catch(() => []); return openWellness(r[0], c); }
+  if (x.tipo === "formulario" && c.wellness) { const d = x.hecho ? ((x.hecho_en || "").slice(0, 10) || x.fecha) : today(); const r = await q(sb.from("wellness").select("*").eq("fecha", d).limit(1)).catch(() => []); return openWellness(r[0], c); }
   const pre = (c.preguntas || []).map(parseQ); const R0 = x.resultado || {}; const prevR = R0.respuestas || [];
   const regs = x.tipo === "cardio" ? (c.registrar && c.registrar.length ? c.registrar : ["min", "rpe"]) : [];
   const ck = c.checklist || []; const resumen = x.tipo === "cardio" ? cardioResumen(c) : "";
@@ -999,7 +1010,7 @@ async function viewCal2() {
   let rows = "";
   for (let wk = g0; wk <= g1; wk = addDays(wk, 7)) {
     const w = weekNow(plan, wk) || weekNow(plan, addDays(wk, 3));
-    rows += `<div class="c2wk">${w ? `<span class="c2tag t-${esc(w.tipo || "carga")}">${esc(w.nombre)}</span><span class="c2foco">${esc(w.foco || w.bloque || "")}</span>` : ""}</div><div class="c2row">`;
+    rows += `<div class="c2row">`;
     for (let i = 0; i < 7; i++) {
       const d = addDays(wk, i); const out = !d.startsWith(m); const a = asig.filter(x => x.fecha === d);
       const bars = [...a.map(x => `<i class="tp-${esc(x.tipo)}${x.hecho ? " ok" : d < t ? " late" : ""}"></i>`), ...evOn(d).map(() => `<i class="tp-evento"></i>`), ...libres.filter(x => x.fecha === d).map(() => `<i class="tp-workout ok"></i>`)].join("");
@@ -1022,7 +1033,7 @@ function calDia(d) {
   const w = weekNow(D.plan, d);
   const items = [...D.asig.filter(x => x.fecha === d).map(asigRow), ...D.libres.filter(x => x.fecha === d).map(x => `<div class="it" style="cursor:default"><span><b>${esc(x.dia || "Entreno")}</b><br><span class="tiny muted">${x.actividad ? `Actividad extra${x.duracion_min ? " · " + esc(x.duracion_min) + " min" : ""}${x.rpe_sesion != null ? " · dureza " + esc(x.rpe_sesion) + "/10" : ""}` : "Entreno registrado"}</span></span><span class="done">Hecho ✓</span></div>`), ...D.evOn(d).map(e => `<div class="it" style="cursor:default"><span class="itl"><i class="dot dot-evento"></i><span><b>${esc(e.titulo)}</b><br><span class="tiny muted">${esc(EV_TIPOS[e.tipo] || cap(e.tipo || ""))}</span></span></span></div>`)];
   const rel = d === t ? "Hoy" : d === addDays(t, 1) ? "Mañana" : d === addDays(t, -1) ? "Ayer" : "";
-  sheet(`<h2>${esc(cap(fdate(d, { weekday: "long", day: "numeric", month: "long" })))}${rel ? ` <span class="c2rel">${rel}</span>` : ""}</h2>${w ? `<p class="tiny muted" style="margin:-6px 0 0">${esc(w.bloque)} · ${esc(w.nombre)}${w.foco ? " · " + esc(w.foco) : ""}</p>` : ""}
+  sheet(`<h2>${esc(cap(fdate(d, { weekday: "long", day: "numeric", month: "long" })))}${rel ? ` <span class="c2rel">${rel}</span>` : ""}</h2>${w ? `<p class="tiny muted" style="margin:-6px 0 0">${esc([semTxt(w.nombre), w.bloque].filter(Boolean).join(" · "))}</p>` : ""}
   ${items.length ? `<div class="list caldia">${items.join("")}</div>` : `<div class="empty" style="padding:22px 0">Nada previsto este día.</div>`}
   <button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
 }
@@ -1117,11 +1128,22 @@ async function viewWorkout(id) {
   const metaOf = e => [e.series && e.series.length ? presSummary(e) : e.sxr, e.rir && e.rir !== "—" ? (/^(rpe|@)/i.test(e.rir) ? e.rir : "RIR " + e.rir) : "", restSecs(e.descanso) ? restTxt(restSecs(e.descanso)) + " descanso" : ""].filter(Boolean).join(" · ");
   const notas = [c.notas, c.detalle].filter(Boolean).join("\n\n");
   // Paso previo: resumen de la sesión y botón para empezar
+  if (a.hecho && !draft.t0 && !S.sub.repetir) {
+    const logs = await q(sb.from("workouts").select("*").eq("assignment_id", id).order("created_at", { ascending: false })).catch(() => []);
+    if (logs.length) {
+      S.coach.wo = { ...(S.coach.wo || {}), ...Object.fromEntries(logs.map(w => [w.id, w])) };
+      shell(a.tipo === "cardio" ? "Cardio" : "Entreno", `<div class="wkhero"><p class="wkd">${esc(sub)}</p><h2>${esc(a.titulo)}</h2><p class="wkdn">Hecho ✓</p></div>
+      ${logs.map(w => `<div class="card svin solo wkres"><div class="svk full">${sesKpis(w).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div>${sesBody(w)}<button type="button" class="btn block" data-act="wo-edit" data-id="${esc(w.id)}">Editar</button></div>`).join("")}
+      <button type="button" class="lnk ddedit" data-act="w-repetir" data-id="${esc(id)}">Hacerlo otra vez</button>`, { back: "entreno", noTabs: true });
+      return;
+    }
+  }
+  S.sub.repetir = false;
   if (exs.length && !draft.t0) {
     shell(a.tipo === "cardio" ? "Cardio" : "Entreno", `<div class="wkhero"><p class="wkd">${esc(sub)}</p><h2>${esc(a.titulo)}</h2>
       <div class="wkst"><span><b>${exs.length}</b> ejercicios</span>${nSeries ? `<span><b>${nSeries}</b> series</span>` : ""}${c.dur_est ? `<span><b>≈ ${esc(c.dur_est)}</b> min</span>` : ""}</div>
       ${c.objetivo ? `<p class="wko">${esc(c.objetivo)}</p>` : ""}</div>
-    ${a.hecho ? `<div class="wkdone">Ya registraste este entreno. Si lo vuelves a hacer se guarda como un registro nuevo.</div>` : ""}
+    ${a.hecho ? `<div class="wkdone">Lo vas a hacer otra vez. Se guarda como un registro nuevo.</div>` : ""}
     ${c.calentamiento ? `<div class="card wkc"><h2>Calentamiento</h2><p>${esc(c.calentamiento)}</p></div>` : ""}
     ${notas ? `<div class="card wkc"><h2>Notas de Adrián</h2><p>${esc(notas)}</p></div>` : ""}
     <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${exs.map(e => `<li><b>${esc(e.nombre)}</b><span>${esc(metaOf(e))}</span></li>`).join("")}</ol></div>
@@ -1206,13 +1228,14 @@ const woGroup = (nombre = "", sets = [{}], open = true) => `<details class="weg"
 async function openWoEdit(id) {
   const w = (S.coach.wo || {})[id]; if (!w) return; await exLib().catch(() => []);
   const idx = new Map(); (w.sets || []).forEach((x, i) => { if (x.hecho) return; if (!idx.has(x.ejercicio)) idx.set(x.ejercicio, []); idx.get(x.ejercicio).push([x, i]); });
-  sheet(`<h2>Corregir entreno</h2>
+  const yo = S.me.role !== "coach";
+  sheet(`<h2>${yo ? "Editar entreno" : "Corregir entreno"}</h2>
   <form id="f-woe" data-id="${esc(id)}" class="woe">
   <div class="woe-d"><div class="f"><label>Nombre</label><input name="dia" value="${esc(w.dia || "")}"></div><div class="f"><label>Fecha</label><input type="date" name="fecha" value="${esc(w.fecha)}" required></div><div class="f"><label>Dureza</label><input name="rpe" inputmode="numeric" value="${esc(w.rpe_sesion ?? "")}" placeholder="1–10"></div><div class="f"><label>Min</label><input name="dur" inputmode="numeric" value="${esc(w.duracion_min ?? "")}"></div></div>
   ${w.actividad ? "" : `<div class="woe-l"><b>Ejercicios</b><span class="tiny muted">Toca un ejercicio para ver y corregir sus series</span></div><div id="weg-list">${[...idx].map(([n, ss]) => woGroup(n, ss, false)).join("")}</div><button type="button" class="btn sm" data-act="weg-add" style="align-self:flex-start">+ Añadir ejercicio</button>`}
-  <div class="f"><label>Comentario del cliente</label><textarea name="com" rows="2">${esc(w.comentario || "")}</textarea></div>
+  <div class="f"><label>${yo ? "Tu comentario" : "Comentario del cliente"}</label><textarea name="com" rows="2">${esc(w.comentario || "")}</textarea></div>
   ${exDatalist()}
-  <button class="btn pri block">Guardar cambios</button><button type="button" class="btn ghost bad block" data-act="wo-del" data-id="${esc(id)}">Borrar este entreno</button></form>`);
+  <button class="btn pri block">Guardar cambios</button>${yo ? `<button type="button" class="btn ghost block" data-act="close">Cancelar</button>` : `<button type="button" class="btn ghost bad block" data-act="wo-del" data-id="${esc(id)}">Borrar este entreno</button>`}</form>`);
   woRenum();
 }
 function woRenum() { document.querySelectorAll("#weg-list .weg").forEach(g => { const rows = g.querySelectorAll(".wegs .wes"); rows.forEach((r, k) => r.querySelector(".wesn").textContent = k + 1); const c = g.querySelector(".wegc"); if (c) c.textContent = rows.length + (rows.length === 1 ? " serie" : " series"); }); }
@@ -1228,7 +1251,7 @@ async function saveWoEdit(f) {
     sets = [...out, ...keep];
   }
   const b = f.querySelector("button.pri"); b.disabled = true;
-  try { await q(sb.from("workouts").update({ dia: f.dia.value.trim() || w.dia, fecha: f.fecha.value || w.fecha, rpe_sesion: rpe, duracion_min: dur, comentario: f.com.value.trim(), sets }).eq("id", id)); sheet(""); toast("Entreno corregido"); S.coach.keep = true; viewCoachClient(S.coach.cid); }
+  try { await q(sb.from("workouts").update({ dia: f.dia.value.trim() || w.dia, fecha: f.fecha.value || w.fecha, rpe_sesion: rpe, duracion_min: dur, comentario: f.com.value.trim(), sets }).eq("id", id)); sheet(""); toast(S.me.role === "coach" ? "Entreno corregido" : "Cambios guardados"); if (S.me.role === "coach") { S.coach.keep = true; viewCoachClient(S.coach.cid); } else route(); }
   catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 /* ===== Al terminar: animar a compartir el entreno etiquetando a @liftadri ===== */
@@ -1408,7 +1431,7 @@ async function saveWorkout(fin) {
 /* ================= Cliente: Nutrición ================= */
 
 function openWellness(prev, c = {}) {
-  const w = prev || {}; S.sub.well = { ...w }; const on = k => !(c.campos) || c.campos.includes(k);
+  const w = prev || {}; S.sub.well = { ...w }; S.sub.wellFecha = w.fecha || today(); const on = k => !(c.campos) || c.campos.includes(k);
   sheet(`<h2>¿Cómo estás hoy?</h2><p class="small muted" style="margin:0">${c.detalle ? esc(c.detalle) + " " : ""}Toca un número del 1 al 5. El 5 siempre es lo mejor.</p>
   <form id="f-well" class="col" style="display:flex;flex-direction:column;gap:14px">
   ${WK.map(([k, l, a, b]) => `<div><div class="small" style="font-weight:700;margin-bottom:6px">${l}</div><div class="scale" role="group" aria-label="${l}">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-act="scale" data-k="${k}" data-v="${n}" aria-pressed="${num(w[k]) === n}">${n}</button>`).join("")}</div><div class="anchors"><span>${a}</span><span>${b}</span></div></div>`).join("")}
@@ -1421,7 +1444,7 @@ async function saveWellness(f) {
   const v = S.sub.well || {}; const missing = WK.filter(([k]) => num(v[k]) == null);
   if (missing.length === WK.length) { toast("Marca al menos una respuesta"); return; }
   const val = n => f[n] ? f[n].value : null; const prev = S.sub.well || {};
-  const row = { client_id: S.me.cid, fecha: today(), comentario: f.comentario ? f.comentario.value.trim() : (prev.comentario || ""), molestia_zona: f.molestia_zona ? f.molestia_zona.value.trim() : (prev.molestia_zona || "") };
+  const row = { client_id: S.me.cid, fecha: S.sub.wellFecha || today(), comentario: f.comentario ? f.comentario.value.trim() : (prev.comentario || ""), molestia_zona: f.molestia_zona ? f.molestia_zona.value.trim() : (prev.molestia_zona || "") };
   ["sueno_h", "fc", "hrv", "apetito", "molestia_0a10"].forEach(k => { row[k] = f[k] ? num(val(k)) : (prev[k] ?? null); });
   WK.forEach(([k]) => row[k] = num(v[k]));
   const kg = f.kg ? num(f.kg.value) : null; if (kg != null && (kg < 25 || kg > 350)) { toast("Revisa el peso"); return; }
@@ -1451,13 +1474,14 @@ async function saveExtra(f) {
   try { await q(sb.from("workouts").insert({ client_id: S.me.cid, fecha: fecha > today() ? today() : fecha, dia: extraLbl(act), actividad: act, sets: [], rpe_sesion: num(f.rpe.value), duracion_min: Math.round(min), comentario: f.com.value.trim() })); sheet(""); toast(savedMsg("¡Apuntado!")); route(); }
   catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
-function openPeso(c = {}) {
+function openPeso(c = {}, prev) {
+  S.sub.pesoFecha = prev && prev.fecha ? prev.fecha : today();
   const mom = { ayunas: "Por la mañana, en ayunas y después de ir al baño.", libre: "Cuando puedas, pero intenta que sea siempre a la misma hora.", noche: "Por la noche, antes de dormir." }[c.momento || "ayunas"];
   sheet(`<h2>Peso de hoy</h2><div class="tips"><p>⏰ ${esc(mom)}</p>${c.misma_bascula !== false ? `<p>⚖️ Siempre con la misma báscula y en suelo duro (nada de alfombras).</p>` : ""}<p>📈 Lo que cuenta es la media de la semana, no un día suelto.</p></div>${c.detalle ? `<p class="small" style="white-space:pre-wrap;margin:0">${esc(c.detalle)}</p>` : ""}
-  <form id="f-peso" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="kg">Kilos</label><input id="kg" name="kg" inputmode="decimal" placeholder="80,5" required></div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+  <form id="f-peso" style="display:flex;flex-direction:column;gap:12px"><div class="f"><label for="kg">Kilos</label><input id="kg" name="kg" inputmode="decimal" placeholder="80,5" required value="${prev && prev.kg != null ? esc(fmt(prev.kg)) : ""}"></div><button class="btn pri block">Guardar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
   $("#kg").focus();
 }
-async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await op({ t: "upsert", table: "weights", row: { client_id: S.me.cid, fecha: today(), kg }, oc: "client_id,fecha" }); await completarAccion("peso"); sheet(""); toast(savedMsg("Peso guardado")); route(); } catch (e) { toast(errMsg(e)); } }
+async function savePeso(f) { const kg = num(f.kg.value); if (kg == null || kg < 25 || kg > 350) { toast("Escribe un peso válido"); return; } try { await op({ t: "upsert", table: "weights", row: { client_id: S.me.cid, fecha: S.sub.pesoFecha || today(), kg }, oc: "client_id,fecha" }); S.sub.pesoFecha = null; await completarAccion("peso"); sheet(""); toast(savedMsg("Peso guardado")); route(); } catch (e) { toast(errMsg(e)); } }
 
 /* ================= Cliente: Progreso ================= */
 /* ================= Logros ================= */
@@ -3134,14 +3158,14 @@ async function doneData(x) {
     if (!w) return "";
     const wi = wellIdx(w);
     const extra = [w.sueno_h != null ? ["Horas dormidas", `${fmt(w.sueno_h)} h`] : null, w.fc != null ? ["Pulso en reposo", `${w.fc} lpm`] : null, w.hrv != null ? ["HRV", `${w.hrv} ms`] : null, w.apetito != null ? ["Apetito", `${w.apetito}/5`] : null, w.molestia_zona || w.molestia_0a10 ? ["Molestia", [w.molestia_zona, w.molestia_0a10 != null ? `${w.molestia_0a10}/10` : ""].filter(Boolean).join(" · ")] : null].filter(Boolean);
-    return `<div class="card wb"><div class="wbh"><div><h2>Lo que respondió</h2>${w.fecha !== x.fecha ? `<p class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</p>` : ""}</div>${wi != null ? `<div class="wbi ${tono(wi)}"><b>${fmt(wi, 1)}</b><span>de 5</span></div>` : ""}</div>
+    return `<div class="card wb"><div class="wbh"><div><h2>${S.me.role === "coach" ? "Lo que respondió" : "Tus respuestas"}</h2>${w.fecha !== x.fecha ? `<p class="tiny muted">${esc(cap(fdate(w.fecha, { weekday: "long", day: "numeric", month: "long" })))}</p>` : ""}</div>${wi != null ? `<div class="wbi ${tono(wi)}"><b>${fmt(wi, 1)}</b><span>de 5</span></div>` : ""}</div>
       <div class="wbl">${WK.filter(([k]) => num(w[k]) != null).map(([k, l]) => `<div class="wbr ${tono(num(w[k]))}"><span>${esc(l)}</span><i><em style="width:${num(w[k]) * 20}%"></em></i><b>${num(w[k])}</b></div>`).join("")}</div>
       ${extra.length ? `<div class="ddl">${extra.map(([l, v]) => `<div><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join("")}</div>` : ""}
       ${w.comentario ? `<p class="small ddc">${esc(w.comentario)}</p>` : ""}</div>`;
   }
   if (x.tipo === "peso") {
     const w = (await q(sb.from("weights").select("fecha,kg").eq("client_id", x.client_id).in("fecha", ds).order("fecha", { ascending: false }).limit(1)))[0];
-    return w ? `<div class="card"><h2>Lo que registró</h2><div class="ddl"><div><span>Peso</span><b>${esc(fmt(w.kg))} kg</b></div></div></div>` : "";
+    return w ? `<div class="card"><h2>${S.me.role === "coach" ? "Lo que registró" : "Lo que apuntaste"}</h2><div class="ddl"><div><span>Peso</span><b>${esc(fmt(w.kg))} kg</b></div></div></div>` : "";
   }
   if (x.tipo === "medidas") {
     const m = (await q(sb.from("measurements").select("*").eq("client_id", x.client_id).in("fecha", ds).order("fecha", { ascending: false }).limit(1)))[0];
@@ -4109,6 +4133,8 @@ document.addEventListener("click", async ev => {
       case "qscale": { const h = $("#q" + a.dataset.q); if (h) h.value = a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "scale": { S.sub.well[a.dataset.k] = +a.dataset.v; a.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === a))); break; }
       case "peso": openPeso(); break;
+      case "item-edit": openItem(a.dataset.id, true); break;
+      case "w-repetir": S.sub.repetir = true; viewWorkout(a.dataset.id); break;
       case "extra-open": openExtra(); break;
       case "salud-edit": openSalud(); break;
       case "salud-add": { $("#srows").insertAdjacentHTML("beforeend", saludRow()); const r = $("#srows").lastElementChild; r && r.querySelector("input").focus(); break; }

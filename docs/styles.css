@@ -1839,3 +1839,10 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .c2bars i.ok,.c2ley i.ok{opacity:1;box-shadow:0 0 0 1.5px var(--surface),0 0 0 3px var(--ok)}
 .c2 .lg-ok{background:var(--surface-2)!important;box-shadow:inset 0 0 0 1.5px var(--ok)}
 .c2d[aria-pressed="true"] .c2bars i.ok,.c2d.hoy .c2bars i.ok{box-shadow:0 0 0 1.5px #24282c,0 0 0 3px #4cc38f}
+/* Calendario del cliente: sin etiquetas de semana y hoy sin chocar con las barras */
+.c2 .c2row+.c2row{margin-top:8px}
+.c2d.hoy b::after{bottom:-3px;height:2px}
+.c2d.hoy .c2bars{margin-top:6px}
+.wkdn{margin:6px 0 0;font-weight:700;color:#4cc38f}
+.wkres{padding:16px;display:flex;flex-direction:column;gap:12px}
+.card.wkres.svin.solo{padding:14px}
