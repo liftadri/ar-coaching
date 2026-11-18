@@ -1273,10 +1273,11 @@ async function saveWoEdit(f) {
 }
 /* ===== Al terminar: animar a compartir el entreno etiquetando a @liftadri ===== */
 const IG = "@liftadri";
+const shareStats = d => [d.dur != null ? [durTxt(d.dur), "Duración"] : null, d.ej ? [String(d.ej), d.ej === 1 ? "Ejercicio" : "Ejercicios"] : null, d.pr ? [String(d.pr), d.pr === 1 ? "Récord" : "Récords"] : null, d.vol ? [fmt(Math.round(d.vol)) + " kg", "Volumen"] : null].filter(Boolean);
 function openShareDone() {
   const d = S.share; if (!d) return;
   sheet(`<div class="shdone"><div class="shok">${IC_OK}</div><h2>¡Entreno completado!</h2><p class="small muted">Buen trabajo. Ya le llega todo a Adrián.</p>
-  <div class="finst">${d.dur != null ? `<div><b>${esc(durTxt(d.dur))}</b><span>Duración</span></div>` : ""}<div><b>${d.series}</b><span>Series</span></div>${d.vol ? `<div><b>${esc(fmt(Math.round(d.vol)))} kg</b><span>Volumen</span></div>` : ""}</div></div>
+  <div class="finst">${shareStats(d).map(([v, l]) => `<div${/^Récord/.test(l) ? ' class="pr"' : ""}><b>${esc(v)}</b><span>${l}</span></div>`).join("")}</div></div>
   <div class="shcta"><b>¿Lo celebras?</b><span>Hazte una foto, súbela a tu historia y etiqueta a <b>${IG}</b>. Te pongo tu entreno encima de la foto.</span></div>
   <button type="button" class="btn pri block" data-act="cam-open">📸 Abrir la cámara</button>
   <label class="btn block shpick">Elegir una de la galería<input type="file" accept="image/*" data-act-change="sh-foto" hidden></label>
@@ -1293,7 +1294,7 @@ async function shareImage(file, est = "clasico") {
   await document.fonts.ready.catch(() => { });
   const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`;
   const t = String(d.titulo || "Entreno"); const tit = t.length > 22 ? t.slice(0, 21) + "…" : t;
-  const st = [d.dur != null ? [durTxt(d.dur), "Duración"] : null, d.ej ? [String(d.ej), d.ej === 1 ? "Ejercicio" : "Ejercicios"] : [String(d.series || 0), "Series"], d.vol ? [fmt(Math.round(d.vol)) + " kg", "Volumen"] : null].filter(Boolean);
+  const st = shareStats(d);
   const M = 96, BOT = H - 330; // márgenes: fuera de las zonas que tapa Instagram
   const fade = (h, a) => { const g = x.createLinearGradient(0, H - h, 0, H); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(.5, `rgba(0,0,0,${a * .6})`); g.addColorStop(1, `rgba(0,0,0,${a})`); x.fillStyle = g; x.fillRect(0, H - h, W, h); };
   x.textBaseline = "alphabetic";
@@ -1301,7 +1302,9 @@ async function shareImage(file, est = "clasico") {
     fade(900, .72); x.textAlign = "left"; x.shadowColor = "rgba(0,0,0,.3)"; x.shadowBlur = 10;
     x.font = F(600, 32); x.fillStyle = "#ff7a3d"; x.fillText("Entreno completado", M, BOT - 250);
     x.font = F(800, 92); x.fillStyle = "#fff"; x.fillText(tit, M, BOT - 160);
-    let sx = M; st.forEach(([v, l], k) => { x.font = F(750, 54); x.fillStyle = "#fff"; x.fillText(v, sx, BOT - 40); const w = Math.max(x.measureText(v).width, 120); x.font = F(500, 26); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(l, sx, BOT); sx += w + 72; });
+    const ws = st.map(([v, l]) => { x.font = F(750, 54); const a1 = x.measureText(v).width; x.font = F(500, 26); return Math.max(a1, x.measureText(l).width, 90); });
+    const gap = Math.max(36, Math.min(72, (W - M * 2 - ws.reduce((a, b) => a + b, 0)) / Math.max(1, st.length - 1)));
+    let sx = M; st.forEach(([v, l], k) => { x.font = F(750, 54); x.fillStyle = /^Récord/.test(l) ? "#ff7a3d" : "#fff"; x.fillText(v, sx, BOT - 40); x.font = F(500, 26); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(l, sx, BOT); sx += ws[k] + gap; });
     x.shadowBlur = 0; x.fillStyle = "rgba(255,255,255,.35)"; x.fillRect(M, BOT + 46, W - M * 2, 2);
     x.shadowBlur = 10; x.font = F(600, 30); x.fillStyle = "#fff"; x.textAlign = "right"; x.fillText(IG, W - M, BOT + 100); x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(fdate(today(), { day: "numeric", month: "long" }), M, BOT + 100);
   }
@@ -1359,6 +1362,8 @@ function sessionTable(sets, notas = {}) {
 }
 // Solo cuentan las series efectivas: las de aproximación/calentamiento no suman series ni volumen
 const esAprox = x => /aprox|calent|warm/i.test(String(x.tipo || ""));
+// Récords de la sesión: ejercicios cuyo mejor 1RM estimado supera la mejor marca anterior (+0,5 %)
+const prCount = (sets, prev) => { const ok = x => !x.hecho && !esAprox(x) && num(x.kg) != null && num(x.reps) != null; const best = {}; (prev || []).forEach(w => (w.sets || []).filter(ok).forEach(x => { const e = e1rm(x.kg, x.reps, x.rir); if (e && e > (best[x.ejercicio] || 0)) best[x.ejercicio] = e; })); const hoy = {}; (sets || []).filter(ok).forEach(x => { const e = e1rm(x.kg, x.reps, x.rir); if (e && e > (hoy[x.ejercicio] || 0)) hoy[x.ejercicio] = e; }); return Object.keys(hoy).filter(k => best[k] && hoy[k] > best[k] * 1.005).length; };
 const sesStats = w => { const all = (w.sets || []).filter(x => !esAprox(x)); const ss = all.filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: ss.length, ej: new Set(all.map(x => x.ejercicio)).size, vol }; };
 // Vista ordenada de un entreno registrado: datos clave y ejercicios desplegables
 function sesKpis(w) { const st = sesStats(w); return [w.rpe_sesion != null ? [w.rpe_sesion + "/10", "Dureza"] : null, w.duracion_min ? [w.duracion_min + " min", "Duración"] : null, !w.actividad ? [st.series, "Series"] : null, st.vol ? [fmt(st.vol, 0) + " kg", "Volumen"] : null, w.rpe_sesion != null && w.duracion_min ? [w.rpe_sesion * w.duracion_min + " UA", "Carga"] : null].filter(Boolean); }
@@ -1440,10 +1445,11 @@ async function saveWorkout(fin) {
   const notas_ej = {}; f.querySelectorAll('textarea[data-f="t"]').forEach(t => { const ei = +t.dataset.k.split("-")[0], e = ((a.contenido || {}).ejercicios || [])[ei], v = t.value.trim(); if (e && v) notas_ej[e.nombre] = notas_ej[e.nombre] ? notas_ej[e.nombre] + " · " + v : v; });
   const rpe = num((fin.querySelector('input[name="rpe"]:checked') || {}).value), com = fin.com.value.trim();
   const b = fin.querySelector("button.pri"); b.disabled = true;
+  const prev = await Promise.race([q(sb.from("workouts").select("sets").eq("client_id", S.me.cid).order("fecha", { ascending: false }).limit(300)), new Promise(ok => setTimeout(() => ok([]), 4000))]).catch(() => []);
   try {
     await op({ t: "insert", table: "workouts", row: { client_id: S.me.cid, fecha: today(), dia: a.titulo, sets, rpe_sesion: rpe, duracion_min: durAuto(dr), comentario: com, notas_ej, assignment_id: id } });
     await op({ t: "rpc", fn: "completar_asignacion", args: { p_id: id, p_hecho: true, p_respuesta: com } });
-    try { localStorage.removeItem(draftKey(id)); } catch { } clearInterval(S.durT); restStop(); sheet(""); const st = sesStats({ sets }); S.share = { titulo: a.titulo, dur: durAuto(dr), series: st.series, ej: st.ej, vol: st.vol, rpe }; location.hash = "hoy"; setTimeout(openShareDone, 450);
+    try { localStorage.removeItem(draftKey(id)); } catch { } clearInterval(S.durT); restStop(); sheet(""); const st = sesStats({ sets }); S.share = { titulo: a.titulo, dur: durAuto(dr), series: st.series, ej: st.ej, pr: prCount(sets, prev), vol: st.vol, rpe }; location.hash = "hoy"; setTimeout(openShareDone, 450);
   } catch (e) { toast(errMsg(e)); b.disabled = false; }
 }
 

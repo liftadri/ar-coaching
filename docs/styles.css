@@ -1957,3 +1957,4 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 @media (max-width:700px){.evb .cols2{grid-template-columns:1fr}.evseg{overflow-x:auto;flex-wrap:nowrap}}
 .rdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:7px;vertical-align:middle;transform:translateY(-1px);opacity:.85}.rdot.ok{background:#4cc38f}.rdot.warn{background:#d69e2e}.rdot.bad{background:var(--bad)}
 .pushsub{font-size:14px;margin:8px 0 0;color:var(--muted)}
+.finst .pr b{color:var(--accent,#ff7a3d)}
