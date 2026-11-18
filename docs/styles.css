@@ -1975,14 +1975,11 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .wkl li.wkg{counter-increment:none;display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:650;padding:14px 0 6px;border-top:0}
 .wkl li.wkg::before{content:none}
 .wkl li.wkg+li{border-top:0}
-.wkl li.wkg .wbl{width:22px;height:22px;font-size:12px;border-radius:7px}
+.wkl li.wkg .wbl{width:22px;height:22px;font-size:12px;border-radius:7px;color:var(--bg)}
 /* Series de aproximación: gris suave, secundarias */
 .pset.t-aprox{opacity:1;border-style:solid;border-color:transparent;background:var(--surface-2)}
-.pset.t-aprox .pl .n,.pset.t-aprox .pt{color:var(--muted);font-weight:500}
-.pset.t-aprox .ptag{background:transparent;color:var(--muted);padding:0;font-weight:500}
-.pset.t-aprox input{color:var(--muted)}
 .svt tr.ap td,.svt tr.ap b{color:var(--muted);font-weight:400}
-.ex.wx .pset.t-aprox{opacity:.5;transition:opacity .2s}
-.ex.wx .pset.t-aprox.done{opacity:.65}
+.ex.wx .pset.t-aprox{background:var(--surface-2);border:0;border-radius:14px;padding:10px 12px 12px;margin:0 -6px}
+.ex.wx .pset.t-aprox+.pset:not(.t-aprox){border-top:0}
 .ex.wx .pset.t-aprox .ptag{background:transparent;border:0;padding:0;color:var(--muted)}
-.ex.wx .pset.t-aprox .pin input{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.ex.wx .pset.t-aprox .pin input{background:var(--surface)}
