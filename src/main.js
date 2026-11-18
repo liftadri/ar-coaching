@@ -1165,7 +1165,7 @@ async function viewWorkout(id) {
     if (logs.length) {
       S.coach.wo = { ...(S.coach.wo || {}), ...Object.fromEntries(logs.map(w => [w.id, w])) };
       shell(a.tipo === "cardio" ? "Cardio" : "Entreno", `<div class="wkhero"><p class="wkd">${esc(sub)}</p><h2>${esc(a.titulo)}</h2><p class="wkdn">Hecho ✓</p></div>
-      ${logs.map(w => `<div class="card svin solo wkres"><div class="svk full">${sesKpis(w).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div>${sesBody(w)}<button type="button" class="btn block" data-act="wo-edit" data-id="${esc(w.id)}">Editar</button></div>`).join("")}
+      ${logs.map(w => `<div class="card svin solo wkres"><div class="svk full">${sesKpis(w).map(([v, l]) => `<span><b>${esc(v)}</b><em>${l}</em></span>`).join("")}</div>${sesBody(w)}<button type="button" class="btn block" data-act="wo-edit" data-id="${esc(w.id)}">Editar</button><button type="button" class="btn ghost block" data-act="w-foto" data-id="${esc(w.id)}">📸 Foto para tu historia</button></div>`).join("")}
       <button type="button" class="lnk ddedit" data-act="w-repetir" data-id="${esc(id)}">Hacerlo otra vez</button>`, { back: "entreno", noTabs: true });
       return;
     }
@@ -1298,7 +1298,7 @@ const IG = "@liftadri";
 const shareStats = d => [d.dur != null ? [durTxt(d.dur), "Duración"] : null, d.ej ? [String(d.ej), d.ej === 1 ? "Ejercicio" : "Ejercicios"] : null, d.pr ? [String(d.pr), d.pr === 1 ? "Récord" : "Récords"] : null, d.vol ? [fmt(Math.round(d.vol)) + " kg", "Volumen"] : null].filter(Boolean);
 function openShareDone() {
   const d = S.share; if (!d) return;
-  sheet(`<div class="shdone"><div class="shok">${IC_OK}</div><h2>¡Entreno completado!</h2><p class="small muted">Buen trabajo. Ya le llega todo a Adrián.</p>
+  sheet(`<div class="shdone"><div class="shok">${IC_OK}</div><h2>${d.otra ? esc(d.titulo) : "¡Entreno completado!"}</h2><p class="small muted">${d.otra ? esc(cap(fdate(d.fecha, { weekday: "long", day: "numeric", month: "long" }))) : "Buen trabajo. Ya le llega todo a Adrián."}</p>
   <div class="finst">${shareStats(d).map(([v, l]) => `<div${/^Récord/.test(l) ? ' class="pr"' : ""}><b>${esc(v)}</b><span>${l}</span></div>`).join("")}</div></div>
   <div class="shcta"><b>¿Lo celebras?</b><span>Hazte una foto, súbela a tu historia y etiqueta a <b>${IG}</b>. Te pongo tu entreno encima de la foto.</span></div>
   <button type="button" class="btn pri block" data-act="cam-open">📸 Abrir la cámara</button>
@@ -1328,7 +1328,7 @@ async function shareImage(file, est = "clasico") {
     const gap = Math.max(36, Math.min(72, (W - M * 2 - ws.reduce((a, b) => a + b, 0)) / Math.max(1, st.length - 1)));
     let sx = M; st.forEach(([v, l], k) => { x.font = F(750, 54); x.fillStyle = /^Récord/.test(l) ? "#ff7a3d" : "#fff"; x.fillText(v, sx, BOT - 40); x.font = F(500, 26); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(l, sx, BOT); sx += ws[k] + gap; });
     x.shadowBlur = 0; x.fillStyle = "rgba(255,255,255,.35)"; x.fillRect(M, BOT + 46, W - M * 2, 2);
-    x.shadowBlur = 10; x.font = F(600, 30); x.fillStyle = "#fff"; x.textAlign = "right"; x.fillText(IG, W - M, BOT + 100); x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(fdate(today(), { day: "numeric", month: "long" }), M, BOT + 100);
+    x.shadowBlur = 10; x.font = F(600, 30); x.fillStyle = "#fff"; x.textAlign = "right"; x.fillText(IG, W - M, BOT + 100); x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(fdate(d.fecha || today(), { day: "numeric", month: "long" }), M, BOT + 100);
   }
   return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .92));
 }
@@ -4420,6 +4420,7 @@ document.addEventListener("click", async ev => {
       case "peso": openPeso(); break;
       case "item-edit": openItem(a.dataset.id, true); break;
       case "w-repetir": S.sub.repetir = true; viewWorkout(a.dataset.id); break;
+      case "w-foto": try { const w = (await q(sb.from("workouts").select("*").eq("id", a.dataset.id).limit(1)))[0]; if (!w) break; const prev = await q(sb.from("workouts").select("sets,fecha").eq("client_id", w.client_id).lt("fecha", w.fecha).order("fecha", { ascending: false }).limit(300)).catch(() => []); const st = sesStats(w); S.share = { titulo: w.dia || "Entreno", dur: w.duracion_min, series: st.series, ej: st.ej, pr: prCount(w.sets, prev), vol: st.vol, fecha: w.fecha, otra: true }; openShareDone(); } catch (e) { toast(errMsg(e)); } break;
       case "extra-open": openExtra(); break;
       case "salud-edit": openSalud(); break;
       case "salud-add": { $("#srows").insertAdjacentHTML("beforeend", saludRow()); const r = $("#srows").lastElementChild; r && r.querySelector("input").focus(); break; }
