@@ -1075,7 +1075,7 @@ function restSecs(t) {
 }
 const RT = { end: 0, dur: 0, iv: null, done: false };
 const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
-const restLong = x => !x ? "" : x < 60 ? `${x} s` : x % 60 ? `${Math.floor(x / 60)} min ${x % 60} s` : `${x / 60} min`;
+const restLong = x => !x ? "" : x < 60 ? `${x}\u00a0s` : x % 60 ? `${Math.floor(x / 60)}\u00a0min ${x % 60}\u00a0s` : `${x / 60}\u00a0min`;
 const restTxt = x => !x ? "" : x < 60 ? `${x} s` : x % 60 ? mmss(x) : `${x / 60} min`;
 const IC_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`;
 const IC_HIST = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>`;
@@ -1098,13 +1098,26 @@ function openVideo(url, nombre) {
 }
 // Cabecera común de cada ejercicio en el entreno del cliente
 // Bloques del entreno: ejercicios seguidos con el mismo bloque («Fuerza», o A1/A2 → A). Solo si hay más de uno.
-const wkGroups = exs => { const G = []; exs.forEach((e, ei) => { const b = String(e.bloque || "").trim(); const m = b.match(/^([A-Z])\d*$/i); const key = m ? m[1].toUpperCase() : b.toLowerCase(); const last = G[G.length - 1]; if (last && last.key === key) last.idx.push(ei); else G.push({ key, nombre: m ? "" : b, idx: [ei] }); }); if (G.length < 2 || G.some(g => !g.key)) return null; G.forEach((g, i) => g.letra = String.fromCharCode(65 + i)); return G; };
+const wkGroups = exs => { const G = []; exs.forEach((e, ei) => { const b = String(e.bloque || "").trim(); const m = b.match(/^([A-Z])\d*$/i); const key = m ? m[1].toUpperCase() : b.toLowerCase(); const last = G[G.length - 1]; if (last && last.key === key) last.idx.push(ei); else G.push({ key, nombre: m ? ({ P: "Potencia" })[key] || "" : b, idx: [ei] }); }); if (G.length < 2 || G.some(g => !g.key)) return null; G.forEach((g, i) => g.letra = String.fromCharCode(65 + i)); return G; };
 // Texto de notas por párrafos: si un párrafo empieza con una línea corta sin punto, va como subtítulo
-const notasHtml = t => String(t || "").trim().split(/\n\s*\n/).map(par => { const ls = par.split("\n").map(x => x.trim()).filter(Boolean); if (ls.length > 1 && ls[0].length <= 28 && !/[.,;:]$/.test(ls[0])) return `<p class="ntp"><b>${esc(ls[0])}</b>${esc(ls.slice(1).join("\n"))}</p>`; return `<p>${esc(ls.join("\n"))}</p>`; }).join("");
+// Texto legible a partir de cualquier nota (también las antiguas): un párrafo por bloque, una idea por línea,
+// listas con «·» en líneas, frases largas separadas, y 8' / 30'' como «8 min» / «30 s».
+const txtClean = x => x.replace(/(\d)\s*''/g, "$1 s").replace(/(\d)\s*'/g, "$1 min").replace(/(\d)-(\d)/g, "$1–$2").replace(/\s*→\s*/g, ", ").replace(/\s+/g, " ").trim();
+const txtParas = (t, larga = 90) => String(t || "").trim().split(/\n\s*\n/).map(par => {
+  let ls = par.split("\n").map(x => x.trim()).filter(Boolean), head = "";
+  if (ls.length === 1) {
+    let l = ls[0]; const m = l.match(/^([^:·.]{2,45}):\s+(.+)$/);
+    if (m && /\s·\s/.test(m[2])) { head = m[1]; l = m[2]; }
+    ls = /\s·\s/.test(l) ? l.split(/\s+·\s+/) : l.length > larga ? l.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/) : [l];
+  } else if (ls[0].length <= 28 && !/[.,;:]$/.test(ls[0])) { head = ls[0]; ls = ls.slice(1); }
+  ls = ls.map(txtClean).filter(Boolean).map(x => x[0].toUpperCase() + x.slice(1));
+  return { head: head ? txtClean(head) : "", ls };
+});
+const notasHtml = (t, larga) => txtParas(t, larga).map(({ head, ls }) => `<p${head ? ' class="ntp"' : ""}>${head ? `<b>${esc(head)}</b>` : ""}${esc(ls.join("\n"))}</p>`).join("");
 function exHead(e, meta, pg, n = 0, done = 0, open = false) {
-  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb${/^[A-Z]\d+$/i.test(String(e.bloque).trim()) ? "" : " wxbn"}">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta).replace(/\n/g, '<span class="wxsep"> · </span><br>')}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
+  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb${/^[A-Z]\d+$/i.test(String(e.bloque).trim()) ? "" : " wxbn"}">${esc(e.bloque)}</span>` : ""}<h3>${esc(String(e.nombre).replace(/\.$/, ""))}</h3>${meta ? `<p class="wxm">${esc(meta).replace(/\n/g, '<span class="wxsep"> · </span><br>')}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
   ${(() => { const u = exVideo(e); return u ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(u)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : `<a class="wxv buscar" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}" target="_blank" rel="noopener noreferrer">${IC_PLAY}<span>Buscar vídeo</span></a>`; })()}</div>
-  ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${e.notas ? `<p class="wxn">${esc(e.notas)}</p>` : ""}`;
+  ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${e.notas ? `<div class="wxn">${notasHtml(e.notas, 60)}</div>` : ""}`;
 }
 const okBtn = (k, on) => `<button type="button" class="sok" data-act="set-ok" data-k="${k}" aria-pressed="${!!on}" aria-label="Serie hecha">${IC_OK}</button>`;
 let wakeLock = null;
@@ -1165,7 +1178,7 @@ async function viewWorkout(id) {
     ${a.hecho ? `<div class="wkdone">Lo vas a hacer otra vez. Se guarda como un registro nuevo.</div>` : ""}
     ${c.calentamiento ? `<div class="card wkc"><h2>Calentamiento</h2>${notasHtml(c.calentamiento)}</div>` : ""}
     ${notas ? `<div class="card wkc"><h2>Notas de Adrián</h2>${notasHtml(notas)}</div>` : ""}
-    <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li><b>${esc(e.nombre)}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
+    <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li><b>${esc(String(e.nombre).replace(/\.$/, ""))}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
     <div class="wkgo"><button type="button" class="btn pri block" data-act="w-start" data-id="${esc(id)}">Empezar entreno</button></div>`, { back: "entreno", noTabs: true });
     return;
   }
@@ -1180,7 +1193,7 @@ async function viewWorkout(id) {
       : `<label class="wxdone"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""}><span>Hecho</span></label>`}</div>`;
   };
   shell(a.titulo, `
-  ${c.calentamiento || notas || c.objetivo ? `<details class="card wkinfo"><summary>Calentamiento y notas</summary>${c.objetivo ? `<p class="ntp"><b>Objetivo</b>${esc(c.objetivo)}</p>` : ""}${c.calentamiento ? `<p class="ntp"><b>Calentamiento</b>${esc(String(c.calentamiento).trim())}</p>` : ""}${notas ? notasHtml(notas) : ""}</details>` : ""}
+  ${c.calentamiento || notas || c.objetivo ? `<details class="card wkinfo"><summary>Calentamiento y notas</summary>${c.objetivo ? `<p class="ntp"><b>Objetivo</b>${esc(c.objetivo)}</p>` : ""}${c.calentamiento ? `<p class="ntp"><b>Calentamiento</b>${esc(txtParas(c.calentamiento).map(p => [p.head, ...p.ls].filter(Boolean).join("\n")).join("\n"))}</p>` : ""}${notas ? notasHtml(notas) : ""}</details>` : ""}
   <form id="f-workout" data-id="${esc(id)}" class="wkform">
   ${(() => { const G = wkGroups(exs); if (!G) return exs.map((e, ei) => exNotaWrap(ei, draft, exHtml(e, ei))).join("");
     const exOk = (e, ei) => { const n = e.series && e.series.length ? e.series.length : seriesOf(e.sxr); if (!n) return !!(draft[`${ei}-done`] || {}).hecho; for (let si = 0; si < n; si++) if (!(draft[`${ei}-${si}`] || {}).ok) return false; return true; };
@@ -1862,12 +1875,28 @@ const pTipo = k => (P_TIPOS.find(t => t[0] === k) || P_TIPOS[0])[1];
 function presHuman(p) {
   const ss = (p && p.series) || []; if (!ss.length) return "";
   const g = []; ss.forEach(x => { const r = x.tipo === "cluster" || x.tipo === "aprox" ? "" : String(x.reps || "").trim(); const l = g[g.length - 1]; if (l && l.t === x.tipo && l.r === r) l.n++; else g.push({ t: x.tipo, r, n: 1 }); });
-  const pl = (n, a, b) => n === 1 ? a : b, rp = (r, t) => r ? (t === "iso" ? ` de ${r} s` : ` de ${r} reps`) : "";
+  const pl = (n, a, b) => n === 1 ? a : b, rp = (r, t) => (r = String(r || "").replace(/(\d)-(\d)/g, "$1–$2")) ? (t === "iso" ? ` de ${r} s` : / m$/.test(r) ? ` de ${r}` : ` de ${r} reps`) : "";
   const parts = g.map(({ t, r, n }) => t === "aprox" ? `${n} de aproximación` : t === "top" ? `${n} ${pl(n, "serie pesada", "series pesadas")}${rp(r)}` : t === "backoff" ? `${n}${rp(r)} ${pl(n, "más ligera", "más ligeras")}` : t === "drop" ? `${n} drop set` : t === "cluster" ? `${n} ${pl(n, "serie", "series")} en cluster` : `${n} ${pl(n, "serie", "series")}${rp(r, t)}`);
   return parts.length > 1 ? parts.slice(0, -1).join(", ") + " y " + parts[parts.length - 1] : parts[0];
 }
-const sxrHuman = t => { t = String(t || "").trim(); const m = t.match(/^(\d+)\s*[×x]\s*([\d–\-]+)\s*(.*)$/); if (!m) return t; let [, n, r, rest] = m; rest = rest.trim(); const s = +n === 1 ? "serie" : "series"; if (/^(''|″|")/.test(rest)) return `${n} ${s} de ${r} s${rest.replace(/^(''|″|")/, "").replace(/^\s*/, " ").trimEnd()}`.trim(); if (/^m\b/.test(rest)) return `${n} ${s} de ${r} m${rest.slice(1)}`; return `${n} ${s} de ${r} reps${rest ? " " + rest.replace(/^\/\s*/, "por ") : ""}`; };
-const efTxt = v => { v = String(v || "").trim(); if (!v || v === "—") return ""; return /^[\d.,–\-\s]+$/.test(v) ? "RIR " + v : v.replace(/^intenci[oó]n m[aá]x\.?$/i, "Máxima intención"); };
+const sxrPart = t => { t = t.trim().replace(/(\d)-(\d)/g, "$1–$2"); let m;
+  const pl = (n, a, b) => +n === 1 ? a : b;
+  if ((m = t.match(/^(\d+)?\s*aprox(?:imaci[oó]n)?\.?\s*([\d–]+)?$/i))) return `${m[1] || 1} de aproximación`;
+  if ((m = t.match(/^(?:(\d+)\s*[×x]\s*)?top(?: set)?\s*([\d–]+)$/i))) return `${m[1] || 1} ${pl(m[1] || 1, "serie pesada", "series pesadas")} de ${m[2]} reps`;
+  if ((m = t.match(/^(?:(\d+)\s*[×x]\s*)?back-?off\s*(?:[×x]\s*)?([\d–]+)$/i))) return `${m[1] || 1} de ${m[2]} reps ${pl(m[1] || 1, "más ligera", "más ligeras")}`;
+  if ((m = t.match(/^(?:(\d+)\s*[×x]\s*)?(\d+)\s*back-?off\s*[×x]\s*([\d–]+)$/i))) return `${m[2]} de ${m[3]} reps ${pl(m[2], "más ligera", "más ligeras")}`;
+  if ((m = t.match(/^(?:(\d+)\s*[×x]\s*)?myo-?reps.*$/i))) return `${m[1] || 1} en myo-reps`;
+  if ((m = t.match(/^(?:(\d+)\s*[×x]\s*)?drop set.*$/i))) return `${m[1] || 1} drop set`;
+  if ((m = t.match(/^(?:(\d+)\s*[×x]\s*)?cluster\s*(\d+\s*[×x]\s*\d+)?$/i))) return `${m[1] || 1} ${pl(m[1] || 1, "serie", "series")} en cluster${m[2] ? ` (${m[2].replace(/\s/g, "")})` : ""}`;
+  if ((m = t.match(/^(\d+)\s*[×x]\s*isom[eé]trico\s*\(s\)\s*([\d–]+)$/i))) return `${m[1]} ${pl(m[1], "serie", "series")} de ${m[2]} s`;
+  if ((m = t.match(/^emom\s*([\d–]+)\s*'?$/i))) return `EMOM de ${m[1]} min`;
+  if (!(m = t.match(/^(\d+)\s*[×x]\s*([\d–]+)\s*(.*)$/))) return t;
+  let [, n, r, rest] = m; rest = rest.trim(); const s = pl(n, "serie", "series");
+  if (/^(''|″|"|s\b)/.test(rest)) return `${n} ${s} de ${r} s${rest.replace(/^(''|″|"|s\b)/, "").replace(/^\s*\/\s*/, " por ").replace(/^\s+/, " ")}`.trimEnd();
+  if (/^m\b/.test(rest)) return `${n} ${s} de ${r} m${rest.slice(1).replace(/^\s*\/\s*/, " por ")}`;
+  return `${n} ${s} de ${r} reps${rest ? " " + rest.replace(/^\/\s*/, "por ") : ""}`; };
+const sxrHuman = t => { const ps = []; String(t || "").split(/\s+\+\s+/).map(sxrPart).filter(Boolean).forEach(x => { const m = x.match(/^(\d+) de aproximación$/), l = ps.length && ps[ps.length - 1].match(/^(\d+) de aproximación$/); if (m && l) ps[ps.length - 1] = `${+l[1] + +m[1]} de aproximación`; else ps.push(x); }); return ps.length > 1 ? ps.slice(0, -1).join(", ") + " y " + ps[ps.length - 1] : ps[0] || ""; };
+const efTxt = v => { v = String(v || "").trim().replace(/(\d)-(\d)/g, "$1–$2"); if (!v || v === "—" || v === "-") return ""; return /^[\d.,–\s]+$/.test(v) ? "RIR " + v : v.replace(/^intenci[oó]n m[aá]x\.?$/i, "Máxima intención"); };
 function exMeta(e) {
   const ss = e.series && e.series.length ? e.series : null; let l1, ef = "";
   if (ss) { l1 = presHuman(e); const w = ss.filter(x => x.tipo !== "aprox"); const pick = k => { const v = [...new Set(w.map(x => String(x[k] ?? "").trim()))]; return v.length === 1 && v[0] ? v[0] : ""; }; const rir = pick("rir"), rpe = pick("rpe"), es = pick("rpe_e"); ef = rir ? "RIR " + rir : rpe ? "RPE " + rpe : es ? `Esfuerzo ${es}/10` : ""; }

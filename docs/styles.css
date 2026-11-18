@@ -1991,3 +1991,5 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .wxn{white-space:pre-line}
 .wxd[open] .wxsep{display:none}
 .wxd:not([open]) .wxm br{display:none}
+.wxn p{margin:0;white-space:pre-line}
+.wxn p+p{margin-top:8px}
