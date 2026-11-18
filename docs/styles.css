@@ -1983,3 +1983,11 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .ex.wx .pset.t-aprox+.pset:not(.t-aprox){border-top:0}
 .ex.wx .pset.t-aprox .ptag{background:transparent;border:0;padding:0;color:var(--muted)}
 .ex.wx .pset.t-aprox .pin input{background:var(--surface)}
+.wxd[open] .wxm,.wkl li span{white-space:pre-line}
+.wkc p+p,.wkinfo p+p{margin-top:12px}
+.ntp b{display:block;font-weight:650;margin-bottom:2px}
+.wkinfo p{white-space:pre-line}
+.wkc p{white-space:pre-line}
+.wxn{white-space:pre-line}
+.wxd[open] .wxsep{display:none}
+.wxd:not([open]) .wxm br{display:none}

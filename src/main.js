@@ -1075,6 +1075,7 @@ function restSecs(t) {
 }
 const RT = { end: 0, dur: 0, iv: null, done: false };
 const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
+const restLong = x => !x ? "" : x < 60 ? `${x} s` : x % 60 ? `${Math.floor(x / 60)} min ${x % 60} s` : `${x / 60} min`;
 const restTxt = x => !x ? "" : x < 60 ? `${x} s` : x % 60 ? mmss(x) : `${x / 60} min`;
 const IC_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`;
 const IC_HIST = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>`;
@@ -1098,8 +1099,10 @@ function openVideo(url, nombre) {
 // Cabecera común de cada ejercicio en el entreno del cliente
 // Bloques del entreno: ejercicios seguidos con el mismo bloque («Fuerza», o A1/A2 → A). Solo si hay más de uno.
 const wkGroups = exs => { const G = []; exs.forEach((e, ei) => { const b = String(e.bloque || "").trim(); const m = b.match(/^([A-Z])\d*$/i); const key = m ? m[1].toUpperCase() : b.toLowerCase(); const last = G[G.length - 1]; if (last && last.key === key) last.idx.push(ei); else G.push({ key, nombre: m ? "" : b, idx: [ei] }); }); if (G.length < 2 || G.some(g => !g.key)) return null; G.forEach((g, i) => g.letra = String.fromCharCode(65 + i)); return G; };
+// Texto de notas por párrafos: si un párrafo empieza con una línea corta sin punto, va como subtítulo
+const notasHtml = t => String(t || "").trim().split(/\n\s*\n/).map(par => { const ls = par.split("\n").map(x => x.trim()).filter(Boolean); if (ls.length > 1 && ls[0].length <= 28 && !/[.,;:]$/.test(ls[0])) return `<p class="ntp"><b>${esc(ls[0])}</b>${esc(ls.slice(1).join("\n"))}</p>`; return `<p>${esc(ls.join("\n"))}</p>`; }).join("");
 function exHead(e, meta, pg, n = 0, done = 0, open = false) {
-  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb${/^[A-Z]\d+$/i.test(String(e.bloque).trim()) ? "" : " wxbn"}">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta)}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
+  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb${/^[A-Z]\d+$/i.test(String(e.bloque).trim()) ? "" : " wxbn"}">${esc(e.bloque)}</span>` : ""}<h3>${esc(e.nombre)}</h3>${meta ? `<p class="wxm">${esc(meta).replace(/\n/g, '<span class="wxsep"> · </span><br>')}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
   ${(() => { const u = exVideo(e); return u ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(u)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : `<a class="wxv buscar" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}" target="_blank" rel="noopener noreferrer">${IC_PLAY}<span>Buscar vídeo</span></a>`; })()}</div>
   ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${e.notas ? `<p class="wxn">${esc(e.notas)}</p>` : ""}`;
 }
@@ -1141,7 +1144,7 @@ async function viewWorkout(id) {
   const exs = c.ejercicios || [];
   const sub = cap(fdate(a.fecha, { weekday: "long", day: "numeric", month: "short" }));
   const nSeries = exs.reduce((t, e) => t + (e.series && e.series.length ? e.series.filter(x => x.tipo !== "aprox").length : seriesOf(e.sxr) || 0), 0);
-  const metaOf = e => [e.series && e.series.length ? presSummary(e) : e.sxr, e.rir && e.rir !== "—" ? (/^(rpe|@)/i.test(e.rir) ? e.rir : "RIR " + e.rir) : "", restSecs(e.descanso) ? restTxt(restSecs(e.descanso)) + " descanso" : ""].filter(Boolean).join(" · ");
+  const metaOf = exMeta;
   const notas = [c.notas, c.detalle].filter(Boolean).join("\n\n");
   // Paso previo: resumen de la sesión y botón para empezar
   if (a.hecho && !draft.t0 && !S.sub.repetir) {
@@ -1160,8 +1163,8 @@ async function viewWorkout(id) {
       <div class="wkst"><span><b>${exs.length}</b> ejercicios</span>${nSeries ? `<span><b>${nSeries}</b> series</span>` : ""}${c.dur_est ? `<span><b>≈ ${esc(c.dur_est)}</b> min</span>` : ""}</div>
       ${c.objetivo ? `<p class="wko">${esc(c.objetivo)}</p>` : ""}</div>
     ${a.hecho ? `<div class="wkdone">Lo vas a hacer otra vez. Se guarda como un registro nuevo.</div>` : ""}
-    ${c.calentamiento ? `<div class="card wkc"><h2>Calentamiento</h2><p>${esc(c.calentamiento)}</p></div>` : ""}
-    ${notas ? `<div class="card wkc"><h2>Notas de Adrián</h2><p>${esc(notas)}</p></div>` : ""}
+    ${c.calentamiento ? `<div class="card wkc"><h2>Calentamiento</h2>${notasHtml(c.calentamiento)}</div>` : ""}
+    ${notas ? `<div class="card wkc"><h2>Notas de Adrián</h2>${notasHtml(notas)}</div>` : ""}
     <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li><b>${esc(e.nombre)}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
     <div class="wkgo"><button type="button" class="btn pri block" data-act="w-start" data-id="${esc(id)}">Empezar entreno</button></div>`, { back: "entreno", noTabs: true });
     return;
@@ -1177,7 +1180,7 @@ async function viewWorkout(id) {
       : `<label class="wxdone"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""}><span>Hecho</span></label>`}</div>`;
   };
   shell(a.titulo, `
-  ${c.calentamiento || notas || c.objetivo ? `<details class="card wkinfo"><summary>Calentamiento y notas</summary>${c.objetivo ? `<p><b>Objetivo.</b> ${esc(c.objetivo)}</p>` : ""}${c.calentamiento ? `<p><b>Calentamiento.</b> ${esc(c.calentamiento)}</p>` : ""}${notas ? `<p>${esc(notas)}</p>` : ""}</details>` : ""}
+  ${c.calentamiento || notas || c.objetivo ? `<details class="card wkinfo"><summary>Calentamiento y notas</summary>${c.objetivo ? `<p class="ntp"><b>Objetivo</b>${esc(c.objetivo)}</p>` : ""}${c.calentamiento ? `<p class="ntp"><b>Calentamiento</b>${esc(String(c.calentamiento).trim())}</p>` : ""}${notas ? notasHtml(notas) : ""}</details>` : ""}
   <form id="f-workout" data-id="${esc(id)}" class="wkform">
   ${(() => { const G = wkGroups(exs); if (!G) return exs.map((e, ei) => exNotaWrap(ei, draft, exHtml(e, ei))).join("");
     const exOk = (e, ei) => { const n = e.series && e.series.length ? e.series.length : seriesOf(e.sxr); if (!n) return !!(draft[`${ei}-done`] || {}).hecho; for (let si = 0; si < n; si++) if (!(draft[`${ei}-${si}`] || {}).ok) return false; return true; };
@@ -1429,12 +1432,12 @@ function presClient(e, ei, prev, draft, wo) {
     let kgPh = x.kg || (cols.includes("pct") && x.pct && rm ? fmt(r125(rm * x.pct / 100)) : "") || (pv && pv.kg != null ? pv.kg : "kg");
     const top = (x.tipo === "backoff" && topI >= 0 && x.rel ? ` data-rel="${esc(x.rel)}" data-ei="${ei}"` : "") + (x.kg || (cols.includes("pct") && x.pct && rm) || (x.tipo === "backoff" && x.rel) ? " data-plan" : "");
     const inp = (f, ph, mode = "decimal", extra = "") => `<label><span>${ph}</span><input inputmode="${mode}" data-k="${k}" data-f="${f}" value="${esc(dv[f] ?? "")}" placeholder="${esc(f === "kg" ? kgPh : (num(x[f]) != null ? num(x[f]) : pv && pv[f] != null ? pv[f] : "–"))}"${extra} aria-label="${ph} serie ${si + 1}"></label>`;
-    return `<div class="pset t-${esc(x.tipo)}${dv.ok ? " done" : ""}" data-rest="${restSecs(x.desc || e.descanso)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
+    return `<div class="pset t-${esc(x.tipo)}${dv.ok ? " done" : ""}" data-rest="${restSecs(x.desc || e.descanso)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(({ top: "Serie pesada", backoff: "Más ligera", iso: "Isométrico" })[x.tipo] || pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
       <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}${okBtn(k, dv.ok)}</div></div>`;
   }).join("");
   const mk = exMarks(e.nombre, wo, prev);
   const nd = ss.filter((_, si) => (draft[`${ei}-${si}`] || {}).ok).length;
-  return `<div class="ex wx" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}">${exHead(e, [presSummary(e), restSecs(e.descanso) ? restTxt(restSecs(e.descanso)) + " descanso" : ""].filter(Boolean).join(" · "), pg, ss.length, nd, ei === S.wkOpen)}
+  return `<div class="ex wx" data-rest="${restSecs(e.descanso)}" data-exn="${esc(e.nombre)}">${exHead(e, exMeta(e), pg, ss.length, nd, ei === S.wkOpen)}
 ${mk.html}
   <div class="psets">${rows}</div>
   ${eff[0] === "rpe" ? `<p class="tiny muted" style="margin:6px 0 0">RPE: 10 = no podías hacer ni una más · 9 = te quedaba 1 · 8 = te quedaban 2.</p>` : eff[0] === "esf" ? `<p class="tiny muted" style="margin:6px 0 0">Esfuerzo: cómo de dura te ha parecido la serie, de 0 a 10.</p>` : ""}</div>`;
@@ -1855,6 +1858,23 @@ const P_TIPOS = [["normal", "Serie"], ["aprox", "Aproximación"], ["top", "Top s
 const P_HINT = { rpe: "6–10 (10 = sin repeticiones en reserva)", rpe_e: "Esfuerzo percibido 0–10", vel: "Velocidad media propulsiva objetivo", vl: "Corta la serie al perder este % de velocidad", pct: "Se calcula con su 1RM estimado", tempo: "Excéntrica-pausa-concéntrica-pausa, p. ej. 3-1-1-0" };
 const pTipo = k => (P_TIPOS.find(t => t[0] === k) || P_TIPOS[0])[1];
 // Resumen corto de la programación (lo que se ve en calendario, listados…)
+// Resumen legible para el cliente: en castellano, sin siglas, en dos líneas (series / esfuerzo y descanso)
+function presHuman(p) {
+  const ss = (p && p.series) || []; if (!ss.length) return "";
+  const g = []; ss.forEach(x => { const r = x.tipo === "cluster" || x.tipo === "aprox" ? "" : String(x.reps || "").trim(); const l = g[g.length - 1]; if (l && l.t === x.tipo && l.r === r) l.n++; else g.push({ t: x.tipo, r, n: 1 }); });
+  const pl = (n, a, b) => n === 1 ? a : b, rp = (r, t) => r ? (t === "iso" ? ` de ${r} s` : ` de ${r} reps`) : "";
+  const parts = g.map(({ t, r, n }) => t === "aprox" ? `${n} de aproximación` : t === "top" ? `${n} ${pl(n, "serie pesada", "series pesadas")}${rp(r)}` : t === "backoff" ? `${n}${rp(r)} ${pl(n, "más ligera", "más ligeras")}` : t === "drop" ? `${n} drop set` : t === "cluster" ? `${n} ${pl(n, "serie", "series")} en cluster` : `${n} ${pl(n, "serie", "series")}${rp(r, t)}`);
+  return parts.length > 1 ? parts.slice(0, -1).join(", ") + " y " + parts[parts.length - 1] : parts[0];
+}
+const sxrHuman = t => { t = String(t || "").trim(); const m = t.match(/^(\d+)\s*[×x]\s*([\d–\-]+)\s*(.*)$/); if (!m) return t; let [, n, r, rest] = m; rest = rest.trim(); const s = +n === 1 ? "serie" : "series"; if (/^(''|″|")/.test(rest)) return `${n} ${s} de ${r} s${rest.replace(/^(''|″|")/, "").replace(/^\s*/, " ").trimEnd()}`.trim(); if (/^m\b/.test(rest)) return `${n} ${s} de ${r} m${rest.slice(1)}`; return `${n} ${s} de ${r} reps${rest ? " " + rest.replace(/^\/\s*/, "por ") : ""}`; };
+const efTxt = v => { v = String(v || "").trim(); if (!v || v === "—") return ""; return /^[\d.,–\-\s]+$/.test(v) ? "RIR " + v : v.replace(/^intenci[oó]n m[aá]x\.?$/i, "Máxima intención"); };
+function exMeta(e) {
+  const ss = e.series && e.series.length ? e.series : null; let l1, ef = "";
+  if (ss) { l1 = presHuman(e); const w = ss.filter(x => x.tipo !== "aprox"); const pick = k => { const v = [...new Set(w.map(x => String(x[k] ?? "").trim()))]; return v.length === 1 && v[0] ? v[0] : ""; }; const rir = pick("rir"), rpe = pick("rpe"), es = pick("rpe_e"); ef = rir ? "RIR " + rir : rpe ? "RPE " + rpe : es ? `Esfuerzo ${es}/10` : ""; }
+  else { l1 = sxrHuman(e.sxr); ef = efTxt(e.rir); }
+  const rs = restSecs(e.descanso); const l2 = [ef, rs ? "Descanso " + restLong(rs) : ""].filter(Boolean).join(" · ");
+  return [l1, l2].filter(Boolean).join("\n");
+}
 function presSummary(p) {
   const s0 = (p && p.series) || []; if (!s0.length) return "";
   const na = s0.filter(x => x.tipo === "aprox").length, ss = s0.filter(x => x.tipo !== "aprox"); if (!ss.length) return `${na} aprox.`;
@@ -1873,14 +1893,14 @@ function presTarget(x, cols, ctx = {}) {
   else if (x.reps) p.push(`${x.reps} reps`);
   if (cols.includes("kg") && x.kg) p.push(`${x.kg} kg`);
   if (cols.includes("pct") && x.pct) p.push(`${x.pct} % 1RM${ctx.rm ? ` ≈ ${fmt(Math.round(ctx.rm * x.pct / 100 / 1.25) * 1.25)} kg` : ""}`);
-  if (x.tipo === "backoff" && x.rel) p.push(`${x.rel} % del top set`);
+  if (x.tipo === "backoff" && x.rel) p.push(`${x.rel} % de la serie pesada`);
   if (cols.includes("rir") && x.rir !== "" && x.rir != null) p.push(`RIR ${x.rir}`);
   if (cols.includes("rpe") && x.rpe) p.push(`RPE ${x.rpe}`);
   if (cols.includes("rpe_e") && x.rpe_e) p.push(`esfuerzo ${x.rpe_e}/10`);
   if (cols.includes("vel") && x.vel) p.push(`${x.vel} m/s`);
   if (cols.includes("vl") && x.vl) p.push(`para al perder ${x.vl} % de velocidad`);
   if (cols.includes("tempo") && x.tempo) p.push(`tempo ${x.tempo}`);
-  if (x.desc) p.push(`descanso ${x.desc}`);
+  if (x.desc) p.push(`descanso ${restSecs(x.desc) ? restLong(restSecs(x.desc)) : x.desc}`);
   return p.join(" · ");
 }
 function presRow(x = {}, cols, i) {
