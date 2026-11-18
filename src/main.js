@@ -653,7 +653,7 @@ function asigRow(x) {
   const h = x.tipo === "workout" ? `data-act="go" data-h="a-${esc(x.id)}"` : `data-act="item" data-id="${esc(x.id)}"`;
   const n = x.tipo === "workout" ? ((x.contenido && x.contenido.ejercicios) || []).length : 0;
   const sub = [TIPOS[x.tipo], n ? n + " ejercicios" : "", x.fecha !== t ? (late ? "era para el " : "") + fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
-  const btn = { workout: "Empezar", nota: "Leer", peso: "Apuntar", fotos: "Subir", medidas: "Medir", formulario: "Rellenar" }[x.tipo] || (late ? "Pendiente" : "Abrir");
+  const btn = x.fecha > t && !["workout", "cardio", "nota"].includes(x.tipo) ? "Ver" : { workout: "Empezar", nota: "Leer", peso: "Apuntar", fotos: "Subir", medidas: "Medir", formulario: "Rellenar" }[x.tipo] || (late ? "Pendiente" : "Abrir");
   return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
 }
 
@@ -971,6 +971,15 @@ async function openItem(id, editar) {
     ${dd}${resExtra(x)}${resp.length || x.respuesta ? `<div class="card"><h2>Lo que respondiste</h2>${resp.map(r => `<p class="small" style="margin:4px 0"><b>${esc(r.p)}</b><br>${esc(r.r)}</p>`).join("")}${x.respuesta ? `<p class="small" style="margin:4px 0;white-space:pre-wrap">${esc(x.respuesta)}</p>` : ""}</div>` : ""}
     ${!dd && !resExtra(x) && !resp.length && !x.respuesta ? `<p class="small muted">Lo marcaste como hecho.</p>` : ""}
     ${puede ? `<button type="button" class="btn pri block" data-act="item-edit" data-id="${esc(id)}">Editar</button>` : ""}<button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
+    return;
+  }
+  // Tareas de días que aún no han llegado: se pueden ver, pero no rellenar (entrenos y cardio sí se pueden adelantar)
+  if (!x.hecho && x.fecha > today() && !["workout", "cardio", "nota"].includes(x.tipo)) {
+    const preg = (c.preguntas || []).map(p => String(p).replace(/^(1-10|1-5|Sí\/No):\s*/i, "")).filter(Boolean);
+    sheet(`<h2>${esc(x.titulo)}</h2><p class="tiny muted" style="margin:-4px 0 0">${esc(cap(fdate(x.fecha, { weekday: "long", day: "numeric", month: "long" })))}</p>
+    ${c.detalle ? `<div class="card wkc">${notasHtml(c.detalle)}</div>` : ""}${preg.length ? `<div class="card wkc"><h2>Lo que te preguntaré</h2><p>${esc(preg.join("\n"))}</p></div>` : ""}
+    <div class="futnote">Podrás hacerlo el ${esc(fdate(x.fecha, { weekday: "long", day: "numeric" }))}.</div>
+    <button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
     return;
   }
   if (x.hecho && x.tipo === "peso") { const d = (x.hecho_en || "").slice(0, 10) || x.fecha; const w = (await q(sb.from("weights").select("fecha,kg").in("fecha", [d, x.fecha]).limit(1)).catch(() => []))[0]; return openPeso(c, w); }

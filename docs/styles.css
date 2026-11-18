@@ -1993,3 +1993,4 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .wxd:not([open]) .wxm br{display:none}
 .wxn p{margin:0;white-space:pre-line}
 .wxn p+p{margin-top:8px}
+.futnote{margin:6px 0 10px;padding:12px 14px;border-radius:14px;background:var(--surface-2);font-size:14.5px;color:var(--muted);text-align:center}
