@@ -1344,8 +1344,8 @@ async function shareFlow(file) {
     try { await navigator.clipboard.writeText(IG); } catch { }
     S.shareFile = f; const can = !!(navigator.canShare && navigator.canShare({ files: [f] }));
     sheet(`<h2>Tu foto, lista</h2><img class="shprev" src="${url}" alt="Vista previa de la foto para compartir">
-    <div class="shcta"><b>Último paso</b><span>Compártela en tu historia y <b>etiqueta a ${IG}</b>. Ya lo he copiado: solo tienes que pegarlo.</span></div>
-    ${can ? `<button type="button" class="btn pri block" data-act="sh-compartir">Compartir en mi historia</button>` : ""}
+    <div class="shcta"><b>Último paso</b><span>${can ? `Toca el botón, elige <b>Instagram</b> y luego <b>Historia</b>. Etiqueta a <b>${IG}</b>, que ya lo tienes copiado para pegarlo.` : `Guárdala, ábrela desde Instagram y <b>etiqueta a ${IG}</b>. Ya lo he copiado: solo tienes que pegarlo.`}</span></div>
+    ${can ? `<button type="button" class="btn pri block" data-act="sh-compartir">Subir a mi historia</button>` : ""}
     <a class="btn ${can ? "" : "pri "}block" href="${url}" download="entreno-liftadri.jpg">Guardar en mi galería</a>
     <button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
   } catch (e) { toast(errMsg(e)); sheet(""); }
@@ -4343,7 +4343,7 @@ document.addEventListener("click", async ev => {
       case "weg-add": { const l = $("#weg-list"); l.insertAdjacentHTML("beforeend", woGroup("", [[{}, ""]], true)); woRenum(); const g = l.lastElementChild; g.querySelector('[name="g_n"]').focus(); g.scrollIntoView({ block: "center", behavior: "smooth" }); break; }
       case "weg-del": if (confirm("¿Quitar este ejercicio y sus series?")) { a.closest(".weg").remove(); woRenum(); } break;
       case "wo-del": if (!confirm("¿Borrar este entreno del cliente? No se puede deshacer.")) break; try { await q(sb.from("workouts").delete().eq("id", a.dataset.id)); sheet(""); toast("Entreno borrado"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); } break;
-      case "sh-compartir": try { await navigator.share({ files: [S.shareFile], text: "Entreno hecho 💪 " + IG }); } catch (e) { if (e && e.name !== "AbortError") toast("No se pudo abrir el menú de compartir. Guárdala y súbela desde Instagram."); } break;
+      case "sh-compartir": try { navigator.clipboard && navigator.clipboard.writeText(IG).catch(() => { }); } catch { } try { await navigator.share({ files: [S.shareFile] }); } catch (e) { if (e && e.name !== "AbortError") toast("No se pudo abrir el menú de compartir. Guárdala y súbela desde Instagram."); } break;
       case "w-fin": openFin(); break;
       case "w-seguir": wSeguir(); break;
       case "set-ok": setOk(a); break;
