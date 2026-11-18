@@ -27,7 +27,10 @@ const lines = s => (s || "").split("\n").map(x => x.trim()).filter(Boolean);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 const slug = s => (s || "cliente").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
 function splitItem(x) { if (x && typeof x === "object") return { t: String(x.t || ""), p: String(x.p || "") }; const [t, ...r] = String(x || "").split("|"); return { t: t.trim(), p: r.join("|").trim() }; }
-function seriesOf(sxr) { const m = String(sxr || "").match(/^\s*(\d+)\s*[x×]/i); return m ? Math.min(+m[1], 10) : 0; }
+// Aproximaciones al principio de un «sxr» de texto («1 aprox. + 3×6» → 1)
+function aproxOf(sxr) { let t = 0; for (const p of String(sxr || "").split(/\s+\+\s+/)) { const m = p.trim().match(/^(\d+)?\s*aprox/i); if (!m) break; t += +(m[1] || 1); } return t; }
+// Nº de series de un «sxr» de texto. Suma partes con «+»: «1 aprox. + 3×6» = 4, «Top 5 + 2 back-off ×5» = 3
+function seriesOf(sxr) { let t = 0; String(sxr || "").split(/\s+\+\s+/).forEach(p => { p = p.trim(); let m; if ((m = p.match(/^(\d+)\s*[x×]/i))) t += +m[1]; else if ((m = p.match(/^(\d+)?\s*(aprox|top|back-?off|drop|myo|cluster|amrap|rest-?pause)/i))) t += +(m[1] || 1); else if ((m = p.match(/^(\d+)\s+\D/))) t += 0; }); return Math.min(t, 12); }
 const WK = [
   ["sueno", "Calidad del sueño", "Muy mala", "Excelente"],
   ["fatiga", "Energía", "Muy cansado", "Recuperado"],
@@ -1107,7 +1110,9 @@ function openVideo(url, nombre) {
 }
 // Cabecera común de cada ejercicio en el entreno del cliente
 // Bloques del entreno: ejercicios seguidos con el mismo bloque («Fuerza», o A1/A2 → A). Solo si hay más de uno.
-const wkGroups = exs => { const G = []; exs.forEach((e, ei) => { const b = String(e.bloque || "").trim(); const m = b.match(/^([A-Z])\d*$/i); const key = m ? m[1].toUpperCase() : b.toLowerCase(); const last = G[G.length - 1]; if (last && last.key === key) last.idx.push(ei); else G.push({ key, nombre: m ? ({ P: "Potencia" })[key] || "" : b, idx: [ei] }); }); if (G.length < 2 || G.some(g => !g.key)) return null; G.forEach((g, i) => g.letra = String.fromCharCode(65 + i)); return G; };
+const wkGroups = exs => { const G = []; exs.forEach((e, ei) => { const b = String(e.bloque || "").trim(); const m = b.match(/^([A-Z])\d*$/i); const key = m ? m[1].toUpperCase() : b.toLowerCase(); const last = G[G.length - 1]; if (last && last.key === key) last.idx.push(ei); else G.push({ key, nombre: m ? ({ P: "Potencia" })[key] || "" : b.replace(/^bloque\s+[a-z0-9]+\s*:\s*/i, "").trim(), idx: [ei] }); });
+  // Solo agrupa si son bloques de verdad: más de uno y que la mayoría tenga varios ejercicios o un nombre (no «1», «2», «4A»…)
+  if (G.length < 2 || G.some(g => !g.key) || G.filter(g => g.idx.length === 1 && !/[a-zá-ú]{3}/i.test(g.nombre)).length > G.length / 2) return null; G.forEach((g, i) => g.letra = String.fromCharCode(65 + i)); return G; };
 // Texto de notas por párrafos: si un párrafo empieza con una línea corta sin punto, va como subtítulo
 // Texto legible a partir de cualquier nota (también las antiguas): un párrafo por bloque, una idea por línea,
 // listas con «·» en líneas, frases largas separadas, y 8' / 30'' como «8 min» / «30 s».
@@ -1198,7 +1203,7 @@ async function viewWorkout(id) {
     const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev); const rs = restSecs(e.descanso);
     const nd = n ? Array.from({ length: n }, (_, si) => (draft[`${ei}-${si}`] || {}).ok ? 1 : 0).reduce((a, b) => a + b, 0) : ((draft[`${ei}-done`] || {}).hecho ? 1 : 0);
     return `<div class="ex wx" data-rest="${rs}" data-exn="${esc(e.nombre)}">${exHead(e, metaOf(e), pg, n || 1, nd, ei === S.wkOpen)}${n ? mk.html : ""}
-    ${n ? `<div class="seth"><span></span><span>Kg</span><span>Reps</span><span>RIR</span><span></span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set${dv.ok ? " done" : ""}" data-k="${k}"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "–")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "–")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "–")}">${okBtn(k, dv.ok)}</div>`; }).join("")}</div>`
+    ${n ? `<div class="seth"><span></span><span>Kg</span><span>Reps</span><span>RIR</span><span></span></div><div class="sets">${Array.from({ length: n }, (_, si) => { const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si]; return `<div class="set${si < aproxOf(e.sxr) ? " t-aprox" : ""}${dv.ok ? " done" : ""}" data-k="${k}"><span class="n">${si + 1}</span><input inputmode="decimal" aria-label="Kilos serie ${si + 1}" data-k="${k}" data-f="kg" value="${esc(dv.kg ?? "")}" placeholder="${esc(pg && pg.kg != null ? pg.kg : pv && pv.kg != null ? pv.kg : "–")}"><input inputmode="numeric" aria-label="Repeticiones serie ${si + 1}" data-k="${k}" data-f="reps" value="${esc(dv.reps ?? "")}" placeholder="${esc(pv && pv.reps != null ? pv.reps : "–")}"><input inputmode="numeric" aria-label="Repeticiones que te quedaban serie ${si + 1}" data-k="${k}" data-f="rir" value="${esc(dv.rir ?? "")}" placeholder="${esc(pv && pv.rir != null ? pv.rir : "–")}">${okBtn(k, dv.ok)}</div>`; }).join("")}</div>`
       : `<label class="wxdone"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""}><span>Hecho</span></label>`}</div>`;
   };
   shell(a.titulo, `
@@ -1250,7 +1255,7 @@ function workoutSets(f, a) {
       if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) { const o = { ejercicio: e.nombre, serie: si + 1, kg, reps, rir }; if (rpe != null) o.rpe = rpe; if (esf != null) o.esf = esf; if (vel != null) o.vel = vel; if (x.tipo && x.tipo !== "normal") o.tipo = x.tipo; sets.push(o); } }); return; }
     const n = seriesOf(e.sxr);
     if (!n) { const c = f.querySelector(`[data-k="${ei}-done"]`); if (c && c.checked) sets.push({ ejercicio: e.nombre, serie: 1, hecho: true }); return; }
-    for (let si = 0; si < n; si++) { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; const kg = g("kg"), reps = g("reps"), rir = g("rir"); if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) sets.push({ ejercicio: e.nombre, serie: si + 1, kg, reps, rir }); }
+    for (let si = 0; si < n; si++) { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; const kg = g("kg"), reps = g("reps"), rir = g("rir"); if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) sets.push(Object.assign({ ejercicio: e.nombre, serie: si + 1, kg, reps, rir }, si < aproxOf(e.sxr) ? { tipo: "aprox" } : {})); }
   });
   return sets;
 }
