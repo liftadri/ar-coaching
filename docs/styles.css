@@ -1962,20 +1962,20 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .wblk{margin:0 0 12px}
 .wblk>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 4px 10px 2px}
 .wblk>summary::-webkit-details-marker{display:none}
-.wbl{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:13px;font-weight:750;flex:none}
-.wbn{flex:1;font-size:15px;font-weight:650;letter-spacing:-.01em}
-.wbc{font-size:12.5px;font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums}
-.wbc.ok{color:var(--ok,#2e7d5b)}
-.wblk[open] .wbh .wxchev{transform:rotate(-135deg);margin-bottom:-4px}
-.wbb{display:flex;flex-direction:column;gap:10px;padding-bottom:4px}
-.wblk:not([open]):has(.wbc.ok) .wbn{color:var(--muted)}
-.wblk:not([open]) .wbl{background:var(--surface-2);color:var(--muted)}
-.wblk:has(.wbc.ok) .wbl{background:var(--ok,#2e7d5b);color:#fff}
+.wkbl{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:13px;font-weight:750;flex:none}
+.wkbn{flex:1;font-size:15px;font-weight:650;letter-spacing:-.01em}
+.wkbc{font-size:12.5px;font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums}
+.wkbc.ok{color:var(--ok,#2e7d5b)}
+.wblk[open] .wkbh .wxchev{transform:rotate(-135deg);margin-bottom:-4px}
+.wkbb{display:flex;flex-direction:column;gap:10px;padding-bottom:4px}
+.wblk:not([open]):has(.wkbc.ok) .wkbn{color:var(--muted)}
+.wblk:not([open]) .wkbl{background:var(--surface-2);color:var(--muted)}
+.wblk:has(.wkbc.ok) .wkbl{background:var(--ok,#2e7d5b);color:#fff}
 .wblk .wxbn{display:none}
 .wkl li.wkg{counter-increment:none;display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:650;padding:14px 0 6px;border-top:0}
 .wkl li.wkg::before{content:none}
 .wkl li.wkg+li{border-top:0}
-.wkl li.wkg .wbl{width:22px;height:22px;font-size:12px;border-radius:7px;color:var(--bg)}
+.wkl li.wkg .wkbl{width:22px;height:22px;font-size:12px;border-radius:7px;color:var(--bg)}
 /* Series de aproximación: gris suave, secundarias */
 .pset.t-aprox{opacity:1;border-style:solid;border-color:transparent;background:var(--surface-2)}
 .svt tr.ap td,.svt tr.ap b{color:var(--muted);font-weight:400}

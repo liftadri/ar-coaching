@@ -1192,7 +1192,7 @@ async function viewWorkout(id) {
     ${a.hecho ? `<div class="wkdone">Lo vas a hacer otra vez. Se guarda como un registro nuevo.</div>` : ""}
     ${c.calentamiento ? `<div class="card wkc"><h2>Calentamiento</h2>${notasHtml(c.calentamiento)}</div>` : ""}
     ${notas ? `<div class="card wkc"><h2>Notas de Adrián</h2>${notasHtml(notas)}</div>` : ""}
-    <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li><b>${esc(String(e.nombre).replace(/\.$/, ""))}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
+    <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li><b>${esc(String(e.nombre).replace(/\.$/, ""))}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wkbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
     <div class="wkgo"><button type="button" class="btn pri block" data-act="w-start" data-id="${esc(id)}">Empezar entreno</button></div>`, { back: "entreno", noTabs: true });
     return;
   }
@@ -1212,7 +1212,7 @@ async function viewWorkout(id) {
   ${(() => { const G = wkGroups(exs); if (!G) return exs.map((e, ei) => exNotaWrap(ei, draft, exHtml(e, ei))).join("");
     const exOk = (e, ei) => { const n = e.series && e.series.length ? e.series.length : seriesOf(e.sxr); if (!n) return !!(draft[`${ei}-done`] || {}).hecho; for (let si = 0; si < n; si++) if (!(draft[`${ei}-${si}`] || {}).ok) return false; return true; };
     return G.map(g => { const d = g.idx.filter(i => exOk(exs[i], i)).length, n = g.idx.length, op = g.idx.includes(S.wkOpen);
-      return `<details class="wblk"${op ? " open" : ""}><summary class="wbh"><span class="wbl">${g.letra}</span><span class="wbn">${esc(g.nombre || "Bloque " + g.letra)}</span><span class="wbc${d >= n ? " ok" : ""}" data-n="${n}">${d >= n ? "✓ " : ""}${d}/${n}</span><span class="wxchev" aria-hidden="true"></span></summary><div class="wbb">${g.idx.map(i => exNotaWrap(i, draft, exHtml(exs[i], i))).join("")}</div></details>`; }).join(""); })()}
+      return `<details class="wblk"${op ? " open" : ""}><summary class="wkbh"><span class="wkbl">${g.letra}</span><span class="wkbn">${esc(g.nombre || "Bloque " + g.letra)}</span><span class="wkbc${d >= n ? " ok" : ""}" data-n="${n}">${d >= n ? "✓ " : ""}${d}/${n}</span><span class="wxchev" aria-hidden="true"></span></summary><div class="wkbb">${g.idx.map(i => exNotaWrap(i, draft, exHtml(exs[i], i))).join("")}</div></details>`; }).join(""); })()}
   <input type="hidden" name="rpe"><input type="hidden" name="com">
   <p class="wkhelp">Toca ✓ al acabar cada serie. Si dejas una casilla vacía se usa el número gris. RIR: repeticiones que aún podías hacer con buena técnica.</p>
   <div class="wkend"><button type="button" class="btn pri block" data-act="w-fin">Terminar entreno</button></div>
@@ -1239,9 +1239,9 @@ function wkProgress(ex, justDone) {
   if (!ex) return; const c = ex.querySelector(".wxc"); if (!c) return;
   const n = +c.dataset.c; const d = ex.querySelectorAll(".set.done,.pset.done").length + ex.querySelectorAll('input[data-f="hecho"]:checked').length;
   c.textContent = (d >= n ? "✓ " : "") + d + "/" + n; c.classList.toggle("ok", d >= n);
-  const blk = ex.closest(".wblk"); if (blk) { const bc = blk.querySelector(".wbc"), bn = +bc.dataset.n, bd = blk.querySelectorAll(".wxc.ok").length; bc.textContent = (bd >= bn ? "✓ " : "") + bd + "/" + bn; bc.classList.toggle("ok", bd >= bn); }
+  const blk = ex.closest(".wblk"); if (blk) { const bc = blk.querySelector(".wkbc"), bn = +bc.dataset.n, bd = blk.querySelectorAll(".wxc.ok").length; bc.textContent = (bd >= bn ? "✓ " : "") + bd + "/" + bn; bc.classList.toggle("ok", bd >= bn); }
   if (justDone && d >= n) { const all = [...document.querySelectorAll("#f-workout .ex.wx")]; const next = all.slice(all.indexOf(ex) + 1).find(x => { const cc = x.querySelector(".wxc"); return cc && !cc.classList.contains("ok"); });
-    setTimeout(() => { const dd = ex.querySelector(".wxd"); if (dd) dd.open = false; if (blk && blk.querySelector(".wbc.ok") && (!next || next.closest(".wblk") !== blk)) blk.open = false; if (next) { const nb = next.closest(".wblk"); if (nb) nb.open = true; const nd = next.querySelector(".wxd"); if (nd) nd.open = true; next.scrollIntoView({ behavior: "smooth", block: "start" }); } }, 600); }
+    setTimeout(() => { const dd = ex.querySelector(".wxd"); if (dd) dd.open = false; if (blk && blk.querySelector(".wkbc.ok") && (!next || next.closest(".wblk") !== blk)) blk.open = false; if (next) { const nb = next.closest(".wblk"); if (nb) nb.open = true; const nd = next.querySelector(".wxd"); if (nd) nd.open = true; next.scrollIntoView({ behavior: "smooth", block: "start" }); } }, 600); }
 }
 function workoutSets(f, a) {
   const sets = [];
