@@ -2030,7 +2030,7 @@ async function viewInicio() {
   const loadBy = {}; const addL = (cid, f, v) => { if (!v) return; const o = loadBy[cid] = loadBy[cid] || {}; o[f] = (o[f] || 0) + v; };
   wl35.forEach(w => addL(w.client_id, w.fecha, w.rpe_sesion != null && w.duracion_min ? w.rpe_sesion * w.duracion_min : 0)); ca35.forEach(x => { const r = x.resultado || {}; addL(x.client_id, x.fecha, r.rpe != null && r.min ? r.rpe * r.min : 0); });
   const activos = cl.filter(c => c.estado === "activo"); const mon = monday(t);
-  const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
+  const pct = (cid, from) => { const r = asAll.filter(x => x.client_id === cid && x.visible && x.tipo !== "nota" && x.fecha >= from && x.fecha <= t); return r.length ? Math.round(100 * r.filter(x => x.hecho).length / r.length) : null; };
   const hasta = cid => asAll.filter(x => x.client_id === cid).map(x => x.fecha).sort().pop();
   const act = [...wo.map(x => ({ c: x.client_id, ts: x.created_at, t: x.dia || "Entreno", k: "Workout" })), ...wl.filter(x => !as.some(y => y.tipo === "formulario" && y.client_id === x.client_id && y.fecha === x.fecha)).map(x => ({ c: x.client_id, ts: x.created_at, t: "Cuestionario diario", k: "Formulario" })), ...ws.map(x => ({ c: x.client_id, ts: x.created_at, t: `Peso: ${fmt(x.kg)} kg`, k: "Evolución" })), ...as.map(x => ({ c: x.client_id, ts: x.hecho_en, t: x.titulo, k: TIPOS[x.tipo] || "Tarea" })), ...resp.map(x => ({ c: x.client_id, ts: x.respondido_en, t: "Ha respondido a su revisión", k: "Revisión" }))].filter(a => a.ts).sort((a, b) => b.ts.localeCompare(a.ts));
   const ultimo = cid => (act.find(a => a.c === cid) || {}).ts;
@@ -3704,7 +3704,7 @@ async function evoSub(c, sub) {
   const cid = c.id; let body = "";
   if (sub === "actividad") {
     const as = await q(sb.from("assignments").select("*").eq("client_id", cid).lte("fecha", today()).gte("fecha", addDays(today(), -28)).order("fecha", { ascending: false }));
-    const byW = {}; as.forEach(x => { const k = monday(x.fecha); (byW[k] = byW[k] || []).push(x); });
+    const byW = {}; as.filter(x => x.visible && x.tipo !== "nota").forEach(x => { const k = monday(x.fecha); (byW[k] = byW[k] || []).push(x); });
     body = `<div class="card"><h2>Cumplimiento por semana</h2>${Object.keys(byW).length ? `<table><tbody>${Object.entries(byW).map(([k, v]) => { const p = Math.round(100 * v.filter(x => x.hecho).length / v.length); return `<tr><td>Semana del ${esc(fdate(k))}</td><td class="n">${v.filter(x => x.hecho).length}/${v.length}</td><td class="n"><span class="chip ${p >= 80 ? "ok" : p >= 50 ? "warn" : "bad"}">${p} %</span></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">Sin tareas programadas en las últimas 4 semanas.</div>`}</div>
     <div class="card"><h2>Últimas tareas</h2>${as.length ? `<table><tbody>${as.slice(0, 40).map(x => `<tr data-act="asig-edit" data-id="${esc(x.id)}" style="cursor:pointer"><td style="white-space:nowrap" class="tiny muted">${esc(fdate(x.fecha, { day: "numeric", month: "short" }))}</td><td>${tipoChip(x.tipo)} ${esc(x.titulo)}${x.respuesta ? `<div class="tiny muted">«${esc(x.respuesta)}»</div>` : ""}</td><td>${x.hecho ? `<span class="chip ok">Hecho</span>` : `<span class="chip bad">No hecho</span>`}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">—</div>`}</div>`;
   } else if (sub === "entrenos") {
