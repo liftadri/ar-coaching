@@ -1570,12 +1570,14 @@ async function openHist(nombre) {
   let qy = sb.from("workouts").select("fecha,dia,sets").order("fecha", { ascending: false }).limit(200);
   if (S.me.role === "coach") qy = qy.eq("client_id", S.coach.cid);
   const wo = await q(qy);
-  const ses = wo.map(w => ({ fecha: w.fecha, s: (w.sets || []).filter(x => x.ejercicio === nombre && !x.hecho) })).filter(x => x.s.length);
+  const ses = wo.map(w => ({ fecha: w.fecha, s: (w.sets || []).filter(x => x.ejercicio === nombre && !x.hecho && !esAprox(x)) })).filter(x => x.s.length);
   const best = ses.flatMap(x => x.s.map(y => ({ ...y, fecha: x.fecha, e: e1rm(y.kg, y.reps, y.rir) }))).filter(y => y.e).sort((a, b) => b.e - a.e)[0];
   const top = ses.flatMap(x => x.s.map(y => ({ ...y, fecha: x.fecha }))).filter(y => num(y.kg) != null).sort((a, b) => b.kg - a.kg)[0];
   sheet(`<h2>${esc(nombre)}</h2>${ses.length ? `<div class="kpis"><div class="kpi"><span>Última vez</span><b>${esc(fdate(ses[0].fecha))}</b><em>${ses[0].s.length} series</em></div><div class="kpi"><span>Mayor carga</span><b>${top ? fmt(top.kg) + " kg" : "—"}</b><em>${top ? `${esc(top.reps ?? "?")} reps · ${esc(fdate(top.fecha))}` : ""}</em></div><div class="kpi"><span>Mejor 1RM estimado</span><b>${best ? fmt(best.e) + " kg" : "—"}</b><em>${best ? "con " + esc(kgTxt(best.kg)) + " × " + esc(best.reps) + (best.rir != null ? " · RIR " + esc(best.rir) : "") : ""}</em></div></div>
   ${lineChart(ses.map(x => ({ x: x.fecha, y: Math.max(...x.s.map(y => e1rm(y.kg, y.reps, y.rir) || 0)) || null, tip: x.s.map(y => `${y.kg ?? "?"}×${y.reps ?? "?"}`).join(" ") })), { label: "1RM estimado", unit: "kg", empty: "Hace falta registrar al menos dos días para ver la evolución" })}
-  <div class="tbl"><table class="htab"><thead><tr><th>Fecha</th><th>Series · carga × reps · RIR</th><th class="n">1RM est.</th></tr></thead><tbody>${ses.slice(0, 20).map(x => `<tr><td style="white-space:nowrap">${esc(fdate(x.fecha, { day: "numeric", month: "short" }))}</td><td><div class="spw">${x.s.map(setPill).join("")}</div></td><td class="n"><b>${(() => { const e = Math.max(...x.s.map(y => e1rm(y.kg, y.reps, y.rir) || 0)); return e ? fmt(e) + " kg" : "—"; })()}</b></td></tr>`).join("")}</tbody></table></div>` : `<p class="small muted">Aún no hay registros de este ejercicio.</p>`}<button class="btn" data-act="close">Cerrar</button>`);
+  <div class="hses">${ses.slice(0, 20).map(x => { const e = Math.max(...x.s.map(y => e1rm(y.kg, y.reps, y.rir) || 0));
+    return `<section class="hs"><header><b>${esc(cap(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" })))}</b><span class="tiny muted">${x.s.length} ${x.s.length === 1 ? "serie" : "series"}${e ? ` · 1RM est. <b>${fmt(e)} kg</b>` : ""}</span></header>
+    ${x.s.map(y => `<div class="hsr"><span class="hsk"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b> kg × <b>${esc(y.reps ?? "—")}</b></span><span class="hsm">${[y.rpe != null ? "RPE " + y.rpe : y.rir != null && y.rir !== "" ? "RIR " + y.rir : "", y.vel != null ? y.vel + " m/s" : ""].filter(Boolean).map(esc).join(" · ")}</span>${y.tipo && y.tipo !== "normal" ? `<span class="hst">${esc(tipoHum(y.tipo))}</span>` : ""}</div>`).join("")}</section>`; }).join("")}</div>` : `<p class="small muted">Aún no hay registros de este ejercicio.</p>`}<button class="btn" data-act="close">Cerrar</button>`);
 }
 // Dureza de la sesión (escala CR-10 de Borg/Foster): obligatoria, con botones grandes
 const RPE_TXT = ["", "Muy, muy fácil", "Fácil", "Moderado", "Algo duro", "Duro", "Duro +", "Muy duro", "Muy duro +", "Casi al máximo", "Máximo"];
@@ -2031,6 +2033,7 @@ const P_COLS = [["kg", "Carga (kg)"], ["rir", "RIR"], ["rpe", "RPE carga"], ["rp
 const P_TIPOS = [["normal", "Serie"], ["aprox", "Aproximación"], ["top", "Top set"], ["backoff", "Back-off"], ["amrap", "AMRAP"], ["drop", "Drop set"], ["cluster", "Cluster"], ["rp", "Rest-pause"], ["myo", "Myo-reps"], ["iso", "Isométrico (s)"]];
 const P_HINT = { rpe: "6–10 (10 = sin repeticiones en reserva)", rpe_e: "Esfuerzo percibido 0–10", vel: "Velocidad media propulsiva objetivo", vl: "Corta la serie al perder este % de velocidad", pct: "Se calcula con su 1RM estimado", tempo: "Excéntrica-pausa-concéntrica-pausa, p. ej. 3-1-1-0" };
 const pTipo = k => (P_TIPOS.find(t => t[0] === k) || P_TIPOS[0])[1];
+const tipoHum = k => ({ top: "Serie pesada", backoff: "Más ligera", iso: "Isométrico" })[k] || pTipo(k);
 // Resumen corto de la programación (lo que se ve en calendario, listados…)
 // Resumen legible para el cliente: en castellano, sin siglas, en dos líneas (series / esfuerzo y descanso)
 function presHuman(p) {
