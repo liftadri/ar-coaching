@@ -1346,7 +1346,7 @@ async function viewWorkout(id) {
   S.wkOpen = exs.findIndex((e, ei) => { const n = e.series && e.series.length ? e.series.length : seriesOf(e.sxr); if (!n) return !(draft[`${ei}-done`] || {}).hecho; for (let si = 0; si < n; si++) if (!(draft[`${ei}-${si}`] || {}).ok) return true; return false; });
   const exHtml = (e, ei) => {
     const n = seriesOf(e.sxr); const prev = lastSets(e.nombre); if (e.series && e.series.length) return presClient(e, ei, prev, draft, wo);
-    const prevKg = prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
+    const prevKg = prev ? Math.max(...prev.s.filter(x => !esAprox(x)).map(x => num(x.kg)).filter(x => x != null), -Infinity) : null; const pk = prevKg != null && isFinite(prevKg) ? prevKg : null;
     const pg = progTxt(e.prog, pk); const mk = exMarks(e.nombre, wo, prev); const rs = restSecs(e.descanso);
     const nd = n ? Array.from({ length: n }, (_, si) => (draft[`${ei}-${si}`] || {}).ok ? 1 : 0).reduce((a, b) => a + b, 0) : ((draft[`${ei}-done`] || {}).hecho ? 1 : 0);
     return `<div class="ex wx" data-rest="${rs}" data-exn="${esc(e.nombre)}">${exHead(e, metaOf(e), pg, n || 1, nd, ei === S.wkOpen)}${n ? mk.html : ""}
@@ -1602,7 +1602,9 @@ function presClient(e, ei, prev, draft, wo) {
   const rm = best.length ? Math.max(...best) : null; const r125 = v => Math.round(v / 1.25) * 1.25;
   const eff = cols.includes("rpe") ? ["rpe", "RPE"] : cols.includes("rpe_e") ? ["esf", "Esfuerzo"] : ["rir", "RIR"];
   const topI = ss.findIndex(x => x.tipo === "top");
-  const pg = progTxt(e.prog, prev ? Math.max(...prev.s.map(x => num(x.kg)).filter(x => x != null), -Infinity) : null);
+  // Si las series ya llevan los kilos escritos, mandan ellas: no se calcula ningún «sube X kg» sobre la sesión anterior (puede ser otro día: pesado, volumen…)
+  const kgFijo = ss.some(x => !esAprox(x) && x.kg != null && String(x.kg).trim() !== "");
+  const pg = kgFijo ? null : progTxt(e.prog, prev ? Math.max(...prev.s.filter(x => !esAprox(x)).map(x => num(x.kg)).filter(x => x != null), -Infinity) : null);
   const rows = ss.map((x, si) => {
     const k = `${ei}-${si}`; const dv = draft[k] || {}; const pv = prev && prev.s[si];
     let kgPh = x.kg || (cols.includes("pct") && x.pct && rm ? fmt(r125(rm * x.pct / 100)) : "") || (pv && pv.kg != null ? pv.kg : "kg");
