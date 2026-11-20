@@ -2107,3 +2107,7 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .hsr:first-of-type{border-top:0}
 .hsk b{font-family:var(--display);font-size:17px}.hsm{color:var(--muted);font-size:13.5px}
 .hst{font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap}
+/* Drop set: fila de la bajada */
+.pdrop{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);align-items:end}
+.ex.wx .pin.pdrop{grid-template-columns:repeat(4,minmax(56px,1fr))}.pdrop .pdl{grid-column:1/-1;font-size:13px;font-weight:700;color:var(--accent)}
+.hsb{color:var(--ink);font-weight:600}

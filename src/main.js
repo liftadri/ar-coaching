@@ -1399,7 +1399,8 @@ function workoutSets(f, a) {
     if (e.series && e.series.length) { e.series.forEach((x, si) => { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; let kg = g("kg"); const reps = g("reps"), rpe = g("rpe"), esf = g("esf"), vel = g("vel"); let rir = g("rir");
       if (kg == null) { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="kg"]`); if (el && el.dataset.plan != null && reps != null && num(el.placeholder) != null) kg = num(el.placeholder); }
       if (rir == null && rpe != null) rir = Math.max(0, 10 - rpe);
-      if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) { const o = { ejercicio: e.nombre, serie: si + 1, kg, reps, rir }; if (rpe != null) o.rpe = rpe; if (esf != null) o.esf = esf; if (vel != null) o.vel = vel; if (x.tipo && x.tipo !== "normal") o.tipo = x.tipo; sets.push(o); } }); return; }
+      if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) { const o = { ejercicio: e.nombre, serie: si + 1, kg, reps, rir }; if (rpe != null) o.rpe = rpe; if (esf != null) o.esf = esf; if (vel != null) o.vel = vel; if (x.tipo && x.tipo !== "normal") o.tipo = x.tipo;
+        if (x.tipo === "drop") { let dk = g("dkg"); const dr = g("dreps"); if (dk == null && dr != null) dk = dropKg(x); if (dr != null) o.bajada = { kg: dk, reps: dr }; } sets.push(o); } }); return; }
     const n = seriesOf(e.sxr);
     if (!n) { const c = f.querySelector(`[data-k="${ei}-done"]`); if (c && c.checked) sets.push({ ejercicio: e.nombre, serie: 1, hecho: true }); return; }
     for (let si = 0; si < n; si++) { const g = fld => { const el = f.querySelector(`[data-k="${ei}-${si}"][data-f="${fld}"]`); return el ? num(el.value) : null; }; const kg = g("kg"), reps = g("reps"), rir = g("rir"); if ((kg != null || reps != null) && rowOk(`${ei}-${si}`)) sets.push(Object.assign({ ejercicio: e.nombre, serie: si + 1, kg, reps, rir }, si < aproxOf(e.sxr) ? { tipo: "aprox" } : {})); }
@@ -1537,7 +1538,7 @@ function wSeguir() { const f = $("#f-workout"); if (f) { let d = {}; try { d = J
 
 /* Series ordenadas: carga, repeticiones y RIR */
 const kgTxt = v => v == null || v === "" ? "—" : fmt(v, 2) + " kg";
-const setPill = y => y.hecho ? `<span class="sp ok">Hecho ✓</span>` : `<span class="sp"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b><small>kg</small> × <b>${esc(y.reps ?? "—")}</b>${y.rpe != null ? `<em>RPE ${esc(y.rpe)}</em>` : y.rir != null && y.rir !== "" ? `<em>RIR ${esc(y.rir)}</em>` : ""}${y.vel != null ? `<em>${esc(y.vel)} m/s</em>` : ""}${y.tipo ? `<i>${esc(pTipo(y.tipo))}</i>` : ""}</span>`;
+const setPill = y => y.hecho ? `<span class="sp ok">Hecho ✓</span>` : `<span class="sp"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b><small>kg</small> × <b>${esc(y.reps ?? "—")}</b>${y.rpe != null ? `<em>RPE ${esc(y.rpe)}</em>` : y.rir != null && y.rir !== "" ? `<em>RIR ${esc(y.rir)}</em>` : ""}${y.vel != null ? `<em>${esc(y.vel)} m/s</em>` : ""}${y.bajada ? `<em>+ ${esc(y.bajada.kg != null ? fmt(y.bajada.kg, 2) : "—")} kg × ${esc(y.bajada.reps ?? "—")}</em>` : ""}${y.tipo ? `<i>${esc(tipoHum(y.tipo))}</i>` : ""}</span>`;
 const groupSets = sets => { const g = []; (sets || []).forEach(x => { let e = g.find(z => z.n === x.ejercicio); if (!e) g.push(e = { n: x.ejercicio, s: [] }); e.s.push(x); }); return g; };
 function sessionTable(sets, notas = {}) {
   const g = groupSets(sets); if (!g.length) return `<div class="empty">Sin series registradas.</div>`;
@@ -1547,7 +1548,7 @@ function sessionTable(sets, notas = {}) {
 const esAprox = x => /aprox|calent|warm/i.test(String(x.tipo || ""));
 // Récords de la sesión: ejercicios cuyo mejor 1RM estimado supera la mejor marca anterior (+0,5 %)
 const prCount = (sets, prev) => { const ok = x => !x.hecho && !esAprox(x) && num(x.kg) != null && num(x.reps) != null; const best = {}; (prev || []).forEach(w => (w.sets || []).filter(ok).forEach(x => { const e = e1rm(x.kg, x.reps, x.rir); if (e && e > (best[x.ejercicio] || 0)) best[x.ejercicio] = e; })); const hoy = {}; (sets || []).filter(ok).forEach(x => { const e = e1rm(x.kg, x.reps, x.rir); if (e && e > (hoy[x.ejercicio] || 0)) hoy[x.ejercicio] = e; }); return Object.keys(hoy).filter(k => best[k] && hoy[k] > best[k] * 1.005).length; };
-const sesStats = w => { const all = (w.sets || []).filter(x => !esAprox(x)); const ss = all.filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0), 0); return { series: ss.length, ej: new Set(all.map(x => x.ejercicio)).size, vol }; };
+const sesStats = w => { const all = (w.sets || []).filter(x => !esAprox(x)); const ss = all.filter(x => !x.hecho); const vol = ss.reduce((a, x) => a + (num(x.kg) || 0) * (num(x.reps) || 0) + (x.bajada ? (num(x.bajada.kg) || 0) * (num(x.bajada.reps) || 0) : 0), 0); return { series: ss.length, ej: new Set(all.map(x => x.ejercicio)).size, vol }; };
 // Vista ordenada de un entreno registrado: datos clave y ejercicios desplegables
 function sesKpis(w) { const st = sesStats(w); return [w.rpe_sesion != null ? [w.rpe_sesion + "/10", "Dureza"] : null, w.duracion_min ? [w.duracion_min + " min", "Duración"] : null, !w.actividad ? [st.series, "Series"] : null, st.vol ? [fmt(st.vol, 0) + " kg", "Volumen"] : null, w.rpe_sesion != null && w.duracion_min ? [w.rpe_sesion * w.duracion_min + " UA", "Carga"] : null].filter(Boolean); }
 function sesBody(w) {
@@ -1577,7 +1578,7 @@ async function openHist(nombre) {
   ${lineChart(ses.map(x => ({ x: x.fecha, y: Math.max(...x.s.map(y => e1rm(y.kg, y.reps, y.rir) || 0)) || null, tip: x.s.map(y => `${y.kg ?? "?"}×${y.reps ?? "?"}`).join(" ") })), { label: "1RM estimado", unit: "kg", empty: "Hace falta registrar al menos dos días para ver la evolución" })}
   <div class="hses">${ses.slice(0, 20).map(x => { const e = Math.max(...x.s.map(y => e1rm(y.kg, y.reps, y.rir) || 0));
     return `<section class="hs"><header><b>${esc(cap(fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" })))}</b><span class="tiny muted">${x.s.length} ${x.s.length === 1 ? "serie" : "series"}${e ? ` · 1RM est. <b>${fmt(e)} kg</b>` : ""}</span></header>
-    ${x.s.map(y => `<div class="hsr"><span class="hsk"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b> kg × <b>${esc(y.reps ?? "—")}</b></span><span class="hsm">${[y.rpe != null ? "RPE " + y.rpe : y.rir != null && y.rir !== "" ? "RIR " + y.rir : "", y.vel != null ? y.vel + " m/s" : ""].filter(Boolean).map(esc).join(" · ")}</span>${y.tipo && y.tipo !== "normal" ? `<span class="hst">${esc(tipoHum(y.tipo))}</span>` : ""}</div>`).join("")}</section>`; }).join("")}</div>` : `<p class="small muted">Aún no hay registros de este ejercicio.</p>`}<button class="btn" data-act="close">Cerrar</button>`);
+    ${x.s.map(y => `<div class="hsr"><span class="hsk"><b>${esc(y.kg != null ? fmt(y.kg, 2) : "—")}</b> kg × <b>${esc(y.reps ?? "—")}</b></span><span class="hsm">${y.bajada ? `<span class="hsb">+ ${esc(y.bajada.kg != null ? fmt(y.bajada.kg, 2) : "—")} kg × ${esc(y.bajada.reps ?? "—")}</span> ` : ""}${[y.rpe != null ? "RPE " + y.rpe : y.rir != null && y.rir !== "" ? "RIR " + y.rir : "", y.vel != null ? y.vel + " m/s" : ""].filter(Boolean).map(esc).join(" · ")}</span>${y.tipo && y.tipo !== "normal" ? `<span class="hst">${esc(tipoHum(y.tipo))}</span>` : ""}</div>`).join("")}</section>`; }).join("")}</div>` : `<p class="small muted">Aún no hay registros de este ejercicio.</p>`}<button class="btn" data-act="close">Cerrar</button>`);
 }
 // Dureza de la sesión (escala CR-10 de Borg/Foster): obligatoria, con botones grandes
 const RPE_TXT = ["", "Muy, muy fácil", "Fácil", "Moderado", "Algo duro", "Duro", "Duro +", "Muy duro", "Muy duro +", "Casi al máximo", "Máximo"];
@@ -1611,7 +1612,7 @@ function presClient(e, ei, prev, draft, wo) {
     const top = (x.tipo === "backoff" && topI >= 0 && x.rel ? ` data-rel="${esc(x.rel)}" data-ei="${ei}"` : "") + (x.kg || (cols.includes("pct") && x.pct && rm) || (x.tipo === "backoff" && x.rel) ? " data-plan" : "");
     const inp = (f, ph, mode = "decimal", extra = "") => `<label><span>${ph}</span><input inputmode="${mode}" data-k="${k}" data-f="${f}" value="${esc(dv[f] ?? "")}" placeholder="${esc(f === "kg" ? kgPh : (num(x[f]) != null ? num(x[f]) : pv && pv[f] != null ? pv[f] : "–"))}"${extra} aria-label="${ph} serie ${si + 1}"></label>`;
     return `<div class="pset t-${esc(x.tipo)}${dv.ok ? " done" : ""}" data-rest="${restSecs(x.desc || e.descanso)}"><div class="pl"><span class="n">${si + 1}</span>${x.tipo !== "normal" ? `<span class="ptag">${esc(({ top: "Serie pesada", backoff: "Más ligera", iso: "Isométrico" })[x.tipo] || pTipo(x.tipo))}</span>` : ""}<span class="pt">${esc(presTarget(x, cols, { rm }))}</span></div>${x.nota ? `<div class="tiny muted pnote">${esc(x.nota)}</div>` : ""}
-      <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}${okBtn(k, dv.ok)}</div></div>`;
+      <div class="pin">${inp("kg", "Kg", "decimal", (si === topI ? ` data-top data-ei="${ei}"` : "") + top)}${inp("reps", x.tipo === "iso" ? "Seg." : x.tipo === "cluster" ? "Reps tot." : "Reps", "numeric")}${inp(eff[0], eff[1], "decimal")}${cols.includes("vel") || cols.includes("vl") ? inp("vel", "m/s", "decimal") : ""}${okBtn(k, dv.ok)}</div>${x.tipo === "drop" ? `<div class="pin pdrop"><span class="pdl">Bajada sin descanso</span><label><span>Kg</span><input inputmode="decimal" data-k="${k}" data-f="dkg" value="${esc(dv.dkg ?? "")}" placeholder="${esc(dropKg(x) != null ? fmt(dropKg(x)) : "kg")}" aria-label="Kg de la bajada, serie ${si + 1}"></label><label><span>Reps</span><input inputmode="numeric" data-k="${k}" data-f="dreps" value="${esc(dv.dreps ?? "")}" placeholder="${esc(x.drop_reps || "máx")}" aria-label="Reps de la bajada, serie ${si + 1}"></label></div>` : ""}</div>`;
   }).join("");
   const mk = exMarks(e.nombre, wo, prev);
   const nd = ss.filter((_, si) => (draft[`${ei}-${si}`] || {}).ok).length;
@@ -2080,6 +2081,8 @@ function presSummary(p) {
   return pre + g.map(z => `${z.n > 1 ? z.n + "×" : ""}${z.t === "normal" ? "" : pTipo(z.t) + " "}${z.r || ""}`.trim()).join(" + ");
 }
 // Texto del objetivo de una serie para el cliente
+// Drop set: siempre con bajada de carga. Si la programación no trae drop_kg, se calcula un 30 % menos.
+const dropKg = x => { const d = num(x.drop_kg); if (d != null) return d; const k = num(x.kg); if (k == null) return null; const st = k >= 40 ? 2.5 : 1; return Math.max(st, Math.round(k * 0.7 / st) * st); };
 function presTarget(x, cols, ctx = {}) {
   const p = [];
   if (x.tipo === "cluster") p.push(`${x.cl_n || "?"} bloques × ${x.cl_r || "?"} reps${x.cl_p ? ` · ${x.cl_p}″ entre bloques` : ""}`);
@@ -2087,6 +2090,7 @@ function presTarget(x, cols, ctx = {}) {
   else if (x.tipo === "amrap") p.push(`máximas reps${x.reps ? " (≥ " + x.reps + ")" : ""}`);
   else if (x.reps) p.push(`${x.reps} reps`);
   if (cols.includes("kg") && x.kg) p.push(`${x.kg} kg`);
+  if (x.tipo === "drop") { const d = dropKg(x); p.push(d != null && x.kg ? `sin descanso baja a ${fmt(d)} kg${x.drop_reps ? " y haz " + x.drop_reps + " reps" : " hasta casi el fallo"}` : "sin descanso baja un 30 % la carga y sigue hasta casi el fallo"); }
   if (cols.includes("pct") && x.pct) p.push(`${x.pct} % 1RM${ctx.rm ? ` ≈ ${fmt(Math.round(ctx.rm * x.pct / 100 / 1.25) * 1.25)} kg` : ""}`);
   if (x.tipo === "backoff" && x.rel) p.push(`${x.rel} % de la serie pesada`);
   if (cols.includes("rir") && x.rir !== "" && x.rir != null) p.push(`RIR ${x.rir}`);
