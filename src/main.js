@@ -496,7 +496,7 @@ async function doNueva(f) {
 /* ================= Navegación ================= */
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
 const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["cobros", "Cobros", "euro"], ["mas", "Perfil", "mas"]];
-const isCoachHash = h => ["inicio", "c", "lib", "tablon", "cobros"].includes(h) || h.startsWith("c-") || h.startsWith("lib-") || h.startsWith("mz-");
+const isCoachHash = h => ["inicio", "c", "lib", "tablon", "cobros", "opiniones"].includes(h) || h.startsWith("c-") || h.startsWith("lib-") || h.startsWith("mz-");
 function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; let h = t.scrollHeight; if (!t.value && t.placeholder) { t.value = t.placeholder; h = Math.max(h, t.scrollHeight); t.value = ""; } const cap = Math.max(160, Math.min(460, Math.round(window.innerHeight * .5))); t.style.height = Math.min(Math.max(h + 2, 64), cap) + "px"; t.classList.toggle("tscroll", h + 2 > cap); }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
@@ -547,6 +547,7 @@ async function route() {
       if (h.startsWith("lib-r-")) return await viewLibRecipe(h.slice(6));
       if (h === "mas") return await viewMas();
       if (h === "tablon") return await viewTablonCoach();
+      if (h === "opiniones") return await viewOpiniones();
       if (h === "cobros") return await viewCobros();
       return await viewInicio();
     }
@@ -783,7 +784,7 @@ async function viewTablonCoach() {
     return postCard(p, { fecha: prx ? "Programado · " + new Date(p.publicar_en).toLocaleString("es-ES", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : relTime(p.publicar_en) + (p.publicado ? "" : " · oculto"),
       right: `<details class="more"><summary class="btn ghost sm" aria-label="Opciones">•••</summary><div class="menu"><button data-act="post-edit" data-id="${esc(p.id)}">Editar</button><button data-act="post-pin" data-id="${esc(p.id)}">${p.fijado ? "Quitar de fijados" : "Fijar arriba"}</button><button data-act="post-hide" data-id="${esc(p.id)}">${p.publicado ? "Ocultar" : "Volver a mostrar"}</button><button data-act="post-del" data-id="${esc(p.id)}" style="color:var(--bad)">Borrar</button></div></details>`,
       foot: `<footer class="pf2 muted tiny"><span>${p.para && p.para.length ? "Para " + esc(p.para.map(clientName).join(", ")) : "Para todos"}</span><span class="grow"></span>${prx ? "" : `${reactBar(p.id, s.cnt, new Set(), false, s.names)}<span title="Clientes que lo han visto">👁 ${s.vistos}/${s.total}</span>`}</footer>` }); };
-  shell("Comunidad", `<div class="pghead"><h1 class="ptitle">Comunidad <span class="cnt">${pub.length}</span></h1><button class="btn pri" data-act="post-new">+ Publicar</button></div>
+  shell("Comunidad", `<div class="pghead"><h1 class="ptitle">Comunidad <span class="cnt">${pub.length}</span></h1><span class="row" style="gap:8px"><button class="btn" data-act="go" data-h="opiniones">💬 Opiniones</button><button class="btn pri" data-act="post-new">+ Publicar</button></span></div>
   <p class="small muted" style="margin:-6px 0 4px">Tu tablón para todos los clientes: píldoras educativas, enlaces, mensajes motivadores y avisos. Les aparece en «Hoy» con aviso de novedad.</p>
   <div class="tbgrid"><div class="tbcol">${orden.length ? orden.map(card).join("") : `<div class="card empty">Todavía no has publicado nada. Empieza con una píldora educativa o un mensaje para el equipo.</div>`}</div>
   <aside class="tbcol">${prog.length ? `<h2 class="tbh2">${ICON.cal}Programados <span class="cnt">${prog.length}</span></h2>${prog.sort((a, b) => a.publicar_en.localeCompare(b.publicar_en)).map(card).join("")}` : `<div class="card"><h2 class="hh">${ICON.cal}Programados</h2><p class="small muted" style="margin:0">Puedes dejar publicaciones programadas para que salgan en la fecha y hora que elijas.</p></div>`}</aside></div>`, { crumb: [[null, "Comunidad"]] });
@@ -814,6 +815,150 @@ async function savePost(f) {
   try { if (f.dataset.id) await q(sb.from("posts").update(row).eq("id", f.dataset.id)); else await q(sb.from("posts").insert({ ...row, publicado: true }));
     sheet(""); toast(f.dataset.id ? "Publicación guardada" : row.publicar_en > new Date(Date.now() + 60000).toISOString() ? "Publicación programada" : "¡Publicado en la comunidad!"); route();
   } catch (e) { toast(errMsg(e)); b.disabled = false; }
+}
+
+/* ================= Opinión del mes: feedback mensual aparte de las tareas ================= */
+// Banco de preguntas pensadas para dar testimonios potentes (y una privada para mejorar). El permiso va siempre al final.
+const OP_BANCO = [
+  { id: "antes", tipo: "texto", p: "¿Cómo estabas antes de empezar y cómo te ves ahora?" },
+  { id: "logro", tipo: "texto", p: "¿Cuál ha sido tu mayor logro este mes?" },
+  { id: "momento", tipo: "texto", p: "¿En qué momento notaste que esto estaba funcionando?" },
+  { id: "sorpresa", tipo: "texto", p: "¿Qué es lo que más te ha sorprendido de entrenar conmigo?" },
+  { id: "amigo", tipo: "texto", p: "Si un amigo te pregunta por mis asesorías, ¿qué le dirías?" },
+  { id: "puedes", tipo: "texto", p: "¿Qué puedes hacer ahora que antes no podías?" },
+  { id: "valoras", tipo: "texto", p: "¿Qué es lo que más valoras del seguimiento?" },
+  { id: "dia", tipo: "texto", p: "¿Cómo ha cambiado tu día a día desde que empezaste?" },
+  { id: "palabra", tipo: "palabra", p: "Resume este mes en una palabra o un emoji" },
+  { id: "nps", tipo: "nps", p: "Del 0 al 10, ¿cuánto me recomendarías a un amigo?" },
+  { id: "mejorar", tipo: "texto", p: "¿Qué mejorarías? Sé sincero, me ayuda mucho", priv: true }];
+const OP_ROT = [["antes", "logro", "palabra", "nps", "mejorar"], ["momento", "amigo", "palabra", "nps", "mejorar"], ["sorpresa", "puedes", "palabra", "nps", "mejorar"], ["valoras", "dia", "palabra", "nps", "mejorar"]];
+const OP_PERM = { nombre: "Sí, con mi nombre", anonimo: "Sí, pero sin mi nombre", no: "No, solo para Adrián" };
+const opQ = id => OP_BANCO.find(b => b.id === id);
+const opMeses = c => { if (!c || !c.created_at) return ""; const m = Math.max(1, Math.round(daysBetween(iso(new Date(c.created_at)), today()) / 30.4)); return `cliente desde hace ${m} ${m === 1 ? "mes" : "meses"}`; };
+const opAutor = (r, c) => { const desde = opMeses(c); if (r.permiso === "nombre" && c) return (c.nombre || "").split(" ")[0] + (desde ? ", " + desde : ""); return desde ? cap(desde) : "Cliente"; };
+const opTextos = (e, r) => (e.preguntas || []).filter(p => p.tipo !== "nps" && !(opQ(p.id) || {}).priv && String((r.respuestas || {})[p.id] || "").trim()).map(p => ({ p: p.p, v: String(r.respuestas[p.id]).trim(), tipo: p.tipo }));
+const opNps = (e, r) => { const p = (e.preguntas || []).find(x => x.tipo === "nps"); const v = p ? (r.respuestas || {})[p.id] : null; return v === "" || v == null ? null : +v; };
+const opAbierta = e => !e.cerrada && e.abre <= new Date().toISOString() && (!e.cierra || e.cierra > new Date().toISOString());
+
+// ---- Cliente: tarjeta en «Hoy» y hoja para responder
+async function opHoy() {
+  const [es, rs] = await Promise.all([q(sb.from("encuestas").select("id,titulo,cierra").order("abre", { ascending: false }).limit(3)), q(sb.from("encuesta_respuestas").select("encuesta_id"))]);
+  const ya = new Set(rs.map(r => r.encuesta_id)); const e = es.find(x => !ya.has(x.id)); if (!e) return "";
+  return `<button class="card opcard" data-act="op-open" data-id="${esc(e.id)}"><span class="opic" aria-hidden="true">💬</span><span class="grow"><b>¿Me ayudas 1 minuto?</b><br><span class="small">Cuéntame qué tal te va. Son solo unas preguntas y me ayudan muchísimo.</span>${e.cierra ? `<br><span class="tiny muted">Hasta el ${esc(fdate(e.cierra.slice(0, 10), { weekday: "long", day: "numeric" }))}</span>` : ""}</span><span class="chev">›</span></button>`;
+}
+async function openOpinion(id) {
+  const e = (await q(sb.from("encuestas").select("*").eq("id", id).limit(1)))[0]; if (!e) { toast("Esta opinión ya está cerrada"); route(); return; }
+  const campo = (p, i) => { const n = "op_" + i;
+    if (p.tipo === "nps") return `<fieldset class="opf"><legend>${esc(p.p)}</legend><div class="opnps" role="radiogroup">${Array.from({ length: 11 }, (_, k) => `<label><input type="radio" name="${n}" value="${k}"><span>${k}</span></label>`).join("")}</div><div class="opnl tiny muted"><span>Nada</span><span>Muchísimo</span></div></fieldset>`;
+    if (p.tipo === "palabra") return `<div class="f opf"><label for="${n}">${esc(p.p)}</label><input id="${n}" name="${n}" maxlength="40" autocomplete="off" placeholder="Por ejemplo: constancia 💪"></div>`;
+    return `<div class="f opf"><label for="${n}">${esc(p.p)}</label><textarea id="${n}" name="${n}" maxlength="1200" rows="3" placeholder="Escríbelo como se lo contarías a un amigo"></textarea></div>`; };
+  sheet(`<h2>${esc(e.titulo || "Tu opinión")}</h2><p class="small muted" style="margin:-4px 0 0">Un minuto y me ayudas un montón a seguir mejorando. Responde lo que quieras, nada es obligatorio salvo la última.</p>
+  <form id="f-op" data-id="${esc(e.id)}" style="display:flex;flex-direction:column;gap:14px">${(e.preguntas || []).map(campo).join("")}
+  <fieldset class="opf"><legend>¿Puedo compartir tu opinión en mi Instagram?</legend><div class="opperm">${Object.entries(OP_PERM).map(([k, l]) => `<label><input type="radio" name="permiso" value="${k}" required><span>${l}</span></label>`).join("")}</div></fieldset>
+  <button class="btn pri block">Enviar</button><button type="button" class="btn ghost block" data-act="close">Ahora no</button></form>`);
+}
+async function saveOpinion(f) {
+  const e = (await q(sb.from("encuestas").select("id,preguntas").eq("id", f.dataset.id).limit(1)))[0]; if (!e) { toast("Esta opinión ya está cerrada"); sheet(""); route(); return; }
+  const resp = {}; (e.preguntas || []).forEach((p, i) => { const el = f.elements["op_" + i]; const v = el ? String(el.value || "").trim() : ""; if (v !== "") resp[p.id] = p.tipo === "nps" ? +v : v; });
+  if (!Object.keys(resp).length) { toast("Responde al menos una pregunta"); return; }
+  const b = f.querySelector("button.pri"); b.disabled = true;
+  try { await q(sb.from("encuesta_respuestas").insert({ encuesta_id: e.id, client_id: S.me.cid, respuestas: resp, permiso: f.permiso.value || "no" })); sheet(""); toast("¡Gracias! Me ayuda muchísimo 🙏"); route(); }
+  catch (err) { toast(/duplicate|unique/i.test(String(err && err.message)) ? "Ya me habías respondido. ¡Gracias!" : errMsg(err)); b.disabled = false; if (/duplicate|unique/i.test(String(err && err.message))) { sheet(""); route(); } }
+}
+
+// ---- Entrenador: Comunidad › Opiniones
+async function viewOpiniones() {
+  loading("Opiniones");
+  const [es, rs, cl] = await Promise.all([q(sb.from("encuestas").select("*").order("abre", { ascending: false }).limit(24)), q(sb.from("encuesta_respuestas").select("*").order("created_at", { ascending: false })), loadClients()]);
+  S.op = { es, rs, cl: [...cl, ...(S.coach.arch || [])] }; const act = cl.filter(c => c.estado === "activo" && c.user_id);
+  const cli = id => S.op.cl.find(c => c.id === id);
+  const resp = (e, r) => { const c = cli(r.client_id); const nps = opNps(e, r); const priv = (e.preguntas || []).filter(p => (opQ(p.id) || {}).priv && (r.respuestas || {})[p.id]);
+    return `<article class="opr"><header>${avatar(c ? c.nombre : "?", "sm", r.client_id)}<span class="grow"><b>${esc(c ? c.nombre : "Cliente")}</b><br><span class="tiny muted">${esc(relTime(r.created_at))}${c ? " · " + esc(opMeses(c)) : ""}</span></span>${nps != null ? `<span class="opnv ${nps >= 9 ? "ok" : nps >= 7 ? "warn" : "bad"}">${nps}</span>` : ""}</header>
+    ${opTextos(e, r).map(x => `<div class="opa"><span class="tiny muted">${esc(x.p)}</span><p>${esc(x.v)}</p></div>`).join("")}
+    ${priv.map(p => `<div class="opa priv"><span class="tiny muted">${esc(p.p)} · solo para ti</span><p>${esc(r.respuestas[p.id])}</p></div>`).join("")}
+    <footer><span class="chip ${r.permiso === "no" ? "" : "acc"}">${r.permiso === "nombre" ? "📸 Con su nombre" : r.permiso === "anonimo" ? "📸 Sin su nombre" : "Solo para ti"}</span>${r.publicada ? `<span class="chip ok">Historia creada</span>` : ""}<span class="grow"></span>
+    <button class="btn sm ghost" data-act="op-copy" data-id="${esc(r.id)}">Copiar texto</button>${r.permiso !== "no" && opTextos(e, r).length ? `<button class="btn sm pri" data-act="op-story" data-id="${esc(r.id)}">Crear historia</button>` : ""}</footer></article>`; };
+  const card = e => { const rr = rs.filter(r => r.encuesta_id === e.id); const dest = e.para && e.para.length ? act.filter(c => e.para.includes(c.id)) : act;
+    const nps = rr.map(r => opNps(e, r)).filter(v => v != null); const ab = opAbierta(e);
+    return `<section class="card openc"><div class="ophd"><span class="grow"><h2 style="margin:0">${esc(e.titulo || "Tu opinión")}</h2><span class="tiny muted">${esc(fdate(e.abre.slice(0, 10), { day: "numeric", month: "long" }))} · ${ab ? `abierta${e.cierra ? " hasta el " + esc(fdate(e.cierra.slice(0, 10), { weekday: "short", day: "numeric" })) : ""}` : "cerrada"} · ${e.para && e.para.length ? "para " + esc(e.para.map(clientName).join(", ")) : "para todos"}</span></span>
+      ${ab ? `<button class="btn sm ghost" data-act="op-close" data-id="${esc(e.id)}">Cerrar</button>` : ""}</div>
+      <div class="opst"><span><b>${rr.length}/${dest.length || rr.length}</b><em>respuestas</em></span><span><b>${nps.length ? fmt(avg(nps), 1) : "—"}</b><em>nota media de 10</em></span><span><b>${rr.filter(r => r.permiso !== "no").length}</b><em>publicables 📸</em></span></div>
+      ${rr.length ? rr.map(r => resp(e, r)).join("") : `<p class="small muted" style="margin:0">${ab ? "Aún no ha respondido nadie. Les llega un aviso y una tarjeta en «Hoy»." : "Nadie respondió a esta."}</p>`}</section>`; };
+  shell("Opiniones", `<div class="pghead"><h1 class="ptitle">Opiniones <span class="cnt">${rs.length}</span></h1><button class="btn pri" data-act="op-new">Lanzar opinión</button></div>
+  <p class="small muted" style="margin:-6px 0 4px">Una vez al mes, unas pocas preguntas a tus clientes. No cuenta como tarea ni sale en su calendario. Les aparece en «Hoy» con un aviso, y de las que te dejen compartir puedes sacar una historia para Instagram.</p>
+  ${es.length ? es.map(card).join("") : `<div class="card empty">Todavía no has lanzado ninguna. Pulsa «Lanzar opinión»: las preguntas ya vienen propuestas y van rotando cada mes.</div>`}`, { crumb: [["tablon", "Comunidad"], [null, "Opiniones"]] });
+}
+const opRow = p => `<div class="opq" data-id="${esc(p.id)}" data-tipo="${esc(p.tipo)}"><span class="optag">${p.tipo === "nps" ? "0 a 10" : p.tipo === "palabra" ? "Palabra" : (opQ(p.id) || {}).priv ? "Privada" : "Texto"}</span><textarea name="q_p" rows="3" maxlength="200" aria-label="Pregunta">${esc(p.p)}</textarea><button type="button" class="btn sm ghost" data-act="opq-del" aria-label="Quitar pregunta">✕</button></div>`;
+async function openOpinionForm(rot) {
+  const n = rot != null ? rot : ((S.op && S.op.es) || []).length; S.opRot = n;
+  const cl = (S.coach.list || await loadClients()).filter(c => c.estado === "activo");
+  const mes = new Date().toLocaleDateString("es-ES", { month: "long" });
+  sheet(`<h2>Lanzar opinión</h2><p class="tiny muted" style="margin:-4px 0 0">Preguntas propuestas para este mes (van rotando). Puedes cambiar el texto, quitar o añadir del banco. Al final siempre les pregunto si puedes compartirlo.</p>
+  <form id="f-opl" style="display:flex;flex-direction:column;gap:12px">
+    <div class="f"><label for="opl-t">Título que verán</label><input id="opl-t" name="titulo" maxlength="80" value="${esc("Tu opinión de " + mes)}"></div>
+    <div id="opl-q" class="opqs">${OP_ROT[n % OP_ROT.length].map(id => opRow(opQ(id))).join("")}</div>
+    <div class="row" style="gap:8px"><select aria-label="Añadir pregunta del banco" data-act-change="opq-add" class="grow"><option value="">+ Añadir pregunta del banco</option>${OP_BANCO.map(b => `<option value="${b.id}">${esc(b.p)}</option>`).join("")}<option value="__libre">Escribir una nueva</option></select><button type="button" class="btn sm" data-act="opq-rot">Otras preguntas</button></div>
+    <fieldset class="opts"><legend>¿A quién?</legend><label class="mchk"><input type="checkbox" name="todos" data-act-change="post-todos" checked><span>Todos los clientes activos</span></label>
+    <div class="post-para" hidden>${cl.map(c => `<label class="mchk"><input type="checkbox" name="para" value="${esc(c.id)}"><span>${esc(c.nombre)}</span></label>`).join("")}</div></fieldset>
+    <div class="f"><label for="opl-d">Días abierta</label><select id="opl-d" name="dias">${[3, 5, 7, 10, 14].map(d => `<option value="${d}" ${d === 7 ? "selected" : ""}>${d} días</option>`).join("")}</select><span class="tiny muted">Se cierra sola al terminar. También puedes cerrarla antes.</span></div>
+    <button class="btn pri block">Publicar</button><button type="button" class="btn ghost" data-act="close">Cancelar</button></form>`);
+}
+async function saveOpinionForm(f) {
+  const used = {}; const preguntas = [...f.querySelectorAll(".opq")].map(r => { let id = r.dataset.id; used[id] = (used[id] || 0) + 1; if (used[id] > 1) id += "_" + used[id]; return { id, tipo: r.dataset.tipo, p: r.querySelector("textarea").value.trim() }; }).filter(p => p.p);
+  if (!preguntas.length) { toast("Pon al menos una pregunta"); return; }
+  const para = f.todos.checked ? null : [...f.querySelectorAll('[name="para"]:checked')].map(i => i.value);
+  if (para && !para.length) { toast("Elige al menos un cliente o marca «Todos»"); return; }
+  const ahora = new Date(); const b = f.querySelector("button.pri"); b.disabled = true;
+  try { await q(sb.from("encuestas").insert({ titulo: f.titulo.value.trim() || "Tu opinión", preguntas, para, abre: ahora.toISOString(), cierra: new Date(ahora.getTime() + (+f.dias.value || 7) * 864e5).toISOString() })); sheet(""); toast("¡Publicada! Les llega un aviso en unos minutos"); route(); }
+  catch (e) { toast(errMsg(e)); b.disabled = false; }
+}
+const opFind = id => { const r = ((S.op || {}).rs || []).find(x => x.id === id); return r ? { r, e: S.op.es.find(x => x.id === r.encuesta_id) || {}, c: S.op.cl.find(c => c.id === r.client_id) } : null; };
+function opCopy(id) {
+  const o = opFind(id); if (!o) return; const nps = opNps(o.e, o.r);
+  const txt = opTextos(o.e, o.r).map(x => `${x.p}\n${x.v}`).join("\n\n") + (nps != null ? `\n\nMe recomendaría con un ${nps} de 10` : "") + `\n\n${o.r.permiso === "no" ? (o.c ? o.c.nombre : "Cliente") + " (no autoriza a publicarlo)" : opAutor(o.r, o.c)}`;
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Texto copiado"), () => toast("No se pudo copiar"));
+}
+function openOpStory(id, k) {
+  const o = opFind(id); if (!o) return; const xs = opTextos(o.e, o.r); if (!xs.length) return;
+  const sel = k != null ? +k : xs.map((x, i) => [x.tipo === "texto" ? x.v.length : 0, i]).sort((a, b) => b[0] - a[0])[0][1];
+  S.opStory = { id, k: sel };
+  sheet(`<h2>Crear historia</h2><p class="tiny muted" style="margin:-4px 0 0">Elige qué frase sale. ${o.r.permiso === "anonimo" ? "Sin su nombre, como pidió." : "Con su nombre, como autorizó."}</p>
+  <div class="opsel">${xs.map((x, i) => `<button type="button" class="opsi" data-act="op-story-k" data-id="${esc(id)}" data-k="${i}" aria-pressed="${i === sel}"><span class="tiny muted">${esc(x.p)}</span>${esc(x.v.length > 140 ? x.v.slice(0, 139) + "…" : x.v)}</button>`).join("")}</div>
+  <div id="op-prev" class="empty">Preparando la imagen…</div>`);
+  opStoryRender();
+}
+async function opStoryImage(o, txt) {
+  const W = 1080, H = 1920; const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+  await document.fonts.ready.catch(() => { });
+  const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`;
+  const g = x.createRadialGradient(W, 0, 0, W, 0, 1700); g.addColorStop(0, "#6a2a12"); g.addColorStop(.55, "#1d1a1a"); g.addColorStop(1, "#141518"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const M = 110; const maxW = W - M * 2;
+  const wrap = (t, sz, w) => { x.font = F(w, sz); const out = []; String(t).split(/\n+/).forEach(par => { let line = ""; par.split(/\s+/).forEach(word => { const tst = line ? line + " " + word : word; if (x.measureText(tst).width > maxW && line) { out.push(line); line = word; } else line = tst; }); if (line) out.push(line); }); return out; };
+  // tamaño de letra que encaje
+  let sz = 76, lines; for (; sz >= 40; sz -= 4) { lines = wrap(txt, sz, 700); if (lines.length * sz * 1.28 <= 860) break; }
+  if (lines.length * sz * 1.28 > 860) { const keep = Math.floor(860 / (sz * 1.28)); lines = lines.slice(0, keep); lines[keep - 1] = lines[keep - 1].replace(/\s*\S*$/, "") + "…"; }
+  const lh = sz * 1.28, blockH = lines.length * lh; const top = Math.max(520, (H - blockH) / 2 - 40);
+  x.textBaseline = "alphabetic"; x.textAlign = "left";
+  x.font = F(600, 32); x.fillStyle = "#ff7a3d"; x.fillText("Lo que dicen mis clientes", M, top - 250);
+  x.font = F(800, 220); x.fillStyle = "rgba(255,122,61,.9)"; x.fillText("“", M - 12, top + 20);
+  x.font = F(700, sz); x.fillStyle = "#fff"; lines.forEach((l, i) => x.fillText(l, M, top + 40 + i * lh));
+  const yA = top + 40 + blockH + 50; x.fillStyle = "#ff7a3d"; x.fillRect(M, yA, 64, 6);
+  x.font = F(600, 38); x.fillStyle = "#fff"; x.fillText(opAutor(o.r, o.c), M, yA + 70);
+  const nps = opNps(o.e, o.r); if (nps != null && nps >= 9) { x.font = F(500, 30); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(`Me recomendaría con un ${nps} de 10`, M, yA + 120); }
+  x.fillStyle = "rgba(255,255,255,.3)"; x.fillRect(M, H - 330, W - M * 2, 2);
+  x.font = F(600, 32); x.fillStyle = "#fff"; x.textAlign = "right"; x.fillText(IG, W - M, H - 270); x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.7)"; x.fillText("Asesorías online", M, H - 270);
+  return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .92));
+}
+async function opStoryRender() {
+  const st = S.opStory; const o = st && opFind(st.id); if (!o) return; const tok = st.tok = (st.tok || 0) + 1 + Math.random(); const xs = opTextos(o.e, o.r); const sel = xs[st.k] || xs[0];
+  try {
+    const blob = await opStoryImage(o, sel.tipo === "palabra" ? sel.v : sel.v); const f = new File([blob], "opinion-liftadri.jpg", { type: "image/jpeg" });
+    if (S.shareUrl) URL.revokeObjectURL(S.shareUrl); const url = S.shareUrl = URL.createObjectURL(blob); S.shareFile = f; const can = !!(navigator.canShare && navigator.canShare({ files: [f] }));
+    const box = $("#op-prev"); if (!box || S.opStory !== st || st.tok !== tok) return;
+    box.outerHTML = `<div id="op-prev" style="display:flex;flex-direction:column;gap:10px"><img class="shprev" src="${url}" alt="Vista previa de la historia con la opinión">
+    ${can ? `<button type="button" class="btn pri block" data-act="sh-compartir">Subir a mi historia</button>` : ""}<a class="btn ${can ? "" : "pri "}block" href="${url}" download="opinion-liftadri.jpg">Guardar en mi galería</a><button type="button" class="btn ghost block" data-act="close">Cerrar</button></div>`;
+    if (!o.r.publicada) { o.r.publicada = true; q(sb.from("encuesta_respuestas").update({ publicada: true }).eq("id", o.r.id)).catch(() => { }); }
+  } catch (e) { toast(errMsg(e)); }
 }
 
 /* ================= Hábitos diarios con racha ================= */
@@ -927,13 +1072,14 @@ async function pushCoachCard() {
   <div class="pushdia"><label class="chkrow"><input type="checkbox" name="cuest" ${on("cuest") ? "checked" : ""}><span><b>Recordatorio del cuestionario</b><small>Si a esa hora no ha rellenado el cuestionario diario de hoy.</small></span></label><label class="pushh"><span class="tiny muted">Hora</span><input name="hora_cuest" type="time" value="${esc(v.hora_cuest || "11:00")}"></label></div>
   <h3 class="pushsub">Automatizaciones</h3>
   ${it("meso", "Fin de mesociclo (aviso a ti)", "Una semana antes de que termine el mesociclo de un cliente, para preparar el siguiente y el informe de cierre.")}
+  <label class="chkrow"><input type="checkbox" name="opmes" ${v.opmes === true ? "checked" : ""}><span><b>Recordatorio de la opinión del mes (aviso a ti)</b><small>Los últimos días del mes, si aún no has lanzado ninguna. Nunca se envía sola a los clientes.</small></span></label>
   <label class="chkrow"><input type="checkbox" name="bienv" ${on("bienv") ? "checked" : ""}><span><b>Bienvenida a clientes nuevos</b><small>Al darlo de alta le dejo este mensaje en su app. El cuestionario inicial le sale solo al entrar. Los entrenos los programas tú.</small></span></label>
   <textarea name="bienv_txt" rows="3" aria-label="Mensaje de bienvenida">${esc(v.bienv_txt || BIENV_TXT)}</textarea>
   <div class="row"><span class="tiny muted grow">Se revisa cada 10 minutos.</span><button class="btn pri">Guardar</button></div></form>`;
 }
 async function savePushCfg(f) {
   let prev = {}; try { const r = await q(sb.from("ajustes").select("valor").eq("clave", "push").limit(1)); prev = (r[0] || {}).valor || {}; } catch { }
-  const valor = { ...prev, nuevas: f.nuevas.checked, dia: f.dia.checked, mensajes: f.mensajes.checked, revision: f.revision.checked, comunidad: f.comunidad.checked, hora_dia: f.hora_dia.value || "08:00", cuest: f.cuest.checked, hora_cuest: f.hora_cuest.value || "11:00", meso: f.meso.checked, bienv: f.bienv.checked, bienv_txt: f.bienv_txt.value.trim() || BIENV_TXT };
+  const valor = { ...prev, nuevas: f.nuevas.checked, dia: f.dia.checked, mensajes: f.mensajes.checked, revision: f.revision.checked, comunidad: f.comunidad.checked, hora_dia: f.hora_dia.value || "08:00", cuest: f.cuest.checked, hora_cuest: f.hora_cuest.value || "11:00", meso: f.meso.checked, opmes: f.opmes.checked, bienv: f.bienv.checked, bienv_txt: f.bienv_txt.value.trim() || BIENV_TXT };
   try { await q(sb.from("ajustes").upsert({ clave: "push", valor, updated_at: new Date().toISOString() }, { onConflict: "clave" })); toast("Avisos guardados"); } catch (e) { toast(errMsg(e)); }
 }
 async function pushTest(cid, b) {
@@ -943,9 +1089,9 @@ async function pushTest(cid, b) {
 /* ================= Cliente: Hoy ================= */
 async function viewHoy() {
   loading("Hoy");
-  const t = today(); const extras = Promise.all([tablonHoy().catch(() => ""), pushCardHoy().catch(() => ""), readaptHoy().catch(() => "")]);
+  const t = today(); const extras = Promise.all([tablonHoy().catch(() => ""), pushCardHoy().catch(() => ""), readaptHoy().catch(() => ""), opHoy().catch(() => "")]);
   const [plan, wl, wt, asig, rp, ev] = await Promise.all([getPlan(), q(sb.from("wellness").select("id").eq("fecha", t).limit(1)), q(sb.from("weights").select("*").order("fecha", { ascending: false }).limit(1)), getAsig(addDays(t, -7), addDays(t, 7)), q(sb.from("reports").select("id,fecha,titular,semana,leido_en").order("fecha", { ascending: false }).limit(1)), q(sb.from("events").select("*").gte("fecha", t).order("fecha").limit(3))]);
-  const w = weekNow(plan); const lastW = wt[0]; const habsP = habitosHoy(plan).catch(() => ""); const [tbh, pushc, rah] = await extras; const habs = await habsP;
+  const w = weekNow(plan); const lastW = wt[0]; const habsP = habitosHoy(plan).catch(() => ""); const [tbh, pushc, rah, oph] = await extras; const habs = await habsP;
   const msgs = asig.filter(x => x.tipo === "nota" && x.fecha <= t && (!x.hecho || x.fecha === t)).slice(-3);
   const hoy = asig.filter(x => x.fecha === t && x.tipo !== "nota"), atras = asig.filter(x => x.fecha < t && !x.hecho && x.tipo !== "nota"), prox = asig.filter(x => x.fecha > t && x.tipo !== "nota").slice(0, 4);
   shell(CFG.nombre || "Hoy", `
@@ -953,7 +1099,7 @@ async function viewHoy() {
   <section class="hero"><p class="hdate">${esc(cap(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })))}</p><h2>Hola, ${esc((S.me.nombre || "").split(" ")[0])}</h2>${w ? `<div class="hweek"><span>${esc(semTxt(w.nombre))}</span>${esc([w.bloque, w.tipo && w.tipo !== "carga" ? cap(w.tipo) : ""].filter(Boolean).join(" · "))}</div>` : ""}</section>
   ${msgs.map(m => `<button class="msg ${m.hecho ? "leido" : ""}" data-act="item" data-id="${esc(m.id)}">${avatar("Adrián Rodríguez", "sm")}<span><b>Adrián</b> <span class="tiny muted">${esc(fdate(m.fecha, { weekday: "short", day: "numeric" }))}${(m.contenido || {}).hora ? " · " + esc(m.contenido.hora) : ""}</span><br>${esc(((m.contenido || {}).detalle || m.titulo).slice(0, 220))}</span></button>`).join("")}
   ${rp[0] && !rp[0].leido_en ? `<button class="card revnew" data-act="go" data-h="informe-${esc(encodeURIComponent(rp[0].id))}"><span class="ricon">${ICON.doc}</span><span class="grow"><span class="pnew">Nueva</span> <span class="tiny">Revisión del ${esc(fdate(rp[0].fecha, { day: "numeric", month: "long" }))}</span><br><b>${esc(rp[0].titular || "Tu revisión semanal")}</b><br><span class="tiny muted">Toca para leerla</span></span><span class="chev">›</span></button>` : ""}
-  ${pushc}${rah}${tbh}
+  ${oph}${pushc}${rah}${tbh}
   <div class="card"><h2>Para hoy</h2><div class="list">
     ${hoy.length ? hoy.map(asigRow).join("") : `<div class="it rest" style="cursor:default"><span><b>${prox[0] || atras.length ? "Día de descanso" : "Nada programado para hoy"}</b><br><span class="tiny muted">${prox[0] ? `Lo siguiente: ${esc(prox[0].titulo)} · ${esc(fdate(prox[0].fecha, { weekday: "long" }))}` : atras.length ? "Recupera bien" : "Cuando Adrián te programe algo, aparecerá aquí"}</span></span></div>`}
   </div></div>
@@ -1742,7 +1888,7 @@ async function viewMas() {
   <p class="tiny muted foot">Tus datos solo los ves tú y Adrián.<br>Para instalar la app: iPhone → Compartir → «Añadir a pantalla de inicio» · Android → menú ⋮ → «Instalar aplicación».</p>`, coach ? {} : { back: "hoy" });
 }
 /* ================= Copias de seguridad ================= */
-const BK_ORDEN = ["clients", "plans", "exercises", "foods", "recipes", "workout_templates", "programs", "assignments", "workouts", "wellness", "weights", "measurements", "photos", "meal_logs", "tests", "events", "reports", "reviews", "payments", "leads", "onboarding", "posts", "post_reads", "post_reactions", "consentimientos", "habit_logs", "ajustes", "readaptaciones", "purga_log"];
+const BK_ORDEN = ["clients", "plans", "exercises", "foods", "recipes", "workout_templates", "programs", "assignments", "workouts", "wellness", "weights", "measurements", "photos", "meal_logs", "tests", "events", "reports", "reviews", "payments", "leads", "onboarding", "posts", "post_reads", "post_reactions", "encuestas", "encuesta_respuestas", "consentimientos", "habit_logs", "ajustes", "readaptaciones", "purga_log"];
 const BK_PK = { plans: "client_id", onboarding: "client_id", post_reads: "post_id,client_id", post_reactions: "post_id,client_id,emoji", exercises: "nombre" };
 const kb = n => n > 1048576 ? fmt(n / 1048576, 1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
 async function backupCard() {
@@ -2016,7 +2162,7 @@ async function viewInicio() {
   const WKC = WK.map(([k]) => k).join(",");
   const t35 = addDays(t, -35);
   const sysP = sysBanner().catch(() => ""), extraP = Promise.all([q(sb.from("workouts").select("client_id,fecha,rpe_sesion,duracion_min").gte("fecha", t35)).catch(() => []), q(sb.from("assignments").select("client_id,fecha,resultado").eq("tipo", "cardio").eq("hecho", true).gte("fecha", t35)).catch(() => []), q(sb.from("readaptaciones").select("client_id,protocolo").eq("estado", "activa")).catch(() => [])]);
-  const [cl, wo, wl, ws, as, asAll, ev, leads, onb, drafts, resp] = await Promise.all([loadClients(),
+  const [cl, wo, wl, ws, as, asAll, ev, leads, onb, drafts, resp, opin] = await Promise.all([loadClients(),
     q(sb.from("workouts").select("client_id,dia,created_at").gte("created_at", sinceTs)),
     q(sb.from("wellness").select(`client_id,fecha,created_at,molestia_zona,molestia_0a10,${WKC}`).gte("created_at", sinceTs)),
     q(sb.from("weights").select("client_id,kg,created_at").gte("created_at", sinceTs)),
@@ -2025,7 +2171,7 @@ async function viewInicio() {
     q(sb.from("events").select("*").gte("fecha", t).lte("fecha", addDays(t, 45)).order("fecha")),
     q(sb.from("leads").select("id,nombre,objetivo,estado,created_at,estado_en").order("created_at", { ascending: false }).limit(30)).catch(() => []),
     q(sb.from("onboarding").select("client_id,enviado_en,revisado").eq("revisado", false)).catch(() => []),
-    q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => [])]);
+    q(sb.from("reports").select("id,client_id,fecha").eq("publicado", false)).catch(() => []), q(sb.from("reports").select("id,client_id,respondido_en").gte("respondido_en", sinceTs)).catch(() => []), q(sb.from("encuesta_respuestas").select("id,client_id,permiso,created_at").eq("publicada", false).gte("created_at", new Date(Date.now() - 4 * 864e5).toISOString())).catch(() => [])]);
   const sysHtml = await sysP;
   const [wl35, ca35, raT] = await extraP;
   const loadBy = {}; const addL = (cid, f, v) => { if (!v) return; const o = loadBy[cid] = loadBy[cid] || {}; o[f] = (o[f] || 0) + v; };
@@ -2051,6 +2197,7 @@ async function viewInicio() {
   activos.forEach(c => { const f = hasta(c.id); const d = f ? daysBetween(t, f) : null; if (d == null || d <= 3) at.push({ p: 4, k: "warn", c: c.id, t: d == null ? "No tiene nada programado" : d < 0 ? `Sin tareas desde hace ${-d} día${d === -1 ? "" : "s"}` : d === 0 ? "Se queda sin tareas hoy" : `Se queda sin tareas en ${d} día${d === 1 ? "" : "s"}`, s: c.nombre, a: `data-act="go-plan" data-cid="${esc(c.id)}"`, b: "Planificar" }); });
   activos.filter(c => c.user_id && !ultimo(c.id)).forEach(c => at.push({ p: 5, k: "warn", c: c.id, t: "Sin registrar nada en 7 días", s: c.nombre, a: go(c.id, "plan"), b: "Ver" }));
   Object.entries(loadBy).forEach(([cid, L]) => { if (!activos.some(c => c.id === cid)) return; cargaAlertas(L, t, raT.some(r => r.client_id === cid && r.protocolo === "tendon")).forEach(txt => at.push({ p: 1, k: "warn", c: cid, t: "Pico de carga", s: `${clientName(cid)} · ${txt}`, a: go(cid, "evo"), b: "Ver" })); });
+  opin.forEach(r => at.push({ p: 5, k: "info", c: r.client_id, t: "Nueva opinión" + (r.permiso !== "no" ? " 📸" : ""), s: `${clientName(r.client_id)} · ${relTime(r.created_at)}`, a: `data-act="go" data-h="opiniones"`, b: "Leer" }));
   drafts.forEach(r => at.push({ p: 6, k: "info", c: r.client_id, t: "Informe en borrador", s: `${clientName(r.client_id)} · ${fdate(r.fecha, { day: "numeric", month: "short" })}`, a: go(r.client_id, "informes"), b: "Publicar" }));
   at.sort((a, b) => a.p - b.p);
   // ---- KPIs
@@ -4548,6 +4695,14 @@ document.addEventListener("click", async ev => {
       case "bk-now": backupNow(a); break;
       case "bk-restore": openRestore(); break;
       case "post-new": openPostForm(); break;
+      case "op-open": openOpinion(id); break;
+      case "op-new": openOpinionForm(); break;
+      case "opq-del": a.closest(".opq").remove(); break;
+      case "opq-rot": { const l = $("#opl-q"); S.opRot = (S.opRot || 0) + 1; if (l) l.innerHTML = OP_ROT[S.opRot % OP_ROT.length].map(x => opRow(opQ(x))).join(""); break; }
+      case "op-close": if (!confirm("¿Cerrar esta opinión? Ya no podrán responder.")) break; try { await q(sb.from("encuestas").update({ cerrada: true }).eq("id", id)); toast("Opinión cerrada"); route(); } catch (e) { toast(errMsg(e)); } break;
+      case "op-copy": opCopy(id); break;
+      case "op-story": openOpStory(id); break;
+      case "op-story-k": S.opStory = { id, k: +a.dataset.k }; document.querySelectorAll(".opsi").forEach(b => b.setAttribute("aria-pressed", String(b === a))); { const pv = $("#op-prev"); if (pv) pv.outerHTML = `<div id="op-prev" class="empty">Preparando la imagen…</div>`; } opStoryRender(); break;
       case "post-edit": a.closest("details") && a.closest("details").removeAttribute("open"); openPostForm(id); break;
       case "post-pin": { const p = (await q(sb.from("posts").select("fijado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ fijado: !p.fijado }).eq("id", id)); toast(p.fijado ? "Quitado de fijados" : "Fijado arriba"); route(); break; }
       case "post-hide": { const p = (await q(sb.from("posts").select("publicado").eq("id", id).limit(1)))[0]; await q(sb.from("posts").update({ publicado: !p.publicado }).eq("id", id)); toast(p.publicado ? "Oculto para los clientes" : "Visible otra vez"); route(); break; }
@@ -4773,6 +4928,7 @@ document.addEventListener("change", ev => {
   if (el.dataset && /^ra-/.test(el.dataset.actChange || "")) raAction(el.dataset.actChange, el);
   if (el.dataset && el.dataset.actChange === "copsem-prev") copsemPrev();
   if (el.dataset && el.dataset.actChange === "copsem-modo") { const b = el.form.querySelector(".copcl"); if (b) b.hidden = el.value !== "otros"; }
+  if (el.dataset && el.dataset.actChange === "opq-add" && el.value) { const v = el.value; el.value = ""; const l = $("#opl-q"); const b = v === "__libre" ? { id: "libre" + Date.now().toString(36), tipo: "texto", p: "" } : opQ(v); if (l && b) { l.insertAdjacentHTML("beforeend", opRow(b)); const t = l.lastElementChild.querySelector("textarea"); if (t) t.focus(); } }
   if (el.dataset && el.dataset.actChange === "post-todos") { const b = el.form.querySelector(".post-para"); if (b) b.hidden = el.checked; }
   if (el.dataset && el.dataset.actChange === "test-name") { const t = (S.coach.tests || []).filter(x => tKey(x.nombre) === tKey(el.value)).pop(); if (t) { const f = el.form; f.categoria.value = t.categoria || f.categoria.value; f.unidad.value = t.unidad || ""; f.menos.checked = !!t.mejor_es_menos; f.nombre.value = t.nombre; } }
   if (el.form && el.form.id === "f-com") { const d = comRead(el.form); comSaveDraft(d); el.closest(".cq") && el.closest(".cq").classList.remove("err");
@@ -4790,7 +4946,7 @@ document.addEventListener("change", ev => {
 });
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
-  const map = { "f-woe": saveWoEdit, "f-mfa": doMfa, "f-mfa-on": mfaOn, "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
+  const map = { "f-woe": saveWoEdit, "f-mfa": doMfa, "f-mfa-on": mfaOn, "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-op": saveOpinion, "f-opl": saveOpinionForm, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
     "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-mz": saveMz, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
