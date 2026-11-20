@@ -1996,3 +1996,81 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .futnote{margin:6px 0 10px;padding:12px 14px;border-radius:14px;background:var(--surface-2);font-size:14.5px;color:var(--muted);text-align:center}
 .ex.wx .set.t-aprox{background:var(--surface-2);border-radius:14px;padding:8px 6px;margin:0 -6px}
 .ex.wx .set.t-aprox input{background:var(--surface)}
+/* Ficha detallada del mesociclo */
+.mzw{display:flex;flex-direction:column;gap:12px}
+.mzhero{position:relative;overflow:hidden;border-radius:22px;padding:18px 18px 16px;background:linear-gradient(135deg,#25282c,#1c1f22);color:#fff}
+.mzhero::after{content:"";position:absolute;right:-70px;top:-70px;width:220px;height:220px;background:radial-gradient(circle,rgba(232,73,26,.45),transparent 70%);pointer-events:none}
+.mztag{display:inline-block;font-size:12px;font-weight:650;padding:4px 10px;border-radius:99px;background:rgba(255,106,43,.18);color:#ffb08a}
+.mzhero h1{margin:8px 0 0;font-size:25px;font-weight:760;letter-spacing:-.03em}
+.mzhero p{margin:4px 0 0;font-size:13.5px;color:rgba(255,255,255,.72);line-height:1.4}
+.mzhero .mzdt{font-size:12px;color:rgba(255,255,255,.5)}
+.mzwk{display:flex;gap:4px;margin-top:14px}
+.mzwk div{flex:1;min-width:0;text-align:center}
+.mzwk i{display:block;height:8px;border-radius:5px;background:rgba(255,255,255,.2)}
+.mzwk i.t-carga{background:#e8491a}.mzwk i.t-descarga{background:#4cc38f}.mzwk i.t-afinamiento{background:#f2c14e}.mzwk i.t-test{background:#fff}.mzwk i.t-competicion{background:#ff8a3d}.mzwk i.t-transicion{background:#8a8f96}
+.mzwk .now i{box-shadow:0 0 0 2px #fff}
+.mzwk span{display:block;margin-top:5px;font-size:11px;font-weight:600;color:rgba(255,255,255,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mzwk .now span{color:#fff}
+.mzhero .mzed{position:absolute;right:16px;top:16px;z-index:1;color:#ffb08a}
+.mzc{display:flex;flex-direction:column;gap:8px}
+.mzhd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mzhd h2{margin:0;font-size:16px}
+.mzed{font-size:13px;font-weight:650;color:var(--accent);background:none;border:0;padding:4px 0;cursor:pointer}
+.mzpriv{margin:-4px 0 2px}
+.mzob{border:1px solid var(--line);border-radius:16px;padding:12px}
+.mzob.p{border-color:rgba(232,73,26,.4);background:rgba(232,73,26,.04)}
+.mzl{font-size:11.5px;font-weight:650;color:var(--accent)}
+.mzob>b{display:block;margin-top:3px;font-size:14.5px;font-weight:650;line-height:1.3}
+.mzm{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.mzm b{color:var(--ink);font-variant-numeric:tabular-nums}
+.mzpb{height:7px;border-radius:5px;background:var(--surface-2);margin-top:6px;overflow:hidden}
+.mzpb i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#ff8a3d,#e8491a)}
+.mzch{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.mzch:empty{display:none}
+.mzch span{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--surface-2);color:var(--muted)}
+.mzt{width:100%;font-size:13px}
+.mzt td,.mzt th{vertical-align:top}
+.mzt .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mzt .ok{color:var(--ok);font-weight:700}.mzt .mid{color:var(--warn);font-weight:700}.mzt .low{color:var(--bad);font-weight:700}
+.mzt tr.now td{background:rgba(232,73,26,.05)}
+.mzp{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink)}
+.mzp.t-carga{background:rgba(232,73,26,.12);color:#c23c10}.mzp.t-descarga{background:var(--ok-soft);color:var(--ok)}.mzp.t-afinamiento{background:var(--warn-soft);color:var(--warn)}.mzp.t-test{background:var(--ink);color:var(--bg)}
+.mzpt{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--surface-2);white-space:pre-line}
+.mzgw{overflow-x:auto;margin:0 -4px;padding:0 4px}
+.mzg{display:grid;font-size:12px;min-width:100%}
+.mzg>div{padding:8px 6px;border-bottom:1px solid var(--line)}
+.mzg .h{font-size:11.5px;font-weight:650;color:var(--muted)}
+.mzg .h.now{color:var(--accent)}
+.mzg .e{font-weight:650;line-height:1.25}
+.mzg .cell b{display:block;font-weight:650;white-space:nowrap}
+.mzg .cell span{display:block;margin-top:2px;font-size:11.5px;font-weight:650;color:var(--ok);white-space:nowrap}
+.mzg .cell.f span{color:var(--muted);font-weight:500}
+.mzseg2{display:flex;gap:2px;flex:none}
+.mzseg2 button{min-height:30px;padding:4px 9px;font-size:12.5px}
+.mzses{display:flex;flex-direction:column;gap:8px}
+.mzsr{display:flex;align-items:center;gap:10px;text-align:left;width:100%;padding:10px 12px;border-radius:14px;background:var(--surface-2);border:0;color:var(--ink);font:inherit;cursor:pointer}
+.mzsr .grow{min-width:0}
+.mzsr b{display:block;font-size:14px}
+.mzsr small{display:block;font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mzab{font-size:13px;font-weight:650;color:var(--accent);flex:none}
+.dot2{flex:none;width:9px;height:9px;border-radius:50%;background:var(--line)}
+.dot2.ok{background:var(--ok)}.dot2.late{background:var(--bad)}
+.mzvol{display:flex;flex-direction:column;gap:7px}
+.mzvr{display:grid;grid-template-columns:96px 1fr 34px;align-items:center;gap:8px;font-size:13px}
+.mzvr i{position:relative;height:8px;border-radius:5px;background:var(--surface-2)}
+.mzvr i em{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--ink)}
+.mzvr i u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--accent)}
+.mzvr b{text-align:right;font-variant-numeric:tabular-nums}
+.mznote{margin:0;font-size:14px;line-height:1.5;white-space:pre-line}
+.mzf{display:flex;flex-direction:column;gap:12px}
+.mzrows{display:flex;flex-direction:column;gap:12px}
+.mzrow{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.mzrow .row{display:flex;gap:8px;align-items:center}
+.mzrow .row select{width:auto}
+.mzgrid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px}
+.mzgrid4 label,.mzlab{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--muted)}
+.mzhero h1{color:#fff}
+.mzg{font-size:11.5px}
+.mzg>div{padding:8px 4px}
+.mzg .cell b{font-size:11.5px;letter-spacing:-.01em}
+.mzg .cell span{font-size:11px}

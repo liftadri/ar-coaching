@@ -496,7 +496,7 @@ async function doNueva(f) {
 /* ================= Navegación ================= */
 const CLIENT_TABS = [["hoy", "Hoy", "hoy"], ["cal", "Calendario", "cal"], ["entreno", "Entreno", "entreno"], ["nutri", "Nutrición", "nutri"], ["progreso", "Progreso", "progreso"]];
 const COACH_TABS = [["inicio", "Inicio", "hoy"], ["c", "Clientes", "clientes"], ["lib", "Librería", "lib"], ["tablon", "Comunidad", "comunidad"], ["cobros", "Cobros", "euro"], ["mas", "Perfil", "mas"]];
-const isCoachHash = h => ["inicio", "c", "lib", "tablon", "cobros"].includes(h) || h.startsWith("c-") || h.startsWith("lib-");
+const isCoachHash = h => ["inicio", "c", "lib", "tablon", "cobros"].includes(h) || h.startsWith("c-") || h.startsWith("lib-") || h.startsWith("mz-");
 function grow(t) { if (!t || t.closest("[hidden]")) return; t.style.height = "auto"; let h = t.scrollHeight; if (!t.value && t.placeholder) { t.value = t.placeholder; h = Math.max(h, t.scrollHeight); t.value = ""; } const cap = Math.max(160, Math.min(460, Math.round(window.innerHeight * .5))); t.style.height = Math.min(Math.max(h + 2, 64), cap) + "px"; t.classList.toggle("tscroll", h + 2 > cap); }
 function shell(title, body, opts = {}) {
   const coach = S.me.role === "coach";
@@ -538,6 +538,7 @@ async function route() {
   S.view = h;
   try {
     if (coach) {
+      if (h.startsWith("mz-")) return await viewMeso(h);
       if (h.startsWith("c-")) return await viewCoachClient(decodeURIComponent(h.slice(2)));
       if (h === "c") return await viewCoachList();
       if (h === "lib") return await viewLib();
@@ -3163,7 +3164,7 @@ const relDay = d => { const n = daysBetween(d, today()); return n === 0 ? "hoy" 
 function mesoActual(pl, t) { const bs = (pl.bloques || []).filter(b => (b.semanas || []).length); return bs.find(b => b.semanas[0].inicio <= t && t <= b.semanas[b.semanas.length - 1].fin) || bs.find(b => b.semanas[0].inicio > t) || bs[bs.length - 1] || null; }
 function mesoBar(pl, t) {
   const b = mesoActual(pl, t);
-  const acts = `<div class="mzact"><button class="btn sm" data-act="meso-next">+ Siguiente mesociclo</button><button class="btn sm" data-act="meso-retrasar">Retrasar 1 semana</button><button class="btn ghost sm" data-act="meso-edit">Editar</button></div>`;
+  const acts = `<div class="mzact">${b ? `<button class="btn sm pri" data-act="meso-ver" data-i="${(pl.bloques || []).indexOf(b)}">Ver mesociclo</button>` : ""}<button class="btn sm" data-act="meso-next">+ Siguiente mesociclo</button><button class="btn sm" data-act="meso-retrasar">Retrasar 1 semana</button><button class="btn ghost sm" data-act="meso-edit">Editar</button></div>`;
   if (!b) return `<div class="card mzbar"><div class="mzh"><div><h2>Sin mesociclo</h2><p class="tiny muted">Crea uno para ver sus semanas aquí y las series por músculo.</p></div><button class="btn sm pri" data-act="meso-next">+ Crear mesociclo</button></div></div>`;
   const ws = b.semanas; const cur = ws.findIndex(w => w.inicio <= t && t <= w.fin); const cnt = {};
   const lab = w => { const k = w.tipo || "carga"; cnt[k] = (cnt[k] || 0) + 1; const n = ws.filter(x => (x.tipo || "carga") === k).length; return cap(k === "competicion" ? "competición" : k === "transicion" ? "transición" : k) + (n > 1 ? " " + cnt[k] : ""); };
@@ -3177,7 +3178,7 @@ async function mesoRetrasar() {
   if (!confirm("Retrasar 1 semana: las semanas del mesociclo desde esta en adelante y todas las tareas sin hacer desde el lunes se mueven 7 días. Lo ya hecho, las semanas de competición y los eventos no se mueven. ¿Seguir?")) return;
   try {
     const bl = (S.coach.pl.bloques || []).map(b => { const sem = (b.semanas || []).map(w => w.fin >= mon && w.tipo !== "competicion" ? { ...w, inicio: w.inicio >= mon ? addDays(w.inicio, 7) : w.inicio, fin: addDays(w.fin, 7) } : w); return { ...b, semanas: sem, inicio: sem.length ? sem[0].inicio : b.inicio, fin: sem.length ? sem[sem.length - 1].fin : b.fin }; });
-    const pub = bl.map(({ objetivo, notas, ...b }) => b);
+    const pub = bl.map(mzPub);
     const xs = await q(sb.from("assignments").select("id,fecha").eq("client_id", S.coach.cid).eq("hecho", false).gte("fecha", mon));
     await q(sb.from("plans").upsert({ client_id: S.coach.cid, bloques: pub }, { onConflict: "client_id" }));
     for (let i = 0; i < xs.length; i += 10) await Promise.all(xs.slice(i, i + 10).map(x => q(sb.from("assignments").update({ fecha: addDays(x.fecha, 7) }).eq("id", x.id))));
@@ -3187,9 +3188,134 @@ async function mesoRetrasar() {
 function mesoNext() {
   const bl = (S.coach.pl.bloques || []).slice(); const last = bl.filter(b => (b.semanas || []).length).pop();
   let ini = last ? addDays(last.semanas[last.semanas.length - 1].fin, 1) : monday(addDays(today(), 7)); ini = monday(ini) < ini ? addDays(monday(ini), 7) : monday(ini);
-  const sem = Array.from({ length: 4 }, (_, k) => ({ nombre: "S" + (k + 1), inicio: addDays(ini, 7 * k), fin: addDays(ini, 7 * k + 6), tipo: k === 3 ? "descarga" : "carga", foco: "" }));
+  const sem = Array.from({ length: 4 }, (_, k) => ({ nombre: "S" + (k + 1), inicio: addDays(ini, 7 * k), fin: addDays(ini, 7 * k + 6), tipo: "carga", foco: "" }));
   bl.push({ nombre: `Mesociclo ${bl.length + 1}`, objetivo: "", notas: "", semanas: sem });
   openMeso(bl);
+}
+
+/* ---- Ficha detallada del mesociclo (privada): objetivos SMART, tests clave, microciclos, progresión ---- */
+const MZ_PRIV = ["objetivo", "notas", "modelo", "objetivos", "tests", "micro", "clave", "plan_test"];
+const mzPub = b => { const o = { ...b }; MZ_PRIV.forEach(k => delete o[k]); return o; };
+const mzPriv = b => { const o = {}; MZ_PRIV.forEach(k => { if (b[k] !== undefined) o[k] = b[k]; }); return o; };
+const MZ_MOD = { bloques: "Por bloques", ondulante: "Ondulante", lineal: "Lineal", atr: "ATR" };
+const MZ_TIPOS = [["carga", "Carga"], ["descarga", "Descarga"], ["afinamiento", "Afinamiento"], ["test", "Test"], ["competicion", "Competición"], ["transicion", "Transición"]];
+const mzWeek = (ws, d) => ws.findIndex(w => w.inicio <= d && d <= w.fin);
+const mzFmt = v => v == null || v === "" || !isFinite(+v) ? "—" : fmt(+v, 1);
+async function mzLoad(cid) {
+  if (S.coach.c && S.coach.c.id === cid && S.coach.pl) return;
+  const [cr, pr] = await Promise.all([q(sb.from("clients").select("*").eq("id", cid).limit(1)), q(sb.from("plans").select("*").eq("client_id", cid).limit(1))]);
+  const c = cr[0]; if (!c) return; const pl = pr[0] || { client_id: cid, bloques: [] }; const MZ = (c.ficha || {}).mesos || [];
+  pl.bloques = (pl.bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) })); S.coach.c = c; S.coach.pl = pl; S.coach.cid = cid;
+}
+async function mzSave(i, priv, pub) {
+  const bl = (S.coach.pl.bloques || []).map((b, k) => k === i ? { ...b, ...(priv || {}), ...(pub || {}) } : b);
+  if (pub) await q(sb.from("plans").upsert({ client_id: S.coach.cid, bloques: bl.map(mzPub) }, { onConflict: "client_id" }));
+  const ficha = { ...(S.coach.c.ficha || {}), mesos: bl.map(mzPriv) };
+  await q(sb.from("clients").update({ ficha }).eq("id", S.coach.cid));
+  S.coach.c.ficha = ficha; S.coach.pl.bloques = bl;
+}
+// e1RM máximo por ejercicio y semana (solo series efectivas)
+function mzE1(wo, ws) {
+  const M = {}; wo.forEach(w => { const k = mzWeek(ws, w.fecha); (w.sets || []).filter(x => !x.hecho && !esAprox(x)).forEach(x => { const e = e1rm(x.kg, x.reps, x.rir); if (!e) return; const key = x.ejercicio + "|" + k; if (!M[key] || e > M[key]) M[key] = e; }); }); return M;
+}
+function mzPres(e) {
+  if (e.series && e.series.length) { const w = e.series.filter(x => x.tipo !== "aprox"); const reps = [...new Set(w.map(x => String(x.reps || (x.tipo === "cluster" ? "cl" : "?"))))]; const rir = [...new Set(w.map(x => x.rir).filter(x => x != null && x !== ""))]; return `${w.length}×${reps.join("/")}${rir.length === 1 ? " RIR " + rir[0] : ""}`; }
+  const r = String(e.rir || "").trim(); return `${String(e.sxr || "").replace(/\s*\+.*$/, "")}${/^[\d.,–-]+$/.test(r) ? " RIR " + r : ""}`;
+}
+function mzObjVal(o, D) {
+  if (o.fuente === "e1rm" && o.ref) { const v = D.wo.filter(w => w.fecha >= D.ini).flatMap(w => (w.sets || []).filter(x => x.ejercicio === o.ref && !x.hecho && !esAprox(x)).map(x => e1rm(x.kg, x.reps, x.rir) || 0)); return v.length ? Math.max(...v) : null; }
+  if (o.fuente === "test" && o.ref) { const t = D.ts.filter(x => x.nombre === o.ref && x.fecha >= addDays(D.ini, -14)).pop(); return t ? num(t.valor) : null; }
+  return num(o.actual);
+}
+async function viewMeso(h) {
+  const j = h.lastIndexOf("-"), cid = decodeURIComponent(h.slice(3, j)), i = +h.slice(j + 1);
+  loading("Mesociclo"); await mzLoad(cid);
+  const c = S.coach.c, b = c && (S.coach.pl.bloques || [])[i];
+  if (!b) { shell("Mesociclo", `<div class="empty">No existe este mesociclo.</div>`, { back: "c-" + encodeURIComponent(cid) }); return; }
+  const ws = b.semanas || [], t = today(); const ini = ws.length ? ws[0].inicio : b.inicio || t, fin = ws.length ? ws[ws.length - 1].fin : b.fin || t;
+  const [as, wo, ts, lib] = await Promise.all([q(sb.from("assignments").select("*").eq("client_id", cid).gte("fecha", ini).lte("fecha", fin).order("fecha")), q(sb.from("workouts").select("fecha,sets,dia").eq("client_id", cid).gte("fecha", addDays(ini, -21)).lte("fecha", fin).order("fecha")), q(sb.from("tests").select("*").eq("client_id", cid).order("fecha")).catch(() => []), exLib().catch(() => [])]);
+  const D = { ini, fin, ws, as, wo, ts }; S.mz = { cid, i, D };
+  const cur = mzWeek(ws, t); const E = mzE1(wo, ws);
+  const ent = as.filter(x => x.visible && (x.tipo === "workout" || x.tipo === "cardio"));
+  const pill = k => `<span class="mzp t-${esc(k || "carga")}">${esc((MZ_TIPOS.find(x => x[0] === (k || "carga")) || [0, cap(k || "carga")])[1])}</span>`;
+  const ed = (k, txt = "Editar") => `<button type="button" class="lnk mzed" data-act="mz-ed" data-k="${k}">${txt}</button>`;
+  // Cabecera
+  const hero = `<div class="mzhero"><span class="mztag">${esc(MZ_MOD[b.modelo] || "Mesociclo")} · ${ws.length} semanas</span><h1>${esc(b.nombre || "Mesociclo")}</h1>${b.objetivo ? `<p>${esc(b.objetivo)}</p>` : ""}<p class="mzdt">${esc(fdate(ini, { day: "numeric", month: "short" }))} – ${esc(fdate(fin, { day: "numeric", month: "short", year: "numeric" }))}</p>
+    <div class="mzwk">${ws.map((w, k) => `<div class="${k === cur ? "now" : ""}"><i class="t-${esc(w.tipo || "carga")}"></i><span>${esc(w.nombre || "S" + (k + 1))}${k === cur ? " · hoy" : ""}</span></div>`).join("")}</div>${ed("res")}</div>`;
+  // Objetivos
+  const obs = b.objetivos || [];
+  const obCard = o => { const a = mzObjVal(o, D), i0 = num(o.inicial), m = num(o.meta); const p = a != null && i0 != null && m != null && m !== i0 ? Math.max(0, Math.min(100, Math.round(100 * (a - i0) / (m - i0)))) : null; const u = o.unidad ? " " + esc(o.unidad) : "";
+    return `<div class="mzob${o.tipo === "secundario" ? "" : " p"}"><span class="mzl">${o.tipo === "secundario" ? "Secundario" : "Principal"}</span><b>${esc(o.texto || "Sin texto")}</b>
+    ${i0 != null || m != null || a != null ? `<div class="mzm"><span>Inicio <b>${mzFmt(i0)}${u}</b></span><span>Ahora <b>${mzFmt(a)}${a != null ? u : ""}</b></span><span>Meta <b>${mzFmt(m)}${u}</b></span></div>` : ""}${p != null ? `<div class="mzpb"><i style="width:${p}%"></i></div>` : ""}
+    <div class="mzch">${o.fuente === "e1rm" ? `<span>e1RM · ${esc(o.ref)}</span>` : o.fuente === "test" ? `<span>Test · ${esc(o.ref)}</span>` : ""}${o.fecha ? `<span>Hasta el ${esc(fdate(o.fecha, { day: "numeric", month: "short" }))}</span>` : ""}${p != null ? `<span>${p} % del camino</span>` : ""}</div></div>`; };
+  const obHtml = `<section class="card mzc"><div class="mzhd"><h2>Objetivos SMART</h2>${ed("obj")}</div><p class="tiny muted mzpriv">Solo lo ves tú</p>${obs.length ? [...obs.filter(o => o.tipo !== "secundario"), ...obs.filter(o => o.tipo === "secundario")].map(obCard).join("") : `<p class="small muted">Sin objetivos todavía. Añade uno o varios principales y los secundarios.</p>`}</section>`;
+  // Tests clave
+  const tk = b.tests || [];
+  const tRow = x => { const rs = ts.filter(r => r.nombre === x.nombre); const i0 = rs.filter(r => r.fecha >= addDays(ini, -14))[0] || null; const ul = rs.length ? rs[rs.length - 1] : null; const v0 = i0 ? num(i0.valor) : null, v1 = ul && ul !== i0 ? num(ul.valor) : null; const menos = ul && ul.mejor_es_menos; const swc = num(x.swc); const d = v0 != null && v1 != null ? (menos ? v0 - v1 : v1 - v0) : null; const cl = d == null ? "" : swc != null ? (d >= swc ? "ok" : d <= -swc ? "low" : "mid") : d > 0 ? "ok" : d < 0 ? "low" : "mid"; const u = (ul || i0 || {}).unidad || x.unidad || "";
+    return `<tr><td><b>${esc(x.nombre)}</b><div class="tiny muted">${x.rol === "secundario" ? "Secundario" : "Principal"}${x.f_ini || x.f_fin ? ` · ${x.f_ini ? esc(fdate(x.f_ini, { day: "numeric", month: "short" })) : "?"} → ${x.f_fin ? esc(fdate(x.f_fin, { day: "numeric", month: "short" })) : "?"}` : ""}${swc != null ? ` · cambio mínimo ${esc(fmt(swc, 2))}` : ""}</div></td><td class="n">${v0 != null ? esc(fmt(v0, 2)) + " " + esc(u) : "—"}</td><td class="n ${cl}">${v1 != null ? esc(fmt(v1, 2)) + " " + esc(u) : "—"}</td><td class="n">${x.meta ? esc(x.meta) : "—"}</td></tr>`; };
+  const tHtml = `<section class="card mzc"><div class="mzhd"><h2>Tests clave</h2>${ed("tests")}</div>${tk.length ? `<div class="tbl"><table class="mzt"><thead><tr><th>Test</th><th class="n">Inicio</th><th class="n">Último</th><th class="n">Meta</th></tr></thead><tbody>${tk.map(tRow).join("")}</tbody></table></div>` : `<p class="small muted">Elige el test principal y los secundarios del bloque. Tienen que medir lo que se entrena.</p>`}${b.plan_test ? `<p class="small mzpt">${esc(b.plan_test)}</p>` : ""}</section>`;
+  // Microciclos
+  const mi = b.micro || {};
+  const mRow = (w, k) => { const x = mi[k] || {}; const e = ent.filter(a => mzWeek(ws, a.fecha) === k); const hp = e.filter(a => a.fecha <= t); const hh = hp.filter(a => a.hecho).length;
+    return `<tr${k === cur ? ' class="now"' : ""}><td><b>${esc(w.nombre || "S" + (k + 1))}</b></td><td>${pill(w.tipo)}<div class="tiny muted">${esc(w.foco || "")}${x.notas ? `${w.foco ? " · " : ""}${esc(x.notas)}` : ""}</div></td><td class="n">${esc(x.rir || "—")}</td><td class="n">${esc(x.series || "—")}</td><td class="n ${hp.length ? (hh === hp.length ? "ok" : hh / hp.length >= .5 ? "mid" : "low") : ""}">${e.length ? `${hh}/${e.length}` : "—"}</td></tr>`; };
+  const mHtml = `<section class="card mzc"><div class="mzhd"><h2>Microciclos</h2>${ed("micro")}</div><div class="tbl"><table class="mzt"><thead><tr><th>Sem.</th><th>Tipo y foco</th><th class="n">RIR</th><th class="n">Series</th><th class="n">Hecho</th></tr></thead><tbody>${ws.map(mRow).join("")}</tbody></table></div></section>`;
+  // Progresión de ejercicios clave
+  const cnt = {}; ent.filter(a => a.tipo === "workout").forEach(a => ((a.contenido || {}).ejercicios || []).forEach(e => { if (volSeries(e)) cnt[e.nombre] = (cnt[e.nombre] || 0) + 1; }));
+  const clave = (b.clave && b.clave.length ? b.clave : Object.entries(cnt).sort((x, y) => y[1] - x[1]).slice(0, 3).map(x => x[0]));
+  const presOf = (n, k) => { for (const a of ent) { if (mzWeek(ws, a.fecha) !== k || a.tipo !== "workout") continue; const e = ((a.contenido || {}).ejercicios || []).find(x => x.nombre === n); if (e) return mzPres(e); } return ""; };
+  const pHtml = `<section class="card mzc"><div class="mzhd"><h2>Progresión de los ejercicios clave</h2>${ed("clave", "Elegir")}</div>${clave.length ? `<div class="mzgw"><div class="mzg" style="grid-template-columns:82px repeat(${ws.length},minmax(62px,1fr))"><div class="h"></div>${ws.map((w, k) => `<div class="h${k === cur ? " now" : ""}">${esc(w.nombre || "S" + (k + 1))}</div>`).join("")}
+    ${clave.map(n => `<div class="e">${esc(n)}</div>${ws.map((w, k) => { const p = presOf(n, k), r = E[n + "|" + k]; return `<div class="cell${w.fin < t || r ? "" : " f"}"><b>${esc(p || "—")}</b><span>${r ? "e1RM " + esc(fmt(r)) : w.inicio > t ? "pendiente" : "—"}</span></div>`; }).join("")}`).join("")}</div></div><p class="tiny muted" style="margin:8px 0 0">Arriba lo programado, abajo el mejor e1RM que hizo esa semana.</p>` : `<p class="small muted">Programa los entrenos del mesociclo y aquí verás la progresión de sus ejercicios principales.</p>`}</section>`;
+  // Sesiones de la semana elegida
+  const sw = S.mzW != null && S.mzW < ws.length ? S.mzW : Math.max(0, cur);
+  const ses = ent.filter(a => mzWeek(ws, a.fecha) === sw);
+  const sHtml = `<section class="card mzc"><div class="mzhd"><h2>Sesiones</h2><div class="seg mzseg2">${ws.map((w, k) => `<button data-act="mz-w" data-w="${k}" aria-pressed="${k === sw}">${esc(w.nombre || "S" + (k + 1))}</button>`).join("")}</div></div>
+    ${ses.length ? `<div class="mzses">${ses.map(a => `<button class="mzsr" data-act="asig-edit" data-id="${esc(a.id)}"><span class="dot2${a.hecho ? " ok" : a.fecha < t ? " late" : ""}"></span><span class="grow"><b>${esc(a.titulo)}</b><small>${esc(cap(fdate(a.fecha, { weekday: "short", day: "numeric" })))} · ${esc(((a.contenido || {}).ejercicios || []).slice(0, 3).map(e => e.nombre).join(" · ") || TIPOS[a.tipo] || "")}</small></span><span class="mzab">Abrir</span></button>`).join("")}</div>` : `<p class="small muted">No hay entrenos programados esa semana.</p>`}</section>`;
+  // Volumen por músculo de esa semana
+  const v = {}; ses.filter(a => a.tipo === "workout").forEach(a => ((a.contenido || {}).ejercicios || []).forEach(e => { const n = volSeries(e); if (!n) return; const r = volEj(e, lib); if (r.m) Object.entries(r.m).forEach(([m, f]) => v[m] = (v[m] || 0) + n * f); }));
+  const ms = VOL_ORD.filter(m => v[m]); const mx = Math.max(20, ...ms.map(m => v[m]));
+  const vHtml = `<section class="card mzc"><div class="mzhd"><h2>Volumen por músculo · ${esc((ws[sw] || {}).nombre || "")}</h2><span class="tiny muted">series efectivas</span></div>${ms.length ? `<div class="mzvol">${ms.map(m => `<div class="mzvr"><span>${esc(m)}</span><i><em style="width:${Math.round(100 * v[m] / mx)}%"></em><u style="left:${Math.round(1000 / mx)}%"></u></i><b>${esc(fmt(v[m], 1))}</b></div>`).join("")}</div><p class="tiny muted" style="margin:8px 0 0">La raya naranja marca 10 series por semana.</p>` : `<p class="small muted">Sin series programadas esa semana.</p>`}</section>`;
+  const nHtml = `<section class="card mzc"><div class="mzhd"><h2>Notas privadas</h2>${ed("notas")}</div>${b.notas ? `<p class="mznote">${esc(b.notas)}</p>` : `<p class="small muted">Sin notas.</p>`}</section>`;
+  shell(b.nombre || "Mesociclo", `<div class="mzw">${hero}${obHtml}${tHtml}${mHtml}${pHtml}${sHtml}${vHtml}${nHtml}</div>`, { back: "c-" + encodeURIComponent(cid), sub: c.nombre });
+}
+// Editores
+function mzObjRow(o = {}) {
+  return `<div class="mzrow" data-mzr><div class="row"><select name="tipo" aria-label="Tipo"><option value="principal"${o.tipo !== "secundario" ? " selected" : ""}>Principal</option><option value="secundario"${o.tipo === "secundario" ? " selected" : ""}>Secundario</option></select><button type="button" class="btn ghost sm" data-act="mz-row-del" aria-label="Quitar">✕</button></div>
+  <textarea name="texto" rows="2" placeholder="Ej. Subir el e1RM de sentadilla de 120 a 127,5 kg antes del 6 de diciembre">${esc(o.texto || "")}</textarea>
+  <div class="row"><select name="fuente" aria-label="Cómo se mide"><option value="manual"${!o.fuente || o.fuente === "manual" ? " selected" : ""}>Lo apunto yo</option><option value="e1rm"${o.fuente === "e1rm" ? " selected" : ""}>e1RM de un ejercicio</option><option value="test"${o.fuente === "test" ? " selected" : ""}>Resultado de un test</option></select><input name="ref" list="mz-refs" value="${esc(o.ref || "")}" placeholder="Ejercicio o test" class="grow"></div>
+  <div class="mzgrid4"><label>Inicio<input name="inicial" inputmode="decimal" value="${esc(o.inicial ?? "")}"></label><label>Ahora<input name="actual" inputmode="decimal" value="${esc(o.actual ?? "")}" placeholder="auto"></label><label>Meta<input name="meta" inputmode="decimal" value="${esc(o.meta ?? "")}"></label><label>Unidad<input name="unidad" value="${esc(o.unidad || "")}" placeholder="kg, cm…"></label></div>
+  <label class="mzlab">Fecha límite<input type="date" name="fecha" value="${esc(o.fecha || "")}"></label></div>`;
+}
+function mzTestRow(x = {}) {
+  return `<div class="mzrow" data-mzr><div class="row"><input name="nombre" list="mz-tests" value="${esc(x.nombre || "")}" placeholder="Nombre del test, igual que en Tests" class="grow"><button type="button" class="btn ghost sm" data-act="mz-row-del" aria-label="Quitar">✕</button></div>
+  <div class="mzgrid4"><label>Rol<select name="rol"><option value="principal"${x.rol !== "secundario" ? " selected" : ""}>Principal</option><option value="secundario"${x.rol === "secundario" ? " selected" : ""}>Secundario</option></select></label><label>Inicial<input type="date" name="f_ini" value="${esc(x.f_ini || "")}"></label><label>Final<input type="date" name="f_fin" value="${esc(x.f_fin || "")}"></label><label>Meta<input name="meta" value="${esc(x.meta || "")}" placeholder="117,5 kg"></label></div>
+  <label class="mzlab">Cambio mínimo que cuenta como mejora<input name="swc" inputmode="decimal" value="${esc(x.swc ?? "")}" placeholder="Ej. 2,5"></label></div>`;
+}
+function mzEdit(k) {
+  const { i, D } = S.mz || {}; const b = (S.coach.pl.bloques || [])[i]; if (!b) return;
+  const exs = [...new Set(D.as.filter(a => a.tipo === "workout").flatMap(a => ((a.contenido || {}).ejercicios || []).map(e => e.nombre)))];
+  const tns = [...new Set(D.ts.map(t => t.nombre))];
+  const dl = `<datalist id="mz-refs">${[...exs, ...tns].map(n => `<option value="${esc(n)}">`).join("")}</datalist><datalist id="mz-tests">${tns.map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
+  const wrap = (h, body, help = "") => sheet(`<h2>${h}</h2>${help ? `<p class="tiny muted" style="margin:0">${help}</p>` : ""}<form id="f-mz" data-k="${k}" class="mzf">${body}${dl}<button class="btn pri block">Guardar</button><button type="button" class="btn ghost block" data-act="close">Cancelar</button></form>`);
+  if (k === "res") return wrap("Mesociclo", `<div class="f"><label>Nombre</label><input name="nombre" value="${esc(b.nombre || "")}" required></div><div class="f"><label>Modelo</label><select name="modelo"><option value="">Sin indicar</option>${Object.entries(MZ_MOD).map(([v, l]) => `<option value="${v}"${b.modelo === v ? " selected" : ""}>${l}</option>`).join("")}</select></div><div class="f"><label>Objetivo del bloque <span class="opt-l">privado</span></label><textarea name="objetivo" rows="2">${esc(b.objetivo || "")}</textarea></div><div class="f"><label>Familiarización y afinamiento para los tests <span class="opt-l">privado</span></label><textarea name="plan_test" rows="3" placeholder="Ej. Singles al 85-90 % en S3. Afinamiento en S4 con el volumen a la mitad.">${esc(b.plan_test || "")}</textarea></div>`, "El cliente solo ve el nombre, las semanas y el foco.");
+  if (k === "obj") return wrap("Objetivos SMART", `<div id="mz-rows" class="mzrows">${(b.objetivos || []).map(mzObjRow).join("") || mzObjRow()}</div><button type="button" class="btn block" data-act="mz-row-add" data-t="obj">+ Añadir objetivo</button>`, "Puede haber varios principales. Si lo ligas a un ejercicio o a un test, el valor actual se rellena solo.");
+  if (k === "tests") return wrap("Tests clave", `<div id="mz-rows" class="mzrows">${(b.tests || []).map(mzTestRow).join("") || mzTestRow()}</div><button type="button" class="btn block" data-act="mz-row-add" data-t="tests">+ Añadir test</button>`, "Usa el mismo nombre con el que guardas el test en Evolución › Tests para que se rellenen los resultados.");
+  if (k === "micro") return wrap("Microciclos", (b.semanas || []).map((w, j) => { const x = (b.micro || {})[j] || {}; return `<div class="mzrow" data-w="${j}"><b>${esc(w.nombre || "S" + (j + 1))} <span class="tiny muted">${esc(fdate(w.inicio, { day: "numeric", month: "short" }))} – ${esc(fdate(w.fin, { day: "numeric", month: "short" }))}</span></b>
+    <div class="mzgrid4"><label>Tipo<select name="tipo">${MZ_TIPOS.map(([v, l]) => `<option value="${v}"${(w.tipo || "carga") === v ? " selected" : ""}>${l}</option>`).join("")}</select></label><label>RIR<input name="rir" value="${esc(x.rir || "")}" placeholder="2–3"></label><label>Series<input name="series" value="${esc(x.series || "")}" placeholder="14"></label></div>
+    <label class="mzlab">Foco <span class="opt-l">lo ve el cliente</span><input name="foco" value="${esc(w.foco || "")}"></label><label class="mzlab">Notas <span class="opt-l">privado</span><input name="notas" value="${esc(x.notas || "")}"></label></div>`; }).join(""), "El tipo y el foco los ve el cliente. RIR, series y notas son privados.");
+  if (k === "clave") return wrap("Ejercicios clave", `<div class="f"><label>Uno por línea</label><textarea name="clave" rows="5" placeholder="${esc(exs.slice(0, 3).join("\n"))}">${esc((b.clave || []).join("\n"))}</textarea></div><p class="tiny muted">En este mesociclo: ${esc(exs.join(", ") || "sin entrenos todavía")}</p>`, "Si lo dejas vacío, se eligen los 3 que más se repiten.");
+  if (k === "notas") return wrap("Notas privadas", `<div class="f"><textarea name="notas" rows="8">${esc(b.notas || "")}</textarea></div>`);
+}
+async function saveMz(f) {
+  const { i } = S.mz; const k = f.dataset.k; const b = (S.coach.pl.bloques || [])[i]; const g = (el, n) => { const x = el.querySelector(`[name="${n}"]`); return x ? x.value.trim() : ""; };
+  try {
+    if (k === "res") await mzSave(i, { modelo: g(f, "modelo"), objetivo: g(f, "objetivo"), plan_test: g(f, "plan_test") }, { nombre: g(f, "nombre") });
+    if (k === "obj") await mzSave(i, { objetivos: [...f.querySelectorAll("[data-mzr]")].map(r => ({ tipo: g(r, "tipo"), texto: g(r, "texto"), fuente: g(r, "fuente"), ref: g(r, "ref"), inicial: g(r, "inicial").replace(",", "."), actual: g(r, "actual").replace(",", "."), meta: g(r, "meta").replace(",", "."), unidad: g(r, "unidad"), fecha: g(r, "fecha") })).filter(o => o.texto) });
+    if (k === "tests") await mzSave(i, { tests: [...f.querySelectorAll("[data-mzr]")].map(r => ({ nombre: g(r, "nombre"), rol: g(r, "rol"), f_ini: g(r, "f_ini"), f_fin: g(r, "f_fin"), meta: g(r, "meta"), swc: g(r, "swc").replace(",", ".") })).filter(x => x.nombre) });
+    if (k === "micro") { const micro = {}; const semanas = (b.semanas || []).map((w, j) => { const r = f.querySelector(`[data-w="${j}"]`); micro[j] = { rir: g(r, "rir"), series: g(r, "series"), notas: g(r, "notas") }; return { ...w, tipo: g(r, "tipo"), foco: g(r, "foco") }; }); await mzSave(i, { micro }, { semanas }); }
+    if (k === "clave") await mzSave(i, { clave: f.clave.value.split("\n").map(x => x.trim()).filter(Boolean) });
+    if (k === "notas") await mzSave(i, { notas: f.notas.value.trim() });
+    sheet(""); toast("Guardado"); viewMeso(location.hash.slice(1));
+  } catch (e) { toast(errMsg(e)); }
 }
 
 /* ---- Series por músculo (programadas) ---- */
@@ -3608,7 +3734,7 @@ function openMeso(bl = S.coach.pl.bloques || []) {
 async function saveMeso(f) {
   const bloques = [...f.querySelectorAll("[data-b]")].map((b, i) => { const g = n => b.querySelector(`[name="${n}"]`).value.trim(); const semanas = [...b.querySelectorAll("[data-w]")].map(w => { const h = n => w.querySelector(`[name="${n}"]`).value.trim(); return { nombre: h("s_n"), inicio: h("s_i"), fin: h("s_f"), tipo: h("s_t"), foco: h("s_fo") }; }).filter(w => w.nombre || w.inicio);
     const old = (S.coach.pl.bloques || [])[i] || {}; return { ...old, nombre: g("b_n"), objetivo: g("b_o"), notas: g("b_no"), inicio: semanas.length ? semanas[0].inicio : old.inicio || "", fin: semanas.length ? semanas[semanas.length - 1].fin : old.fin || "", semanas }; }).filter(b => b.nombre || b.semanas.length);
-  const mesos = bloques.map(b => ({ objetivo: b.objetivo || "", notas: b.notas || "" })); const pub = bloques.map(({ objetivo, notas, ...b }) => b);
+  const mesos = bloques.map(mzPriv); const pub = bloques.map(mzPub);
   try { await q(sb.from("plans").upsert({ client_id: S.coach.cid, bloques: pub }, { onConflict: "client_id" })); await q(sb.from("clients").update({ ficha: { ...(S.coach.c.ficha || {}), mesos } }).eq("id", S.coach.cid)); sheet(""); toast("Mesociclos guardados"); S.coach.keep = true; viewCoachClient(S.coach.cid); } catch (e) { toast(errMsg(e)); }
 }
 
@@ -4491,6 +4617,11 @@ document.addEventListener("click", async ev => {
       case "prog-desde-cal": openProgDesdeCal(); break;
       case "borrar-semana": openBorrarSemana(); break;
       case "meso-edit": openMeso(); break;
+      case "meso-ver": S.mzW = null; location.hash = "mz-" + encodeURIComponent(S.coach.cid) + "-" + a.dataset.i; break;
+      case "mz-ed": mzEdit(a.dataset.k); break;
+      case "mz-w": S.mzW = +a.dataset.w; viewMeso(location.hash.slice(1)); break;
+      case "mz-row-add": { const box = document.getElementById("mz-rows"); if (box) box.insertAdjacentHTML("beforeend", a.dataset.t === "tests" ? mzTestRow() : mzObjRow()); break; }
+      case "mz-row-del": { const r = a.closest("[data-mzr]"); if (r) r.remove(); break; }
       case "meso-next": mesoNext(); break;
       case "meso-retrasar": mesoRetrasar(); break;
       case "vol-tab": S.coach.volTab = a.dataset.t; S.coach.keep = true; S.coach.inPlace = true; viewCoachClient(S.coach.cid); break;
@@ -4660,7 +4791,7 @@ document.addEventListener("change", ev => {
 document.addEventListener("submit", ev => {
   ev.preventDefault(); const f = ev.target;
   const map = { "f-woe": saveWoEdit, "f-mfa": doMfa, "f-mfa-on": mfaOn, "f-salud": saveSalud, "f-extra": saveExtra, "f-les": saveLes, "f-readnew": raNew, "f-archnow": archNow, "f-pushcfg": savePushCfg, "f-pay": savePay, "f-paycfg": savePayCfg, "f-consent": saveConsent, "f-legal": saveLegal, "f-restore": restoreOpen, "f-post": savePost, "f-login": doLogin, "f-contacto": enviarContacto, "f-lead": saveLead, "f-com": comNext, "f-com-fin": comEnviar, "f-alta": doAlta, "f-alta-codigo": doAltaCodigo, "f-olvido": doOlvido, "f-nueva": doNueva, "f-rcod": doRecCodigo, "f-well": saveWellness, "f-peso": savePeso, "f-workout": () => openFin(), "f-fin": saveWorkout, "f-med": saveMedidas, "f-fotos": saveFotos, "f-item": saveItem,
-    "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
+    "f-newc": saveNewClient, "f-asig": saveAsig, "f-ev": saveEvent, "f-asigprog": asignarPrograma, "f-progcal": progDesdeCal, "f-copsem": copiarSemana, "f-borsem": borrarSemana, "f-mz": saveMz, "f-meso": saveMeso, "f-info": saveInfo, "f-test": saveTest, "f-nutri": saveNutri, "f-cuenta": saveCuenta,
     "f-ex": saveEx, "f-wt": saveWt, "f-wtas": wtAsignar, "f-pi": saveProgItem, "f-prog": saveProg };
   if (f.id === "f-rep") return saveReport(f, ev.submitter && ev.submitter.value === "1");
   if (map[f.id]) map[f.id](f);
