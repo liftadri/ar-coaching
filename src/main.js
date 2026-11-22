@@ -1860,25 +1860,110 @@ async function viewInformes() {
   loading("Revisiones"); const rp = await q(sb.from("reports").select("id,fecha,semana,titular,leido_en,adjuntos,video_url,respuesta").order("fecha", { ascending: false }).limit(52));
   shell("Tus revisiones", `<p class="small muted" style="margin:0">Cada domingo Adrián revisa tu semana y te deja aquí su análisis, tu foco para la semana siguiente y, a veces, un vídeo o un archivo.</p>${rp.length ? `<div class="card"><div class="list">${rp.map(r => `<button class="it" data-act="go" data-h="informe-${esc(encodeURIComponent(r.id))}"><span class="grow"><b>${esc(r.titular || "Revisión semanal")}</b><br><span class="tiny muted">${esc(fdate(r.fecha, { day: "numeric", month: "long" }))}${r.semana ? " · " + esc(r.semana) : ""}${(r.adjuntos || []).length || r.video_url ? " · 📎 " + ((r.adjuntos || []).length + (r.video_url ? 1 : 0)) : ""}${r.respuesta ? " · Respondida" : ""}</span></span>${r.leido_en ? `<span aria-hidden="true" class="chev">›</span>` : `<span class="pnew">Nueva</span>`}</button>`).join("")}</div></div>` : `<div class="card empty">Aquí aparecerán las revisiones que te haga Adrián cada domingo.</div>`}`, { back: "hoy" });
 }
-function reportHTML(r) {
+/* ================= Revisión semanal: bloque visual (constancia, récords, fuerza, objetivos) ================= */
+// Se calcula al guardar o publicar (solo el entrenador puede leer la ficha privada) y se guarda en reports.visual
+const RV_BLOQ = [["constancia", "Constancia y racha"], ["records", "Récords de la semana"], ["fuerza", "Gráfica de fuerza"], ["objetivos", "Objetivos del mesociclo"]];
+async function repVisual(cid, fecha, ocultar = []) {
+  const ini = addDays(fecha, -6), desde = addDays(ini, -7 * 11);
+  const [as, wo, cr, pr, ts] = await Promise.all([
+    q(sb.from("assignments").select("fecha,tipo,hecho,visible").eq("client_id", cid).gte("fecha", desde).lte("fecha", fecha)).catch(() => []),
+    q(sb.from("workouts").select("fecha,sets").eq("client_id", cid).lte("fecha", fecha).order("fecha", { ascending: false }).limit(600)).catch(() => []),
+    q(sb.from("clients").select("ficha").eq("id", cid).limit(1)).catch(() => []), q(sb.from("plans").select("bloques").eq("client_id", cid).limit(1)).catch(() => []),
+    q(sb.from("tests").select("nombre,fecha,valor").eq("client_id", cid).lte("fecha", fecha).order("fecha")).catch(() => [])]);
+  const V = { ocultar, fecha };
+  // Constancia: entrenos y cardio hechos de los programados; racha de semanas seguidas al 75 % o más
+  const ent = as.filter(x => x.visible && (x.tipo === "workout" || x.tipo === "cardio"));
+  const wk = k => { const a = addDays(ini, -7 * k), b = addDays(fecha, -7 * k); const r = ent.filter(x => x.fecha >= a && x.fecha <= b); return { t: r.length, h: r.filter(x => x.hecho).length }; };
+  const w0 = wk(0); let racha = 0; for (let k = 0; k < 12; k++) { const w = wk(k); if (!w.t || w.h / w.t < .75) break; racha++; }
+  if (w0.t) V.constancia = { hechos: w0.h, total: w0.t, racha };
+  // Récords: mejor e1RM de la semana frente al mejor anterior (solo series efectivas)
+  const sets = wo.flatMap(w => (w.sets || []).filter(x => !x.hecho && !esAprox(x)).map(x => ({ ...x, fecha: w.fecha, e: e1rm(x.kg, x.reps, x.rir) }))).filter(x => x.e);
+  const by = {}; sets.forEach(x => (by[x.ejercicio] = by[x.ejercicio] || []).push(x));
+  const recs = []; let mejor = null;
+  Object.entries(by).forEach(([ej, xs]) => { const sem = xs.filter(x => x.fecha >= ini); if (!sem.length) return; const top = sem.sort((a, b) => b.e - a.e)[0]; const ant = xs.filter(x => x.fecha < ini); const prev = ant.length ? Math.max(...ant.map(x => x.e)) : null;
+    if (!mejor || top.e > mejor.e) mejor = top; if (prev && top.e > prev * 1.005) recs.push({ ej, kg: num(top.kg), reps: num(top.reps), rir: top.rir ?? null, d: Math.round((top.e - prev) * 2) / 2, pct: Math.round((top.e / prev - 1) * 1000) / 10 }); });
+  recs.sort((a, b) => b.pct - a.pct); V.records = recs.slice(0, 3);
+  if (!recs.length && mejor) V.mejor = { ej: mejor.ejercicio, kg: num(mejor.kg), reps: num(mejor.reps), rir: mejor.rir ?? null };
+  // Mesociclo de esa semana (fusionando la ficha privada)
+  const MZ = ((cr[0] || {}).ficha || {}).mesos || []; const bl = ((pr[0] || {}).bloques || []).map((b, i) => ({ ...b, ...(MZ[i] || {}) }));
+  const b = bl.find(b => { const ws = b.semanas || []; const a = ws.length ? ws[0].inicio : b.inicio, z = ws.length ? ws[ws.length - 1].fin : b.fin; return a && z && a <= fecha && ini <= z; });
+  const mIni = b ? ((b.semanas || [])[0] || {}).inicio || b.inicio : addDays(ini, -35);
+  // Fuerza: e1RM máximo por semana de los ejercicios clave desde el inicio del mesociclo
+  const cnt = {}; sets.filter(x => x.fecha >= mIni).forEach(x => cnt[x.ejercicio] = (cnt[x.ejercicio] || 0) + 1);
+  const claves = (b && b.clave && b.clave.length ? b.clave : [...new Set([...((b && b.objetivos) || []).filter(o => o.fuente === "e1rm" && o.ref).map(o => o.ref), ...Object.entries(cnt).sort((x, y) => y[1] - x[1]).map(x => x[0])])]).slice(0, 3);
+  V.fuerza = claves.map(ej => { const pts = []; for (let d = monday(mIni); d <= fecha; d = addDays(d, 7)) { const v = sets.filter(x => x.ejercicio === ej && x.fecha >= d && x.fecha <= addDays(d, 6)).map(x => x.e); if (v.length) pts.push([addDays(d, 6) > fecha ? fecha : addDays(d, 6), Math.round(Math.max(...v) * 10) / 10]); } return { ej, pts, desde: mIni }; }).filter(f => f.pts.length >= 2);
+  // Objetivos del mesociclo con inicio y meta numéricos
+  if (b && (b.objetivos || []).length) { const D = { wo, ts, ini: mIni };
+    V.objetivos = b.objetivos.filter(o => o.tipo !== "secundario" || o.fuente !== "manual").map(o => { const i0 = num(o.inicial), m = num(o.meta), a = mzObjVal(o, D); if (i0 == null || m == null || a == null || m === i0) return null; return { texto: o.texto || o.ref || "Objetivo", ini: i0, act: Math.round(a * 10) / 10, meta: m, u: o.unidad || "", pct: Math.max(0, Math.min(100, Math.round((a - i0) / (m - i0) * 100))) }; }).filter(Boolean).slice(0, 4); }
+  return V;
+}
+const rvNum = (v, u) => `${fmt(v, 1)}${u ? " " + u : ""}`;
+function repVisualHTML(r) {
+  const V = r.visual; if (!V) return { hero: "", body: "" }; const off = new Set(V.ocultar || []);
+  const c = V.constancia; let hero = "";
+  if (c && !off.has("constancia")) { const p = c.total ? c.hechos / c.total : 0, L = 169.6;
+    hero = `<div class="rv-ring"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="#ffffff22" stroke-width="7"/><circle cx="32" cy="32" r="27" fill="none" stroke="#ff7a3d" stroke-width="7" stroke-linecap="round" stroke-dasharray="${L}" stroke-dashoffset="${(L * (1 - p)).toFixed(1)}" transform="rotate(-90 32 32)"/><text x="32" y="37" text-anchor="middle" fill="#fff" font-size="15" font-weight="800">${c.hechos}/${c.total}</text></svg>
+    <div><b>${c.hechos === c.total ? "Todos los entrenos hechos" : c.hechos + " de " + c.total + " entrenos hechos"}</b><small>${Math.round(p * 100)} % de lo planificado</small></div>${c.racha >= 2 ? `<div class="rv-streak"><b>🔥 ${c.racha}</b><span>semanas<br>seguidas</span></div>` : ""}</div>`; }
+  let body = "";
+  if (!off.has("records") && ((V.records || []).length || V.mejor)) body += `<section class="card rv-c"><h3>${(V.records || []).length ? "🏆 Récords de la semana" : "💪 Tu mejor serie de la semana"}</h3>${(V.records || []).length ? V.records.map(x => `<div class="rv-pr"><span class="rv-md" aria-hidden="true">🥇</span><div><b>${esc(x.ej)}</b><span>${esc(rvNum(x.kg, "kg"))} × ${esc(x.reps)}${x.rir != null && x.rir !== "" ? " · RIR " + esc(x.rir) : ""}</span></div><em>+${esc(fmt(x.pct, 1))} %</em></div>`).join("") + `<p class="tiny muted rv-nt">Mejora sobre tu mejor 1RM estimado anterior</p>` : `<div class="rv-pr"><span class="rv-md" aria-hidden="true">💪</span><div><b>${esc(V.mejor.ej)}</b><span>${esc(rvNum(V.mejor.kg, "kg"))} × ${esc(V.mejor.reps)}${V.mejor.rir != null && V.mejor.rir !== "" ? " · RIR " + esc(V.mejor.rir) : ""}</span></div></div>`}</section>`;
+  const fz = off.has("fuerza") ? [] : V.fuerza || [], ob = off.has("objetivos") ? [] : V.objetivos || [];
+  if (fz.length || ob.length) {
+    body += `<section class="card rv-c"><h3>📈 Tu progreso</h3>${fz.length ? `${fz.length > 1 ? `<div class="rv-tabs" role="tablist">${fz.map((f, i) => `<button type="button" role="tab" data-act="rv-tab" data-i="${i}" aria-selected="${i === 0}">${esc(f.ej)}</button>`).join("")}</div>` : `<p class="small" style="margin:0 0 4px;font-weight:700">${esc(fz[0].ej)}</p>`}
+      ${fz.map((f, i) => { const a = f.pts[0][1], z = f.pts[f.pts.length - 1][1], d = a ? Math.round((z / a - 1) * 1000) / 10 : 0; return `<div class="rv-fz" data-i="${i}" ${i ? "hidden" : ""}><div class="rv-big"><b>${d >= 0 ? "+" : ""}${esc(fmt(d, 1))} %</b><span>1RM estimado desde el ${esc(fdate(f.desde, { day: "numeric", month: "short" }))}</span></div>${lineChart(f.pts.map(([x, y]) => ({ x, y })), { label: "1RM estimado", unit: "kg" })}</div>`; }).join("")}` : ""}
+      ${ob.length ? `<div class="rv-obs">${fz.length ? `<h4>🎯 Tus objetivos del mesociclo</h4>` : ""}${ob.map(o => `<div class="rv-ob"><div class="rv-l"><span>${esc(o.texto)}</span><b>${esc(fmt(o.act, 1))} / ${esc(rvNum(o.meta, o.u))}</b></div><div class="rv-bar"><i style="width:${o.pct}%"></i></div><div class="rv-s"><span>Empezaste en ${esc(rvNum(o.ini, o.u))}</span><span>${o.pct >= 100 ? "¡Conseguido! 🎉" : o.pct + " % hecho"}</span></div></div>`).join("")}</div>` : ""}</section>`; }
+  return { hero, body };
+}
+// Imagen para la historia del cliente: su semana con la marca
+async function repShareImage(r) {
+  const V = r.visual || {}; const W = 1080, H = 1920; const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+  await document.fonts.ready.catch(() => { }); const F = (w, sz) => `${w} ${sz}px Geist, system-ui, sans-serif`;
+  const g = x.createRadialGradient(W, 0, 0, W, 0, 1700); g.addColorStop(0, "#6a2a12"); g.addColorStop(.55, "#1d1a1a"); g.addColorStop(1, "#141518"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const M = 110; let y = 560; x.textBaseline = "alphabetic"; x.textAlign = "left";
+  x.font = F(600, 34); x.fillStyle = "#ff7a3d"; x.fillText("Mi semana", M, y); y += 110;
+  const fit = (t, w, sz) => { x.font = F(800, sz); while (x.measureText(t).width > W - M * 2 && sz > 40) { sz -= 4; x.font = F(800, sz); } return sz; };
+  const tit = String(r.titular || "Semana completada"); x.fillStyle = "#fff"; x.font = F(800, fit(tit, 800, 84)); x.fillText(tit.length > 34 ? tit.slice(0, 33) + "…" : tit, M, y); y += 120;
+  const rec = (V.records || [])[0] || V.mejor;
+  if (rec) { x.font = F(600, 32); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText((V.records || []).length ? "Nuevo récord" : "Mejor serie", M, y); y += 80;
+    x.font = F(800, fit(rec.ej, 0, 64)); x.fillStyle = "#fff"; x.fillText(rec.ej, M, y); y += 160;
+    x.font = F(800, 120); x.fillStyle = "#ff7a3d"; x.fillText(`${fmt(rec.kg, 1)} kg × ${rec.reps}`, M, y); y += 110; }
+  const cs = V.constancia; if (cs) { y += 30; x.fillStyle = "rgba(255,255,255,.3)"; x.fillRect(M, y, W - M * 2, 2); y += 100;
+    x.font = F(800, 72); x.fillStyle = "#fff"; x.fillText(`${cs.hechos}/${cs.total}`, M, y); x.font = F(500, 30); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText("entrenos hechos", M, y + 50);
+    if (cs.racha >= 2) { x.font = F(800, 72); x.fillStyle = "#fff"; x.fillText(`🔥 ${cs.racha}`, W / 2 + 20, y); x.font = F(500, 30); x.fillStyle = "rgba(255,255,255,.7)"; x.fillText("semanas seguidas", W / 2 + 20, y + 50); } }
+  x.fillStyle = "rgba(255,255,255,.3)"; x.fillRect(M, H - 330, W - M * 2, 2);
+  x.font = F(600, 32); x.fillStyle = "#fff"; x.textAlign = "right"; x.fillText(IG, W - M, H - 270); x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.7)"; x.fillText(fdate(r.fecha, { day: "numeric", month: "long" }), M, H - 270);
+  return await new Promise(ok => c.toBlob(b => ok(b), "image/jpeg", .92));
+}
+async function repShare(id) {
+  const r = (await q(sb.from("reports").select("id,fecha,titular,visual").eq("id", id).limit(1)))[0]; if (!r) return;
+  sheet(`<h2>Tu semana</h2><div class="empty">Preparando la imagen…</div>`);
+  try { const blob = await repShareImage(r); const f = new File([blob], "mi-semana-liftadri.jpg", { type: "image/jpeg" }); if (S.shareUrl) URL.revokeObjectURL(S.shareUrl); const url = S.shareUrl = URL.createObjectURL(blob); S.shareFile = f;
+    try { await navigator.clipboard.writeText(IG); } catch { } const can = !!(navigator.canShare && navigator.canShare({ files: [f] }));
+    sheet(`<h2>Tu semana, lista</h2><img class="shprev" src="${url}" alt="Vista previa de tu semana para compartir">
+    <div class="shcta"><b>Último paso</b><span>${can ? `Toca el botón, elige <b>Instagram</b> y luego <b>Historia</b>. Etiqueta a <b>${IG}</b>, que ya lo tienes copiado.` : `Guárdala, ábrela desde Instagram y etiqueta a <b>${IG}</b>. Ya lo he copiado.`}</span></div>
+    ${can ? `<button type="button" class="btn pri block" data-act="sh-compartir">Subir a mi historia</button>` : ""}<a class="btn ${can ? "" : "pri "}block" href="${url}" download="mi-semana-liftadri.jpg">Guardar en mi galería</a><button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
+  } catch (e) { toast(errMsg(e)); sheet(""); }
+}
+function reportHTML(r, o = {}) {
   const sec = (cls, title, items) => { const it = (items || []).map(splitItem).filter(i => i.t); return it.length ? `<section class="card rp-sec ${cls}"><h3><i></i>${title}</h3><ul>${it.map(i => `<li><b>${esc(i.t)}</b>${i.p ? `<span>${esc(i.p)}</span>` : ""}</li>`).join("")}</ul></section>` : ""; };
   const k = Object.entries(r.kpis || {}).filter(([key]) => r.mostrar_peso || !/peso/i.test(key)); const foco = (r.foco || []).map(splitItem).filter(i => i.t);
   const per = [r.semana, r.fecha ? "Semana del " + fdate(addDays(r.fecha, -6), { day: "numeric", month: "short" }) + " al " + fdate(r.fecha, { day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
-  return `<div class="rp-hero">${per ? `<p class="rp-per">${esc(per)}</p>` : ""}<h2>${esc(r.titular || "Tu semana")}</h2>
+  const VV = repVisualHTML(r);
+  return `<div class="rp-hero">${per ? `<p class="rp-per">${esc(per)}</p>` : ""}<h2>${esc(r.titular || "Tu semana")}</h2>${VV.hero}
   ${k.length ? `<div class="rp-kpis">${k.map(([key, val]) => `<div><b>${esc(val && val.valor != null ? val.valor : val)}</b><span>${esc(key)}</span>${val && val.nota ? `<em>${esc(val.nota)}</em>` : ""}</div>`).join("")}</div>` : ""}</div>
-  ${sec("ok", "Lo que has hecho bien", r.logros)}${sec("acc", "A mejorar", r.mejorar)}${sec("ink", "A tener en cuenta", r.tener_en_cuenta)}
+  ${VV.body}${sec("ok", "Lo que has hecho bien", r.logros)}${sec("acc", "A mejorar", r.mejorar)}${sec("ink", "A tener en cuenta", r.tener_en_cuenta)}
   ${foco.length ? `<section class="card rp-foco"><h3>Tu foco para la semana que viene</h3><ol>${foco.map(i => `<li><div><b>${esc(i.t)}</b>${i.p ? `<span>${esc(i.p)}</span>` : ""}</div></li>`).join("")}</ol></section>` : ""}
-  ${r.mensaje ? `<section class="card rp-msg"><div class="rp-from"><img src="./icon-192.png" alt=""><div><b>Adrián</b><span>Tu entrenador</span></div></div><p>${esc(r.mensaje)}</p></section>` : ""}`;
+  ${r.mensaje ? `<section class="card rp-msg"><div class="rp-from"><img src="./icon-192.png" alt=""><div><b>Adrián</b><span>Tu entrenador</span></div></div><p>${esc(r.mensaje)}</p></section>` : ""}
+  ${o.share && r.visual && ((r.visual.records || []).length || r.visual.mejor || r.visual.constancia) ? `<button type="button" class="btn pri block rv-share" data-act="rep-share" data-id="${esc(r.id)}">📸 Compartir mi semana</button><p class="tiny muted" style="text-align:center;margin:-4px 0 0">Súbela a tu historia y etiqueta a ${IG}</p>` : ""}`;
 }
 async function viewInforme(id) {
-  loading("Informe"); const rows = await q(sb.from("reports").select("id,fecha,semana,titular,kpis,logros,mejorar,tener_en_cuenta,foco,mensaje,mostrar_peso,adjuntos,video_url,leido_en,respuesta,respondido_en").eq("id", id).limit(1)); const r = rows[0];
+  loading("Informe"); const rows = await q(sb.from("reports").select("id,fecha,semana,titular,kpis,logros,mejorar,tener_en_cuenta,foco,mensaje,mostrar_peso,adjuntos,video_url,leido_en,respuesta,respondido_en,visual").eq("id", id).limit(1)); const r = rows[0];
   if (!r) { shell("Informe", `<div class="empty">Este informe no está disponible.</div>`, { back: "informes" }); return; }
   const adj = r.adjuntos || []; let urls = {};
   if (adj.length) { try { const { data } = await sb.storage.from("revisiones").createSignedUrls(adj.map(a => a.path), 3600); (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; }); } catch { } }
   const vid = safeUrl(r.video_url);
   const media = (vid || adj.length) ? `<section class="card rp-media"><h3>Material de la revisión</h3><div class="adjv">${vid ? `<a class="plink" href="${esc(vid)}" target="_blank" rel="noopener noreferrer"><span>🎬 Vídeo de Adrián</span><b>Ver vídeo ↗</b></a>` : ""}${adj.map(a => { const u = urls[a.path]; if (!u) return ""; if (/^image/.test(a.tipo)) return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" class="adjimg"><img src="${esc(u)}" alt="${esc(a.nombre)}" loading="lazy"></a>`; if (/^video/.test(a.tipo)) return `<video controls playsinline preload="metadata" src="${esc(u)}"></video>`; if (/^audio/.test(a.tipo)) return `<div class="adja"><span>🎙️ ${esc(a.nombre)}</span><audio controls preload="none" src="${esc(u)}"></audio></div>`; return `<a class="plink" href="${esc(u)}" target="_blank" rel="noopener noreferrer"><span>${adjIco(a.tipo)} ${esc(a.nombre)}</span><b>Abrir ↗</b></a>`; }).join("")}</div></section>` : "";
   const resp = `<section class="card rp-resp"><h3>¿Algo que comentar?</h3><p class="tiny muted" style="margin:0 0 10px">Tu respuesta le llega a Adrián junto a esta revisión.</p>${r.respuesta ? `<div class="rresp mine"><b>Tu respuesta</b> <span class="tiny muted">${esc(relTime(r.respondido_en))}</span><p>${esc(r.respuesta)}</p></div>` : ""}<textarea id="rev-r" maxlength="3000" placeholder="Dudas, cómo te has sentido, algo que quieras cambiar…">${esc(r.respuesta || "")}</textarea><button class="btn pri block" style="margin-top:10px" data-act="rev-resp" data-id="${esc(r.id)}">${r.respuesta ? "Actualizar respuesta" : "Enviar a Adrián"}</button></section>`;
-  shell("Tu revisión", `<div class="rp">${reportHTML(r) + media + resp}</div>`, { back: "informes" });
+  shell("Tu revisión", `<div class="rp">${reportHTML(r, { share: true }) + media + resp}</div>`, { back: "informes" });
   if (!r.leido_en) { try { await q(sb.rpc("revision_leida", { p_id: r.id })); } catch { } }
 }
 
@@ -4090,6 +4175,7 @@ async function openReportEditor(id, auto) {
   <div class="f"><label>Mensaje de Adrián <span class="opt-l">el cliente lo lee al final de la revisión</span></label><textarea name="mensaje" style="min-height:120px">${esc(r.mensaje || "")}</textarea></div>
   <div class="f"><label>Vídeo de la revisión <span class="opt-l">enlace opcional (YouTube, Loom, Drive…)</span></label><input name="video_url" type="url" inputmode="url" value="${esc(r.video_url || "")}" placeholder="https://…"></div>
   <div class="f"><label>Archivos <span class="opt-l">PDF, fotos, vídeo o audio · máx. 50 MB cada uno</span></label><div class="adjl" id="rep-adj">${(r.adjuntos || []).map(a => `<div class="adji" data-path="${esc(a.path)}" data-nombre="${esc(a.nombre)}" data-tipo="${esc(a.tipo)}" data-size="${esc(a.size || 0)}"><span>${adjIco(a.tipo)}</span><b>${esc(a.nombre)}</b><button type="button" class="btn ghost sm" data-act="adj-del" aria-label="Quitar">✕</button></div>`).join("")}</div><input type="file" name="archivos" multiple accept="application/pdf,image/*,video/*,audio/*"></div>
+  <fieldset class="opts"><legend>Bloques visuales <span class="opt-l">se calculan solos con sus datos al guardar</span></legend><div class="rv-chk">${RV_BLOQ.map(([k, l]) => `<label class="mchk"><input type="checkbox" name="rv_${k}" ${((r.visual || {}).ocultar || []).includes(k) ? "" : "checked"}><span>${l}</span></label>`).join("")}</div></fieldset>
   <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="mostrar_peso" ${r.mostrar_peso !== false ? "checked" : ""}> Mostrar el peso al cliente</label>
   <div class="row" style="flex-wrap:wrap"><button class="btn pri" name="pub" value="0">Guardar borrador</button><button class="btn dark" name="pub" value="1">Guardar y publicar</button><span class="grow"></span>${id ? `<button type="button" class="btn ghost sm bad" data-act="rep-del" data-id="${esc(id)}">Borrar</button>` : ""}</div></form>`, true);
 }
@@ -4099,6 +4185,7 @@ async function saveReport(f, pub) {
   const vurl = f.video_url.value.trim(); if (vurl && !safeUrl(vurl)) { toast("El enlace del vídeo debe empezar por https://"); return; }
   const row = { client_id: cid, fecha: f.fecha.value, semana: f.semana.value.trim(), titular: f.titular.value.trim(), kpis, logros: L("logros"), mejorar: L("mejorar"), tener_en_cuenta: L("tener"), foco: L("foco"), mensaje: f.mensaje.value.trim(), mostrar_peso: f.mostrar_peso.checked, video_url: vurl || null };
   if (pub) { row.publicado = true; row.publicado_en = new Date().toISOString(); }
+  try { row.visual = await repVisual(cid, row.fecha, RV_BLOQ.map(([k]) => k).filter(k => f["rv_" + k] && !f["rv_" + k].checked)); } catch (e) { console.warn("visual", e); }
   const btns = [...f.querySelectorAll("button[name=pub]")]; btns.forEach(b => b.disabled = true);
   try {
     let id = f.dataset.id;
@@ -4705,6 +4792,8 @@ document.addEventListener("click", async ev => {
       case "bk-restore": openRestore(); break;
       case "post-new": openPostForm(); break;
       case "op-open": openOpinion(id); break;
+      case "rep-share": repShare(id); break;
+      case "rv-tab": { const s0 = a.closest(".rv-c"); s0.querySelectorAll("[data-act=rv-tab]").forEach(b => b.setAttribute("aria-selected", String(b === a))); s0.querySelectorAll(".rv-fz").forEach(d => d.hidden = d.dataset.i !== a.dataset.i); break; }
       case "op-new": openOpinionForm(); break;
       case "opq-del": a.closest(".opq").remove(); break;
       case "opq-rot": { const l = $("#opl-q"); S.opRot = (S.opRot || 0) + 1; if (l) l.innerHTML = OP_ROT[S.opRot % OP_ROT.length].map(x => opRow(opQ(x))).join(""); break; }
@@ -4803,7 +4892,9 @@ document.addEventListener("click", async ev => {
       case "sec-add": $("#secs").insertAdjacentHTML("beforeend", secRow()); break;
       case "sec-del": a.closest("[data-s]").remove(); break;
       case "test-del": if (confirmar(a)) { await q(sb.from("tests").delete().eq("id", id)); refreshClient(); } break;
-      case "publicar": if (a.closest("#modal-root")) sheet(""); await q(sb.from("reports").update({ publicado: a.dataset.v === "1", publicado_en: a.dataset.v === "1" ? new Date().toISOString() : null }).eq("id", id)); toast(a.dataset.v === "1" ? "Publicado: ya lo ve el cliente" : "Ocultado"); refreshClient(); break;
+      case "publicar": { if (a.closest("#modal-root")) sheet(""); const up = { publicado: a.dataset.v === "1", publicado_en: a.dataset.v === "1" ? new Date().toISOString() : null };
+        if (up.publicado) { try { const r0 = (await q(sb.from("reports").select("client_id,fecha,visual").eq("id", id).limit(1)))[0]; if (r0) up.visual = await repVisual(r0.client_id, r0.fecha, (r0.visual || {}).ocultar || []); } catch (e) { console.warn("visual", e); } }
+        await q(sb.from("reports").update(up).eq("id", id)); } toast(a.dataset.v === "1" ? "Publicado: ya lo ve el cliente" : "Ocultado"); refreshClient(); break;
       case "ex-hist": openHist(a.dataset.n); break;
       case "rec-w": S.coach.recW = +a.dataset.n; refreshClient(); break;
       case "rep-new": openReportEditor(null, a.dataset.auto === "1"); break;
@@ -4811,7 +4902,7 @@ document.addEventListener("click", async ev => {
       case "rev-resp": { const ta = $("#rev-r"); try { await q(sb.rpc("revision_responder", { p_id: a.dataset.id, p_texto: ta.value })); toast(ta.value.trim() ? "Respuesta enviada a Adrián" : "Respuesta borrada"); route(); } catch (e) { toast(errMsg(e)); } break; }
       case "rep-edit": openReportEditor(id, false); break;
       case "rep-del": if (confirmar(a)) { await q(sb.from("reports").delete().eq("id", id)); sheet(""); toast("Informe borrado"); refreshClient(); } break;
-      case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r) sheet(`<h2>Vista del cliente</h2><p class="tiny muted" style="margin:-4px 0 0">Así la verá el cliente. ${r.publicado ? "Ya está publicada." : "Todavía es un borrador: no la ve."}</p><div class="rp">${reportHTML(r)}</div><div class="row repbar"><button type="button" class="btn" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button>${r.publicado ? "" : `<button type="button" class="btn pri grow" data-act="publicar" data-id="${esc(r.id)}" data-v="1">Publicar</button>`}<button type="button" class="btn ghost" data-act="close">Cerrar</button></div>`, true); break; }
+      case "ver-informe": { const r = (await q(sb.from("reports").select("*").eq("id", id).limit(1)))[0]; if (r && !r.publicado) { try { r.visual = await repVisual(r.client_id, r.fecha, (r.visual || {}).ocultar || []); } catch { } } if (r) sheet(`<h2>Vista del cliente</h2><p class="tiny muted" style="margin:-4px 0 0">Así la verá el cliente. ${r.publicado ? "Ya está publicada." : "Todavía es un borrador: no la ve."}</p><div class="rp">${reportHTML(r)}</div><div class="row repbar"><button type="button" class="btn" data-act="rep-edit" data-id="${esc(r.id)}">Editar</button>${r.publicado ? "" : `<button type="button" class="btn pri grow" data-act="publicar" data-id="${esc(r.id)}" data-v="1">Publicar</button>`}<button type="button" class="btn ghost" data-act="close">Cerrar</button></div>`, true); break; }
       case "nuevo-codigo": await q(sb.from("clients").update({ codigo_alta: codigoNuevo() }).eq("id", a.dataset.cid)); toast("Código nuevo generado"); refreshClient(); break;
       case "arch-open": archOpen(a.dataset.cid); break;
       case "ex-fp": S.lib.prev = a.dataset.k; viewLib(); break;
