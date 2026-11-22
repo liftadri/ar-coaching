@@ -1871,10 +1871,10 @@ async function repVisual(cid, fecha, ocultar = []) {
     q(sb.from("clients").select("ficha").eq("id", cid).limit(1)).catch(() => []), q(sb.from("plans").select("bloques").eq("client_id", cid).limit(1)).catch(() => []),
     q(sb.from("tests").select("nombre,fecha,valor").eq("client_id", cid).lte("fecha", fecha).order("fecha")).catch(() => [])]);
   const V = { ocultar, fecha };
-  // Constancia: entrenos y cardio hechos de los programados; racha de semanas seguidas al 75 % o más
-  const ent = as.filter(x => x.visible && (x.tipo === "workout" || x.tipo === "cardio"));
+  // Constancia: solo entrenos (workout) hechos de los programados; racha de semanas seguidas al 75 % o más (las semanas sin nada programado no la rompen)
+  const ent = as.filter(x => x.visible && x.tipo === "workout");
   const wk = k => { const a = addDays(ini, -7 * k), b = addDays(fecha, -7 * k); const r = ent.filter(x => x.fecha >= a && x.fecha <= b); return { t: r.length, h: r.filter(x => x.hecho).length }; };
-  const w0 = wk(0); let racha = 0; for (let k = 0; k < 12; k++) { const w = wk(k); if (!w.t || w.h / w.t < .75) break; racha++; }
+  const w0 = wk(0); let racha = 0; for (let k = 0; k < 12; k++) { const w = wk(k); if (!w.t) { if (k === 0) break; continue; } if (w.h / w.t < .75) break; racha++; }
   if (w0.t) V.constancia = { hechos: w0.h, total: w0.t, racha };
   // Récords: mejor e1RM de la semana frente al mejor anterior (solo series efectivas)
   const sets = wo.flatMap(w => (w.sets || []).filter(x => !x.hecho && !esAprox(x)).map(x => ({ ...x, fecha: w.fecha, e: e1rm(x.kg, x.reps, x.rir) }))).filter(x => x.e);
@@ -1943,9 +1943,18 @@ async function repShare(id) {
     ${can ? `<button type="button" class="btn pri block" data-act="sh-compartir">Subir a mi historia</button>` : ""}<a class="btn ${can ? "" : "pri "}block" href="${url}" download="mi-semana-liftadri.jpg">Guardar en mi galería</a><button type="button" class="btn ghost block" data-act="close">Cerrar</button>`);
   } catch (e) { toast(errMsg(e)); sheet(""); }
 }
+// Etiquetas legibles para los datos destacados (por si llegan con claves técnicas tipo «e1rmBanca»)
+const KPI_LBL = { hrv7d: ["VFC media 7 días", " ms"], hrv: ["VFC", " ms"], sesiones: ["Sesiones", ""], entrenos: ["Entrenos", ""], pesomedio: ["Peso medio", " kg"], peso: ["Peso", " kg"], suenomedio: ["Sueño medio", " h"], sueno: ["Sueño", " h"], pasos: ["Pasos al día", ""], bienestar: ["Bienestar", ""], e1rmbanca: ["1RM est. banca", " kg"], e1rmsentadilla: ["1RM est. sentadilla", " kg"], e1rmpesomuerto: ["1RM est. peso muerto", " kg"] };
+function kpiHum(key, v) {
+  const id = String(key).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase(); const m = KPI_LBL[id];
+  let lbl = m ? m[0] : /[a-z][A-Z]/.test(key) ? cap(String(key).replace(/^e1rm/i, "1RM est. ").replace(/([a-z])([A-Z0-9])/g, "$1 $2").toLowerCase().trim()) : key;
+  if (v && typeof v === "object" && "valor" in v) return [lbl, v];
+  const n = typeof v === "number" ? v : null; return [lbl, n != null ? fmt(n, 1) + (m ? m[1] : "") : v];
+}
 function reportHTML(r, o = {}) {
   const sec = (cls, title, items) => { const it = (items || []).map(splitItem).filter(i => i.t); return it.length ? `<section class="card rp-sec ${cls}"><h3><i></i>${title}</h3><ul>${it.map(i => `<li><b>${esc(i.t)}</b>${i.p ? `<span>${esc(i.p)}</span>` : ""}</li>`).join("")}</ul></section>` : ""; };
-  const k = Object.entries(r.kpis || {}).filter(([key]) => r.mostrar_peso || !/peso/i.test(key)); const foco = (r.foco || []).map(splitItem).filter(i => i.t);
+  const conRing = r.visual && r.visual.constancia && !((r.visual.ocultar || []).includes("constancia"));
+  const k = Object.entries(r.kpis || {}).filter(([key]) => (r.mostrar_peso || !/peso/i.test(key)) && !(conRing && /entreno|sesion/i.test(key))).map(([key, v]) => kpiHum(key, v)); const foco = (r.foco || []).map(splitItem).filter(i => i.t);
   const per = [r.semana, r.fecha ? "Semana del " + fdate(addDays(r.fecha, -6), { day: "numeric", month: "short" }) + " al " + fdate(r.fecha, { day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
   const VV = repVisualHTML(r);
   return `<div class="rp-hero">${per ? `<p class="rp-per">${esc(per)}</p>` : ""}<h2>${esc(r.titular || "Tu semana")}</h2>${VV.hero}
