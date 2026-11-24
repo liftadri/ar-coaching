@@ -684,7 +684,8 @@ function asigRow(x) {
   const n = x.tipo === "workout" ? ((x.contenido && x.contenido.ejercicios) || []).length : 0;
   const sub = [TIPOS[x.tipo], n ? n + " ejercicios" : "", x.fecha !== t ? (late ? "era para el " : "") + fdate(x.fecha, { weekday: "short", day: "numeric", month: "short" }) : ""].filter(Boolean).join(" · ");
   const btn = x.fecha > t && !["workout", "cardio", "nota"].includes(x.tipo) ? "Ver" : { workout: "Empezar", nota: "Leer", peso: "Apuntar", fotos: "Subir", medidas: "Medir", formulario: "Rellenar" }[x.tipo] || (late ? "Pendiente" : "Abrir");
-  return `<button class="it" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span><b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
+  const tst = x.tipo === "workout" && !x.hecho && (testsDe(x.contenido).length || /\btest\b/i.test(x.titulo || ""));
+  return `<button class="it${tst ? " ittest" : ""}" ${h}><span class="itl"><i class="dot dot-${esc(x.tipo)}"></i><span>${tst ? TEST_BADGE + " " : ""}<b>${esc(x.titulo)}</b><br><span class="tiny muted">${esc(sub)}</span></span></span>${x.hecho ? `<span class="done">${x.tipo === "nota" ? "Leído ✓" : "Hecho ✓"}</span>` : `<span class="chip ${late && x.tipo !== "nota" ? "warn" : "acc"}">${btn}</span>`}</button>`;
 }
 
 /* ================= Cobros (todos los clientes) ================= */
@@ -1300,10 +1301,19 @@ const txtParas = (t, larga = 90) => String(t || "").trim().split(/\n\s*\n/).map(
   return { head: head ? txtClean(head) : "", ls };
 });
 const notasHtml = (t, larga) => txtParas(t, larga).map(({ head, ls }) => `<p${head ? ' class="ntp"' : ""}>${head ? `<b>${esc(head)}</b>` : ""}${esc(ls.join("\n"))}</p>`).join("");
+// Ejercicios de test: se marcan muy visibles para que el cliente llegue preparado
+const esTestEj = e => !!e && (e.test === true || /^\s*test\b/i.test(String(e.notas || "")) || /\btest\b/i.test(String(e.bloque || "")) || /^\s*test\b/i.test(String(e.nombre || "")));
+const testsDe = c => ((c && c.ejercicios) || []).filter(esTestEj);
+const sinTest = t => String(t || "").replace(/^\s*test\b\s*[:.\-–]?\s*/i, "");
+const TEST_BADGE = `<span class="tstb">🎯 TEST</span>`;
+function testBanner(c, titulo) {
+  const ts = testsDe(c); if (!ts.length && !/\btest\b/i.test(String(titulo || ""))) return "";
+  return `<div class="tstban"><span class="tstban-t">🎯 Hoy hay test</span>${ts.length ? `<b>${esc(ts.map(e => String(e.nombre).replace(/\s*\(.*\)\s*$/, "")).join(" · "))}</b>` : ""}<span>Duerme bien, calienta con calma y dalo todo con buena técnica. Es tu momento de demostrar lo que has mejorado.</span></div>`;
+}
 function exHead(e, meta, pg, n = 0, done = 0, open = false) {
-  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb${/^[A-Z]\d+$/i.test(String(e.bloque).trim()) ? "" : " wxbn"}">${esc(e.bloque)}</span>` : ""}<h3>${esc(String(e.nombre).replace(/\.$/, ""))}</h3>${meta ? `<p class="wxm">${esc(meta).replace(/\n/g, '<span class="wxsep"> · </span><br>')}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
+  return `<details class="wxd" data-exd${open ? " open" : ""}><summary class="wxs"><div class="wxt">${e.bloque ? `<span class="wxb${/^[A-Z]\d+$/i.test(String(e.bloque).trim()) ? "" : " wxbn"}">${esc(e.bloque)}</span>` : ""}${esTestEj(e) ? TEST_BADGE : ""}<h3>${esc(String(e.nombre).replace(/\.$/, ""))}</h3>${meta ? `<p class="wxm">${esc(meta).replace(/\n/g, '<span class="wxsep"> · </span><br>')}</p>` : ""}</div>${n ? `<span class="wxc${done >= n ? " ok" : ""}" data-c="${n}">${done >= n ? "✓ " : ""}${done}/${n}</span>` : ""}<span class="wxchev" aria-hidden="true"></span></summary><div class="wxbody"><div class="wxtools"><div class="wxa">${exHasFicha(e.nombre) ? `<button type="button" class="wxi" data-act="ex-info" data-n="${esc(e.nombre)}" aria-label="Cómo se hace">${IC_INFO}</button>` : ""}<button type="button" class="wxi" data-act="ex-hist" data-n="${esc(e.nombre)}" aria-label="Historial">${IC_HIST}</button></div>
   ${(() => { const u = exVideo(e); return u ? `<button type="button" class="wxv" data-act="ex-video" data-u="${esc(u)}" data-n="${esc(e.nombre)}">${IC_PLAY}<span>Ver cómo se hace</span></button>` : `<a class="wxv buscar" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}" target="_blank" rel="noopener noreferrer">${IC_PLAY}<span>Buscar vídeo</span></a>`; })()}</div>
-  ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${e.notas ? `<div class="wxn">${notasHtml(e.notas, 60)}</div>` : ""}`;
+  ${pg ? `<div class="wxp">${esc(pg.t)}</div>` : ""}${sinTest(e.notas).trim() ? `<div class="wxn">${notasHtml(esTestEj(e) ? sinTest(e.notas) : e.notas, 60)}</div>` : ""}`;
 }
 const okBtn = (k, on) => `<button type="button" class="sok" data-act="set-ok" data-k="${k}" aria-pressed="${!!on}" aria-label="Serie hecha">${IC_OK}</button>`;
 let wakeLock = null;
@@ -1361,10 +1371,11 @@ async function viewWorkout(id) {
     shell(a.tipo === "cardio" ? "Cardio" : "Entreno", `<div class="wkhero"><p class="wkd">${esc(sub)}</p><h2>${esc(a.titulo)}</h2>
       <div class="wkst"><span><b>${exs.length}</b> ejercicios</span>${nSeries ? `<span><b>${nSeries}</b> series</span>` : ""}${c.dur_est ? `<span><b>≈ ${esc(c.dur_est)}</b> min</span>` : ""}</div>
       ${c.objetivo ? `<p class="wko">${esc(c.objetivo)}</p>` : ""}</div>
+    ${testBanner(c, a.titulo)}
     ${a.hecho ? `<div class="wkdone">Lo vas a hacer otra vez. Se guarda como un registro nuevo.</div>` : ""}
     ${c.calentamiento ? `<div class="card wkc"><h2>Calentamiento</h2>${notasHtml(c.calentamiento)}</div>` : ""}
     ${notas ? `<div class="card wkc"><h2>Notas de Adrián</h2>${notasHtml(notas)}</div>` : ""}
-    <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li><b>${esc(String(e.nombre).replace(/\.$/, ""))}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wkbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
+    <div class="card wkc"><h2>Lo que toca hoy</h2><ol class="wkl">${(() => { const G = wkGroups(exs); const li = e => `<li${esTestEj(e) ? ' class="wktest"' : ""}><b>${esTestEj(e) ? TEST_BADGE : ""}${esc(String(e.nombre).replace(/\.$/, ""))}</b><span>${esc(metaOf(e))}</span></li>`; return G ? G.map(g => `<li class="wkg"><span class="wkbl">${g.letra}</span>${esc(g.nombre || "Bloque " + g.letra)}</li>${g.idx.map(i => li(exs[i])).join("")}`).join("") : exs.map(li).join(""); })()}</ol></div>
     <div class="wkgo"><button type="button" class="btn pri block" data-act="w-start" data-id="${esc(id)}">Empezar entreno</button></div>`, { back: "entreno", noTabs: true });
     return;
   }
@@ -1379,6 +1390,7 @@ async function viewWorkout(id) {
       : `<label class="wxdone"><input type="checkbox" data-k="${ei}-done" data-f="hecho" ${draft[`${ei}-done`] && draft[`${ei}-done`].hecho ? "checked" : ""}><span>Hecho</span></label>`}</div>`;
   };
   shell(a.titulo, `
+  ${testBanner(c, a.titulo)}
   ${c.calentamiento || notas || c.objetivo ? `<details class="card wkinfo"><summary>Calentamiento y notas</summary>${c.objetivo ? `<p class="ntp"><b>Objetivo</b>${esc(c.objetivo)}</p>` : ""}${c.calentamiento ? `<p class="ntp"><b>Calentamiento</b>${esc(txtParas(c.calentamiento).map(p => [p.head, ...p.ls].filter(Boolean).join("\n")).join("\n"))}</p>` : ""}${notas ? notasHtml(notas) : ""}</details>` : ""}
   <form id="f-workout" data-id="${esc(id)}" class="wkform">
   ${(() => { const G = wkGroups(exs); if (!G) return exs.map((e, ei) => exNotaWrap(ei, draft, exHtml(e, ei))).join("");
