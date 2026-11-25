@@ -2148,3 +2148,11 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .aiw .ai{flex:1;min-width:0}
 .aix{flex:none;width:40px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--muted);font-size:15px;cursor:pointer}
 .aix:hover{border-color:var(--bad);color:var(--bad)}
+/* Historial de un ejercicio: tres datos en una fila y sitio para el temporizador de descanso */
+.sheet .kpis.hk3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.sheet .kpis.hk3 .kpi{padding:12px 12px;min-width:0}
+.sheet .kpis.hk3 .kpi span{font-size:12px;line-height:1.25}
+.sheet .kpis.hk3 .kpi b{font-size:20px;white-space:nowrap}
+.sheet .kpis.hk3 .kpi em{font-size:11.5px;line-height:1.3}
+.hk-one{margin:-4px 0 0;text-align:center}
+body:has(#rest) .sheet{padding-bottom:calc(112px + var(--safe-b))}
