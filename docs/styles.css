@@ -2143,3 +2143,8 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .tstban-t{font-size:20px;font-weight:800;letter-spacing:-.01em}.tstban b{font-size:15px}.tstban span:last-child{font-size:14px;opacity:.92;line-height:1.4}
 .wkl li.wktest{background:linear-gradient(90deg,#ffe8db,transparent);border-radius:8px;padding-left:6px}.wkl li.wktest .tstb{margin-right:6px;font-size:11px}
 .it.ittest{background:linear-gradient(90deg,#fff0e6,transparent 80%);border-left:4px solid var(--accent)}.it.ittest .tstb{font-size:11px;margin-right:2px}
+/* Quitar de «Requiere tu atención» las tareas que no se hicieron */
+.aiw{display:flex;align-items:stretch;gap:6px}
+.aiw .ai{flex:1;min-width:0}
+.aix{flex:none;width:40px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--muted);font-size:15px;cursor:pointer}
+.aix:hover{border-color:var(--bad);color:var(--bad)}
