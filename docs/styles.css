@@ -2156,3 +2156,21 @@ th,.htable thead th,.stab thead th,.htab thead th,.seth,.ktile span,.fg,.evd spa
 .sheet .kpis.hk3 .kpi em{font-size:11.5px;line-height:1.3}
 .hk-one{margin:-4px 0 0;text-align:center}
 body:has(#rest) .sheet{padding-bottom:calc(112px + var(--safe-b))}
+/* Evolución: listas largas recogidas (primeros 6 y «Ver más») */
+.pxr{display:none}
+.pxopen tr.pxr{display:table-row}
+.pxopen details.pxr{display:block}
+.pxmore{margin-top:10px}
+@media (max-width:640px){
+  .ptab th:nth-child(2),.ptab td:nth-child(2),.ptab th:nth-child(4),.ptab td:nth-child(4),.ptab th:nth-child(7),.ptab td:nth-child(7){display:none}
+  .ptab td,.ptab th{padding:10px 8px}
+  .ptab td:first-child .lnk{white-space:normal;line-height:1.25}
+  .ptab td:nth-child(3){white-space:nowrap}
+}
+@media (max-width:640px){
+  .ptab td.n,.ptab th.n,.ptab .chip,.ptab td .tiny{white-space:nowrap}
+  .ptab td:first-child{min-width:110px}
+}
+@media (max-width:640px){.ptab th:nth-child(3),.ptab td:nth-child(3){display:none}}
+.card.flat>.pxmore{margin:6px 12px 0;width:calc(100% - 24px)}
+.card.flat>p.tiny.muted{padding:0 14px 12px;text-align:center}
