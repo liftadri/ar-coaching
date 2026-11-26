@@ -2174,3 +2174,12 @@ body:has(#rest) .sheet{padding-bottom:calc(112px + var(--safe-b))}
 @media (max-width:640px){.ptab th:nth-child(3),.ptab td:nth-child(3){display:none}}
 .card.flat>.pxmore{margin:6px 12px 0;width:calc(100% - 24px)}
 .card.flat>p.tiny.muted{padding:0 14px 12px;text-align:center}
+/* Tablas: fechas y etiquetas sin partir, hábitos con los últimos 7 días en el móvil */
+.nw{white-space:nowrap}
+table .chip{white-space:nowrap}
+.hd7{display:none}
+@media (max-width:640px){
+  .habt th:nth-child(n+2):nth-child(-n+8),.habt td:nth-child(n+2):nth-child(-n+8){display:none}
+  .hd14{display:none}.hd7{display:inline}
+  .wtab th{font-size:12px}
+}
